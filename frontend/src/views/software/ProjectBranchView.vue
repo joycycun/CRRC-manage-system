@@ -1,0 +1,891 @@
+<template>
+  <div class="page">
+    <!-- 页面头部 -->
+    <div class="page-header">
+      <div>
+        <h1>项目分支管理</h1>
+      </div>
+
+      <button class="primary-btn" @click="openCreateDialog">
+        新增项目分支
+      </button>
+    </div>
+
+    <!-- 查询条件 -->
+    <div class="filter-card">
+      <input
+        v-model="filters.keyword"
+        placeholder="搜索项目名称 / 分支名称 / 负责人 / Clone地址"
+      />
+
+      <select v-model="filters.projectName">
+        <option value="">全部项目</option>
+        <option
+          v-for="project in projectOptions"
+          :key="project"
+          :value="project"
+        >
+          {{ project }}
+        </option>
+      </select>
+
+      <select v-model="filters.deviceType">
+        <option value="">全部终端</option>
+        <option
+          v-for="type in deviceTypeOptions"
+          :key="type"
+          :value="type"
+        >
+          {{ type }}
+        </option>
+      </select>
+
+      <button class="query-btn">查询</button>
+      <button class="reset-btn" @click="resetFilters">重置</button>
+    </div>
+
+    <!-- 数据表格 -->
+    <div class="table-card">
+      <table>
+        <thead>
+          <tr>
+            <th>项目分支</th>
+            <th>绑定项目</th>
+            <th>终端类型</th>
+            <th>软件负责人</th>
+            <th>创建时间</th>
+            <th>Clone 地址</th>
+            <th class="operation-col">操作</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          <tr v-for="item in filteredBranchList" :key="item.id">
+            <td>
+              <button class="branch-link" @click="openCloneUrl(item)">
+                {{ item.branchName }}
+              </button>
+              <div class="branch-desc">{{ item.description }}</div>
+            </td>
+
+            <td>
+              <span class="project-tag">
+                {{ item.projectName }}
+              </span>
+            </td>
+
+            <td>
+              <span class="device-tag">
+                {{ item.deviceType }}
+              </span>
+            </td>
+
+            <td>{{ item.owner }}</td>
+
+            <td class="muted">
+              {{ item.createTime }}
+            </td>
+
+            <td>
+              <div class="clone-url">
+                {{ item.cloneUrl }}
+              </div>
+            </td>
+
+            <td class="operation-col">
+              <div class="action-group">
+                <button class="text-btn" @click="viewBranch(item)">
+                  查看
+                </button>
+
+                <button class="text-btn blue" @click="openEditDialog(item)">
+                  修改
+                </button>
+
+                <button class="text-btn green" @click="openCloneUrl(item)">
+                  打开
+                </button>
+
+                <button class="text-btn yellow" @click="copyCloneUrl(item)">
+                  复制
+                </button>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="table-footer">
+        共 {{ filteredBranchList.length }} 条项目分支记录
+      </div>
+    </div>
+
+    <!-- 新增 / 修改项目分支弹窗 -->
+    <div v-if="showEditDialog" class="dialog-mask">
+      <div class="dialog">
+        <div class="dialog-header">
+          <h3>{{ editMode === 'create' ? '新增项目分支' : '修改项目分支' }}</h3>
+          <button @click="showEditDialog = false">×</button>
+        </div>
+
+        <div class="form-grid">
+          <label>
+            绑定项目
+            <select v-model="branchForm.projectName">
+              <option value="">请选择项目</option>
+              <option
+                v-for="project in projectOptions"
+                :key="project"
+                :value="project"
+              >
+                {{ project }}
+              </option>
+            </select>
+          </label>
+
+          <label>
+            终端类型
+            <select v-model="branchForm.deviceType">
+              <option value="">请选择终端</option>
+              <option
+                v-for="type in deviceTypeOptions"
+                :key="type"
+                :value="type"
+              >
+                {{ type }}
+              </option>
+            </select>
+          </label>
+
+          <label>
+            分支名称
+            <input
+              v-model="branchForm.branchName"
+              placeholder="例如：X10-Series_PA_Intercom"
+            />
+          </label>
+
+          <label>
+            软件负责人
+            <input
+              v-model="branchForm.owner"
+              placeholder="请输入软件负责人"
+            />
+          </label>
+
+          <label>
+            创建时间
+            <input
+              v-model="branchForm.createTime"
+              type="date"
+            />
+          </label>
+
+          <label class="full-row">
+            Clone 地址
+            <input
+              v-model="branchForm.cloneUrl"
+              placeholder="例如：http://bc.zycoo.com:3000/speaker/X10-Series_PA_Intercom.git"
+            />
+          </label>
+
+          <label class="full-row">
+            分支说明
+            <textarea
+              v-model="branchForm.description"
+              placeholder="例如：波尔图二期项目广播控制盒软件开发分支，用于PA广播和对讲业务"
+            ></textarea>
+          </label>
+        </div>
+
+        <div class="dialog-footer">
+          <button class="reset-btn" @click="showEditDialog = false">
+            取消
+          </button>
+
+          <button class="primary-btn" @click="saveBranch">
+            保存
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 查看详情弹窗 -->
+    <div v-if="selectedBranch" class="dialog-mask">
+      <div class="dialog large-dialog">
+        <div class="dialog-header">
+          <h3>项目分支详情</h3>
+          <button @click="selectedBranch = null">×</button>
+        </div>
+
+        <div class="detail-card">
+          <div>
+            <span>分支名称</span>
+            <strong>{{ selectedBranch.branchName }}</strong>
+          </div>
+
+          <div>
+            <span>绑定项目</span>
+            <strong>{{ selectedBranch.projectName }}</strong>
+          </div>
+
+          <div>
+            <span>终端类型</span>
+            <strong>{{ selectedBranch.deviceType }}</strong>
+          </div>
+
+          <div>
+            <span>软件负责人</span>
+            <strong>{{ selectedBranch.owner }}</strong>
+          </div>
+
+
+          <div>
+            <span>创建时间</span>
+            <strong>{{ selectedBranch.createTime }}</strong>
+          </div>
+
+          <div class="full-detail-row">
+            <span>Clone 地址</span>
+            <button class="inline-link" @click="openCloneUrl(selectedBranch)">
+              {{ selectedBranch.cloneUrl }}
+            </button>
+          </div>
+        </div>
+
+        <div class="remark-card">
+          <span>分支说明</span>
+          <p>{{ selectedBranch.description || '暂无说明' }}</p>
+        </div>
+
+        <div class="dialog-footer">
+          <button class="reset-btn" @click="copyCloneUrl(selectedBranch)">
+            复制 Clone 地址
+          </button>
+
+          <button class="primary-btn" @click="openCloneUrl(selectedBranch)">
+            打开 Clone 地址
+          </button>
+
+          <button class="primary-btn" @click="selectedBranch = null">
+            关闭
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { computed, reactive, ref } from 'vue'
+
+const filters = reactive({
+  keyword: '',
+  projectName: '',
+  deviceType: ''
+})
+
+const showEditDialog = ref(false)
+const selectedBranch = ref(null)
+const currentEditBranch = ref(null)
+const editMode = ref('create')
+
+const projectOptions = [
+  '香港屯马项目',
+  '波尔图二期项目',
+  '阿根廷有轨项目',
+  '波哥大有轨项目',
+  '迪拜项目'
+]
+
+const deviceTypeOptions = [
+  '广播控制盒',
+  '客室解码板',
+  '编码板',
+  '乘客报警器',
+  '司机室话筒',
+  '功放模块'
+]
+
+const branchForm = reactive({
+  projectName: '',
+  deviceType: '',
+  branchName: '',
+  owner: '',
+  createTime: '',
+  cloneUrl: '',
+  description: ''
+})
+
+const branchList = ref([
+  {
+    id: 1,
+    projectName: '波尔图二期项目',
+    deviceType: '广播控制盒',
+    branchName: 'dev_dacu_porto2',
+    owner: '傅建豪',
+    createTime: '2026-05-10',
+    cloneUrl: 'http://bc.zycoo.com:3000/speaker/X10-Series_PA_Intercom.git',
+    description: '波尔图二期项目广播控制盒软件开发分支，用于PA广播和对讲业务'
+  },
+  {
+    id: 2,
+    projectName: '阿根廷有轨项目',
+    deviceType: '广播控制盒',
+    branchName: 'Argentina_DACU_PA',
+    owner: '彭泉鑫',
+    createTime: '2026-05-16',
+    cloneUrl: 'http://bc.zycoo.com:3000/speaker/Argentina_DACU_PA.git',
+    description: '阿根廷项目DACU广播控制盒软件分支，用于人工广播、OCC广播和PAD广播'
+  },
+  {
+    id: 3,
+    projectName: '香港屯马项目',
+    deviceType: '乘客报警器',
+    branchName: 'HKTM_PECU_Alarm',
+    owner: '卢进',
+    createTime: '2026-05-18',
+    cloneUrl: 'http://bc.zycoo.com:3000/speaker/HKTM_PECU_Alarm.git',
+    description: '香港屯马项目乘客报警器软件分支，用于乘客报警、司机接听和报警复位'
+  },
+  {
+    id: 4,
+    projectName: '迪拜项目',
+    deviceType: '编码板',
+    branchName: 'Dubai_ECU_Encoder',
+    owner: '丁sir',
+    createTime: '2026-05-20',
+    cloneUrl: 'http://bc.zycoo.com:3000/speaker/Dubai_ECU_Encoder.git',
+    description: '迪拜项目编码板旧分支，当前已归档'
+  }
+])
+
+const filteredBranchList = computed(() => {
+  return branchList.value.filter(item => {
+    const keywordMatch =
+      !filters.keyword ||
+      item.projectName.includes(filters.keyword) ||
+      item.deviceType.includes(filters.keyword) ||
+      item.branchName.includes(filters.keyword) ||
+      item.owner.includes(filters.keyword) ||
+      item.cloneUrl.includes(filters.keyword)
+
+    const projectMatch =
+      !filters.projectName || item.projectName === filters.projectName
+
+    const deviceTypeMatch =
+      !filters.deviceType || item.deviceType === filters.deviceType
+
+    return keywordMatch && projectMatch && deviceTypeMatch 
+  })
+})
+
+function resetFilters() {
+  filters.keyword = ''
+  filters.projectName = ''
+  filters.deviceType = ''
+}
+
+function openCreateDialog() {
+  editMode.value = 'create'
+  currentEditBranch.value = null
+
+  branchForm.projectName = ''
+  branchForm.deviceType = ''
+  branchForm.branchName = ''
+  branchForm.owner = ''
+  branchForm.createTime = new Date().toISOString().slice(0, 10)
+  branchForm.cloneUrl = ''
+  branchForm.description = ''
+
+  showEditDialog.value = true
+}
+
+function openEditDialog(item) {
+  editMode.value = 'edit'
+  currentEditBranch.value = item
+
+  branchForm.projectName = item.projectName
+  branchForm.deviceType = item.deviceType
+  branchForm.branchName = item.branchName
+  branchForm.owner = item.owner
+  branchForm.createTime = item.createTime
+  branchForm.cloneUrl = item.cloneUrl
+  branchForm.description = item.description
+
+  showEditDialog.value = true
+}
+
+function saveBranch() {
+  if (!branchForm.projectName) {
+    alert('请选择绑定项目')
+    return
+  }
+
+  if (!branchForm.deviceType) {
+    alert('请选择终端类型')
+    return
+  }
+
+  if (!branchForm.branchName) {
+    alert('请输入分支名称')
+    return
+  }
+
+  if (!branchForm.owner) {
+    alert('请输入软件负责人')
+    return
+  }
+
+  if (!branchForm.cloneUrl) {
+    alert('请输入 Clone 地址')
+    return
+  }
+
+  if (editMode.value === 'create') {
+    branchList.value.unshift({
+      id: Date.now(),
+      projectName: branchForm.projectName,
+      deviceType: branchForm.deviceType,
+      branchName: branchForm.branchName,
+      owner: branchForm.owner,
+      createTime: branchForm.createTime || new Date().toISOString().slice(0, 10),
+      cloneUrl: branchForm.cloneUrl,
+      description: branchForm.description
+    })
+  } else {
+    currentEditBranch.value.projectName = branchForm.projectName
+    currentEditBranch.value.deviceType = branchForm.deviceType
+    currentEditBranch.value.branchName = branchForm.branchName
+    currentEditBranch.value.owner = branchForm.owner
+    currentEditBranch.value.createTime = branchForm.createTime
+    currentEditBranch.value.cloneUrl = branchForm.cloneUrl
+    currentEditBranch.value.description = branchForm.description
+  }
+
+  showEditDialog.value = false
+}
+
+function viewBranch(item) {
+  selectedBranch.value = item
+}
+
+function openCloneUrl(item) {
+  if (!item.cloneUrl) {
+    alert('当前项目分支没有配置 Clone 地址')
+    return
+  }
+
+  window.open(item.cloneUrl, '_blank')
+}
+
+async function copyCloneUrl(item) {
+  if (!item.cloneUrl) {
+    alert('当前项目分支没有配置 Clone 地址')
+    return
+  }
+
+  try {
+    await navigator.clipboard.writeText(item.cloneUrl)
+    alert('Clone 地址已复制')
+  } catch (error) {
+    const input = document.createElement('input')
+    input.value = item.cloneUrl
+    document.body.appendChild(input)
+    input.select()
+    document.execCommand('copy')
+    document.body.removeChild(input)
+    alert('Clone 地址已复制')
+  }
+}
+</script>
+
+<style scoped>
+.page {
+  width: 100%;
+  min-height: 100%;
+  color: #f8fafc;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 22px;
+}
+
+.page-header h1 {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 800;
+}
+
+.page-header p {
+  margin: 8px 0 0;
+  color: #94a3b8;
+  font-size: 14px;
+}
+
+.primary-btn,
+.query-btn,
+.reset-btn {
+  height: 36px;
+  padding: 0 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.primary-btn,
+.query-btn {
+  border: none;
+  background: #2563eb;
+  color: #fff;
+}
+
+.primary-btn:hover,
+.query-btn:hover {
+  background: #1d4ed8;
+}
+
+.reset-btn {
+  border: 1px solid #334155;
+  background: #1e293b;
+  color: #cbd5e1;
+}
+
+.filter-card {
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 14px;
+  padding: 16px;
+  display: grid;
+  grid-template-columns: 1.4fr 200px 180px 160px 90px 90px;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.filter-card input,
+.filter-card select,
+.form-grid input,
+.form-grid select,
+.form-grid textarea {
+  border: 1px solid #334155;
+  border-radius: 8px;
+  background: #020617;
+  color: #e2e8f0;
+  padding: 0 12px;
+  outline: none;
+}
+
+.filter-card input,
+.filter-card select,
+.form-grid input,
+.form-grid select {
+  height: 36px;
+}
+
+.form-grid textarea {
+  min-height: 90px;
+  padding: 10px 12px;
+  resize: vertical;
+}
+
+.filter-card input::placeholder,
+.form-grid input::placeholder,
+.form-grid textarea::placeholder {
+  color: #64748b;
+}
+
+.table-card {
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.table-card table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.table-card thead {
+  background: #020617;
+}
+
+.table-card th {
+  padding: 14px 16px;
+  border-bottom: 1px solid #1e293b;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.table-card td {
+  padding: 15px 16px;
+  border-bottom: 1px solid #1e293b;
+  color: #e2e8f0;
+  font-size: 13px;
+  vertical-align: middle;
+}
+
+.branch-link {
+  border: none;
+  background: transparent;
+  color: #60a5fa;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+
+.branch-link:hover {
+  color: #93c5fd;
+  text-decoration: underline;
+}
+
+.branch-desc {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.project-tag,
+.device-tag {
+  display: inline-flex;
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.project-tag {
+  background: #1d4ed833;
+  color: #60a5fa;
+}
+
+.device-tag {
+  background: #0f766e33;
+  color: #5eead4;
+}
+
+
+.clone-url {
+  color: #94a3b8;
+  font-size: 12px;
+  word-break: break-all;
+  line-height: 1.5;
+}
+
+.muted {
+  color: #94a3b8 !important;
+}
+
+.operation-col {
+  width: 260px;
+  text-align: right !important;
+}
+
+.action-group {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.text-btn {
+  border: none;
+  background: transparent;
+  color: #cbd5e1;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.text-btn:hover {
+  color: #fff;
+}
+
+.text-btn.blue {
+  color: #60a5fa;
+}
+
+.text-btn.green {
+  color: #4ade80;
+}
+
+.text-btn.yellow {
+  color: #fbbf24;
+}
+
+.table-footer {
+  padding: 12px 16px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+/* 弹窗 */
+.dialog-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+  padding: 20px;
+}
+
+.dialog {
+  width: 760px;
+  max-width: 100%;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 16px;
+  color: #f8fafc;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.45);
+}
+
+.large-dialog {
+  width: 900px;
+}
+
+.dialog-header {
+  padding: 18px 20px;
+  border-bottom: 1px solid #1e293b;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dialog-header h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.dialog-header button {
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 24px;
+  cursor: pointer;
+}
+
+.form-grid {
+  padding: 20px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: #cbd5e1;
+  font-size: 13px;
+}
+
+.full-row {
+  grid-column: 1 / -1;
+}
+
+.dialog-footer {
+  padding: 16px 20px;
+  border-top: 1px solid #1e293b;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.detail-card {
+  padding: 20px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+}
+
+.detail-card div,
+.remark-card {
+  background: #020617;
+  border: 1px solid #1e293b;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.full-detail-row {
+  grid-column: 1 / -1;
+}
+
+.detail-card span,
+.remark-card span {
+  display: block;
+  color: #64748b;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.detail-card strong {
+  color: #f8fafc;
+  font-size: 14px;
+}
+
+.inline-link {
+  border: none;
+  background: transparent;
+  color: #60a5fa;
+  cursor: pointer;
+  padding: 0;
+  font-size: 14px;
+  word-break: break-all;
+  text-align: left;
+}
+
+.inline-link:hover {
+  color: #93c5fd;
+  text-decoration: underline;
+}
+
+.remark-card {
+  margin: 0 20px 20px;
+}
+
+.remark-card p {
+  margin: 0;
+  color: #cbd5e1;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+@media (max-width: 960px) {
+  .filter-card {
+    grid-template-columns: 1fr;
+  }
+
+  .table-card {
+    overflow-x: auto;
+  }
+
+  .table-card table {
+    min-width: 1200px;
+  }
+
+  .form-grid,
+  .detail-card {
+    grid-template-columns: 1fr;
+  }
+
+  .full-detail-row {
+    grid-column: auto;
+  }
+}
+</style>

@@ -1,0 +1,379 @@
+{
+
+  "common": {
+    "editDescription": "Edit Description",
+    "enterDescription": "Enter device description",
+    "cancel": "Cancel",
+    "confirm": "Confirm"
+    },
+
+    "button": {
+        "submit": "Submit",
+        "upload": "Upload"
+    },
+    "confirm": {
+        "cancel": "Cancel",
+        "confirm": "Yes",
+        "tipContext": "Are you sure to perform this operation?",
+        "tipTitle": "Notice"
+    },
+    "dashboard": {
+        "deviceInformation": {
+            "deviceInformation": "Device Information",
+            "deviceName": "Deice Model",
+            "hardVersion": "Hardware Version",
+            "description": "Device Description",
+            "softVersion": "Software Version",
+            "speakerVolume": "Speaker Volume",
+            "micVolume": "Microphone Volume",
+            "uptime": "Uptime"
+        },
+        "networkInformation": {
+            "alternativeDns": "Alternative DNS",
+            "defaultGateway": "Default Gateway",
+            "ipAddress": "IP Address",
+            "ipAssignment": "IP Assignment",
+            "macAddress": "Mac Address",
+            "networkInformation": "Network Information",
+            "primaryDns": "Primary DNS",
+            "subnetMask": "Subnet Mask"
+        },
+        "sipStatus": {
+            "SipOutStatus": "SIP Out-car Status",
+            "SipOutAccount": "SIP account",
+            "SipMasterOutServer": "Main server IP address",
+            "masterOutStatus": "Main server registration status",
+            "SipSlaveOutServer": "Backup server IP address",
+            "slaveOutStatus": "Backup server registration status",
+            "SipInStatus": "SIP In-car status",
+            "SipInAccount": "SIP account",
+            "SipMasterInServer": "Main server IP address",
+            "MasterInStatus": "Main server registration status",
+            "SipSlaveInServer": "Backup server IP address",
+            "SlaveInStatus": "Backup server registration status"
+        },
+        "title": "Device Info"
+    },
+    "header": {
+        "editPassword": "Change Password",
+        "logout": "Logout",
+        "msg": {
+            "switchLangSuccess": "Language has been changed!"
+        }
+    },
+    "intercominfo": {
+        "input": {
+            "input_check_label": "Input Detection:",
+            "level_high": "Rising Edge",
+            "level_low": "Falling Edge",
+            "mode_label": "Trigger Mode:",
+            "title": "Input Settings",
+            "trigger_dial_label": "Dial Number:",
+            "trigger_num_label": "Number:"
+        },
+        "intercom": {
+            "onekey_num_label": "Press-to-Talk Number:",
+            "repress_cancel_label": "Press Again to End Call:",
+            "title": "Button Settings"
+        },
+        "output": {
+            "connect": "Connect(Closed)",
+            "disconnect": "Disconnect(Open)",
+            "duration_label": "Duration:",
+            "mode_label": "Output Signal:",
+            "title": "Output Settings"
+        },
+        "title": "Button Settings",
+        "trigger": {
+            "call_state_event_label": "Event:",
+            "call_state_trigger_label": "Trigger by Call State:",
+            "dtmf_trigger_label": "Trigger by DTMF Signal:",
+            "hangup": "Hangup",
+            "incoming": "Incoming",
+            "input_trigger_label": "Trigger by Input Signal:",
+            "input_trigger_num_label": "DTMF:",
+            "outgoing": "Outgoing",
+            "title": "Trigger Setting"
+        }
+    },
+    "language": "Language",
+    "advance": "Advanced",
+    "login": {
+        "language": "Language",
+        "msg": {
+            "error": "Invalid username or password!",
+            "success": "You have successfully logged in!"
+        },
+        "password": "Password",
+        "submit": "LOGIN",
+        "title": "Login",
+        "username": "Username",
+        "model": "PECU"
+    },
+    "logout": {
+        "msg": {
+            "success": "You have logged out!"
+        }
+    },
+    "model": {
+        "IV03": "SIP Safety Video Intercom",
+        "IA03": "SIP Safety Intercom",
+        "SC15": "Network Ceiling Speaker",
+        "SH30": "Network Horn Speaker",
+        "SW15": "Network Cabinet Speaker",
+        "QYCF-DCP-PoE": "DRIVER CONTROL BOX",
+        "QYCF-PI-PoE": "EMERGENCY ALARM",
+        "SRIDZ-T1816-DB": "DECODE",
+        "SRIDZ-T1816-CB": "CODE",
+        "DACU": "DRIVER CONTROL BOX",
+        "PECU": "EMERGENCY ALARM",
+        "DECODE": "DECODE",
+        "CODE": "CODE",
+        "default": "Network Speaker"
+    },
+    "notify": {
+        "success": "Success",
+        "updated": "Updated"
+    },
+    "settings": {
+        "changePassword": {
+            "newPassword": "New Password:",
+            "oldPassword": "Old Password:",
+            "title": "Change Password",
+            "userName": "Username:"
+        },
+        "network": {
+            "DHCP": "Network Mode:",
+            "dns1": "Primary DNS:",
+            "dns2": "Alternative DNS:",
+            "gateway": "Default Gateway:",
+            "ipAddress": "IP Address:",
+            "netmask": "Subnet Mask:",
+            "dhcpMode": "DHCP",
+            "staticMode": "Static",
+            "toggleMode": "Toggle",
+            "title": "Network Settings"
+        },
+        "recovery": {
+            "needRebootTip": "The current modification requires a device reboot. Do you want to reboot now?",
+            "rebootTip": "Device rebooting, the web page will automatically refresh within 30S!",
+            "rebootTitle": "Reboot",
+            "rebootWarning": "Warning: Rebooting the device will interrupt all ongoing broadcasting, intercom and calls!",
+            "resetRebootTip": "Device resetting, the web page will automatically refresh within 60S!",
+            "resetTitle": "Reset",
+            "resetWarning": "Warning: Resetting the device will interrupt all ongoing broadcasting, intercom and calls, and will erase all configurations!",
+            "title": "Reboot & Reset",
+            "upgradeFailure0": "Unknown error!",
+            "upgradeFailure1": "Invalid file!"
+        },
+        "time": {
+            "currentTime": "Current Time:",
+            "localTime": "Time",
+            "manualSetting": "Manual",
+            "ntp": "NTP:",
+            "ntpServer": "NTP Server:",
+            "syncPCTime": "Synchronize time with this PC",
+            "timezone": "Time Zone:",
+            "title": "Time Settings"
+        },
+        "title": "Settings",
+        "upgrade": {
+            "currentVersion": "Current Firmware Version",
+            "firmware": "Firmware:",
+            "info": "Current Firmware Info",
+            "lastUpdateTime": "Last Update",
+            "maxTip": "Firmware can not be more than 80M!",
+            "resetDefault": "Reset Factory Defaults:",
+            "title": "Upgrade",
+            "upgradeOperationTip1": "Drag files here, or ",
+            "upgradeOperationTip2": "Click Upload",
+            "upgradeTip": "Warning: It will take around 150 seconds to complete the upgrade process, during the upgrade process please DO NOT power-off the device!"
+        },
+        "voiceLanguage": {
+            "cn": "中文",
+            "en": "English",
+            "title": "Language Settings",
+            "voiceLanguage": "Voice Prompts Language:"
+        },
+        "volume": {
+            "speakerVolume": "Speaker Volume(0~5):",
+            "title": "Volume Control",
+            "toneVolume": "Microphone Volume(0~9):",
+            "agc": "MIC AGC:",
+            "agc_min_volume": "AGC Min Volume:",
+            "agc_max_volume": "AGC Max Volume:"
+        },
+        "ConfDownUp": {
+            "title": "Import/Export",
+            "downloadtitle": "Export",
+            "uploadtitle": "Import",
+            "downloadyaml": "Export YAML",
+            "downloadjson": "Export JSON",
+            "upload": "Upload",
+            "filetype": "Warning: Only configuration files in the format yml, yaml, json are allowed to be imported!",
+            "uploadtips": "Warning: Only yaml/json configuration file format is permitted. When importing a new configuration file, all ongoing broadcasts and/or calls will be interrupted. The device will restart with the new configuration after the process is done.",
+            "maxTip": "Upload files cannot exceed 2M!",
+            "fileNotFound": "The configuration file does not exist!",
+            "fileFormatError": "The configuration file format is wrong!",
+            "unknownError": "Unknown error",
+            "defaultError": "Please check this error:",
+            "restoretips": "Warning: The configuration is being imported. After the import is complete, the system will restart to apply the new configuration, and the page will automatically refresh after the restart is complete!"
+        },
+        "server-settings": {
+            "title": "Server settings:",
+            "masterTitle": "PIS main server:",
+            "slaveTitle": "PIS backup server:",
+            "addr": "Address:",
+            "port": "Port:"
+        },
+        "audio": {
+            "title": "Audio Files",
+            "info": "Audio Files Upload",
+            "tip1": "Audio files only accept mp3 format!",
+            "customAudio": "Offline audio file",
+            "currentlyDefault": "Currently set to default",
+            "currentlyCustom": "Currently set to custom",
+            "selectFile": "Select audio file",
+            "upload": "Upload",
+            "play": "Play",
+            "delete": "Delete",
+            "upgradeFailure": "Audio file upload failed!",
+            "maxTip": "The audio file is larger than the disk space, the current disk space is left ",
+            "diskFree": "Current disk space remaining: "
+        }
+    },
+    "report": {
+        "title": "System Log",
+        "date": "Date",
+        "time": "Time",
+        "type": "Type",
+        "action": "Action",
+        "mark": "Remark",
+        "download": "Download",
+        "downloadTitle": "Log Download",
+        "logFilename": "Log Filename",
+        "nodata": "No Data"
+    },
+    "sip": {
+        "account": {
+            "title": "SIP account",
+            "masterTitle": "Main server settings",
+            "masterSipServer": "Main server IP Address:",
+            "inUserId": "User ID:",
+            "inPassword": "User password:",
+            "inEnable": "Activate:",
+            "outUserId": "User ID for out-car paging:",
+            "outPassword": "User password for out-car paging:",
+            "outEnable": "Activate out-car paging:",
+            "expires": "Registration timeout(30~3600 Seconds):",
+            "slaveTitle": "Backup server settings:",
+            "slaveSipServer": "Backup server IP address:",
+            "slaveEnable": "Enable backup server:"
+        },
+        "audioCodecs": {
+            "codec711a": "G.711(Alaw):",
+            "codec711u": "G.711(Ulaw):",
+            "codec722": "G.722:",
+            "codecOpus": "Opus:",
+            "title": "Audio Codecs"
+        },
+        "callSettings": {
+            "answerDelay": "Auto Answer Delay(S):",
+            "autoAnswer": "Auto Answer:",
+            "timeout": "RTP Timeout(S):",
+            "title": "SIP Call Settings"
+        },
+        "title": "SIP Settings",
+        "sipAdvanceSettings": {
+            "localport": "Local Port:",
+            "rtpstartport": "RTP Start Port:",
+            "rtpendport": "RTP End Port:",
+            "rtptimeout": "RTP Timeout(Sec):",
+            "loud_ringer_title": "Loud Ringers",
+            "master_autoanswer": "Primary SIP Account:",
+            "slave_1_autoanswer": "Secondary SIP Account-1:",
+            "slave_2_autoanswer": "Secondary SIP Account-2:",
+            "ringfile": "Ring Tone:",
+            "ring": "Ring",
+            "bigben": "Bigben",
+            "oldphone": "Oldphone",
+            "sweet": "Sweet",
+            "s_beep": "Start Beep",
+            "e_beep": "End Beep",
+            "alarm_tone0": "Alarm tone-0",
+            "alarm_tone1": "Alarm tone-1",
+            "alarm_tone2": "Alarm tone-2",
+            "bell_burglar_ring": "Bell burglar ring",
+            "bells_music_tone": "Bells music tone",
+            "digital_telephone": "Digital telephone",
+            "emergency_alarm_tone": "Emergency alarm tone",
+            "emergency_beep_tone": "Emergency beep tone",
+            "special_music_tone": "Special music tone",
+            "toy": "Toy",
+            "customAudio1": "Custom Audio 1",
+            "customAudio2": "Custom Audio 2",
+            "customAudio3": "Custom Audio 3",
+            "customAudio4": "Custom Audio 4",
+            "customAudio5": "Custom Audio 5",
+            "tryplay": "Play",
+            "title": "Advance SIP Settings",
+            "paramTitle": "SIP Parameter Settings",
+            "jbufftype": "Jitter Buffer:",
+            "off": "off",
+            "fixed": "fixed",
+            "adaptive": "adaptive",
+            "sip_autoanswer_beep": "SIP Autoanswer Beep:",
+            "ptp": "Ptp Time Synchronization:",
+            "ptpTip": "Ptp time synchronization with SIP server, SIP server support is required",
+            "echocancel": "Acoustic Echo Cancellation:",
+            "anr": "Adaptive Noise Reduction:",
+            "agc": "Automatic Gain Control:",
+            "cng": "Comfort Noise Generator:",
+            "agc_max_gain": "AGC Max Gain(5~32dB):",
+            "agc_gate_threshold": "AGC gate threshold(-87~-42dB):"
+        }
+    },
+    "status": {
+        "fail": "Registration failed!",
+        "ok": "Registered",
+        "unknown": "Unknown",
+        "unregister": "Unactivated",
+        "disable": "Unconfigured",
+        "undefined": "",
+        "idle":"Idle",
+        "answer":"Answer",
+        "ring":"Ring",
+        "ringing":"Ringing"
+    },
+    "maintenance":{
+        "title": "Maintenance",
+        "ping": {
+            "menuTitle": "Diagnostic",
+            "host": "IP/Domain:",
+            "title": "Ping"
+        },
+        "tcpdump": {
+            "menuTitle": "Ethernet Capture",
+            "start": "Start",
+            "stop": "Stop",
+            "title": "Ethernet Capture"
+        },
+        "SoundCheck": {
+            "title": "Test",
+            "speakerCheck": {
+                "title": "Speaker Test",
+                "start": "Start Test",
+                "stop": "Stop Test"
+            },
+            "micCheck": {
+                "title": "Microphone Loop Test",
+                "start": "Start Test",
+                "stop": "Stop Test",
+                "audioInputTitle": "Audio Input Loop Test"
+            },
+            "noiseCheck": {
+                "title": "Noise Check"
+            }
+        }
+    }
+}

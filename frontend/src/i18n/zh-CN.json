@@ -1,0 +1,399 @@
+{
+  
+
+  "common": {
+    "editDescription": "编辑描述",
+    "enterDescription": "请输入设备描述",
+    "cancel": "取消",
+    "confirm": "确定"
+  },
+
+  "button": {
+    "submit": "提交",
+    "upload": "上传"
+  },
+  "confirm": {
+    "cancel": "取消",
+    "confirm": "确认",
+    "tipContext": "确认当前操作?",
+    "ntpTipContext": "时间设置将中断所有正在进行的广播或通话并重启!",
+    "tipTitle": "提示"
+  },
+  "dashboard": {
+    "deviceInformation": {
+      "deviceInformation": "设备信息",
+      "deviceName": "型号",
+      "hardVersion": "硬件版本",
+      "description": "设备备注",
+      "softVersion": "软件版本",
+      "speakerVolume": "扬声器音量",
+      "micVolume": "麦克风音量",
+      "uptime": "启动时间"
+    },
+    "networkInformation": {
+      "alternativeDns": "次DNS",
+      "defaultGateway": "默认网关",
+      "ipAddress": "IP地址",
+      "ipAssignment": "IP分配方式",
+      "macAddress": "Mac地址",
+      "networkInformation": "网络信息",
+      "primaryDns": "主DNS",
+      "subnetMask": "子网掩码"
+    },
+    "sipStatus": {
+      "SipOutStatus": "SIP外部广播状态",
+      "SipOutAccount": "SIP账号",
+      "SipMasterOutServer": "主服务器地址",
+      "masterOutStatus": "主服务器注册状态",
+      "SipSlaveOutServer": "备服务器地址",
+      "slaveOutStatus": "备服务器注册状态",
+      "SipInStatus": "SIP状态",
+      "SipInAccount": "SIP账号",
+      "SipMasterInServer": "主服务器地址",
+      "MasterInStatus": "主服务器注册状态",
+      "SipSlaveInServer": "备服务器地址",
+      "SlaveInStatus": "备服务器注册状态"
+    },
+    "title": "设备信息"
+  },
+  "intercominfo": {
+  "input": {
+    "input_check_label": "输入检测：",
+    "level_high": "上升沿",
+    "level_low": "下降沿",
+    "mode_label": "触发模式：",
+    "title": "输入口设置",
+    "trigger_dial_label": "触发拨号：",
+    "trigger_num_label": "触发号码："
+  },
+  "intercom": {
+    "onekey_num_label": "报警号码：",
+    "repress_cancel_label": "再次按键结束通话：",
+    "title": "按键设置"
+  },
+  "output": {
+    "connect": "闭合",
+    "disconnect": "断开",
+    "duration_label": "持续时间：",
+    "mode_label": "输出模式：",
+    "title": "输出口设置"
+  },
+  "title": "按键设置",
+  "trigger": {
+    "call_state_event_label": "触发事件：",
+    "call_state_trigger_label": "通话状态触发：",
+    "dtmf_trigger_label": "DTMF 触发：",
+    "hangup": "挂断 / 通话结束",
+    "incoming": "呼入",
+    "input_trigger_label": "输入触发：",
+    "input_trigger_num_label": "DTMF 触发号码：",
+    "outgoing": "呼出",
+    "title": "触发设置"
+  }
+},
+  "header": {
+    "editPassword": "修改密码",
+    "logout": "退出",
+    "msg": {
+      "switchLangSuccess": "切换语言成功"
+    }
+  },
+  "language": "语言",
+  "advance": "高级设置",
+  "login": {
+    "language": "语言",
+    "msg": {
+      "error": "用户名或密码错误",
+      "success": "登入成功"
+    },
+    "password": "密码",
+    "submit": "立即登入",
+    "title": "登入",
+    "username": "用户名",
+    "model": "紧急报警器"
+  },
+  "logout": {
+    "msg": {
+      "success": "已退出"
+    }
+  },
+  "model": {
+    "IV03": "SIP可视安防对讲",
+    "IA03": "SIP语音安防对讲",
+    "SC15": "网络吸顶音箱",
+    "SH30": "网络号角喇叭",
+    "SW15": "网络壁挂音箱",
+    "QYCF-DCP-PoE": "司机控制盒",
+    "QYCF-PI-PoE": "乘客紧急报警器",
+    "SRIDZ-T1816-DB": "解码板",
+    "SRIDZ-T1816-CB": "编码板",
+    "DACU": "司机控制盒",
+    "PECU": "乘客紧急报警器",
+    "DECODE": "解码板",
+    "CODE": "编码板",
+    "default": "网络终端设备"
+  },
+  "notify": {
+    "success": "成功",
+    "updated": "已更新"
+  },
+  "settings": {
+    "changePassword": {
+      "newPassword": "新密码:",
+      "oldPassword": "旧密码:",
+      "title": "修改密码",
+      "userName": "用户名:"
+    },
+    "network": {
+      "DHCP": "网络模式:",
+      "dns1": "主DNS:",
+      "dns2": "次DNS:",
+      "gateway": "默认网关:",
+      "ipAddress": "IP地址:",
+      "netmask": "子网掩码:",
+      "dhcpMode": "动态获取",
+      "staticMode": "静态地址",
+      "toggleMode": "拨码",
+      "title": "网络设置"
+    },
+    "recovery": {
+      "needRebootTip": "当前修改需要重启设备才能生效，是否确认现在重启?",
+      "rebootTip": "设备重启中，等待30秒后页面会自动刷新！",
+      "rebootTitle": "重启",
+      "rebootWarning": "警告: 重启设备将中断所有正在进行的广播或通话！",
+      "resetRebootTip": "设备重置中，等待60秒后页面会自动刷新！",
+      "resetTitle": "重置",
+      "resetWarning": "警告:重置设备将中断所有正在进行的广播或通话，还会导致系统清除所有配置信息!",
+      "title": "重启和重置",
+      "upgradeFailure0": "未知错误！",
+      "upgradeFailure1": "升级包无效！"
+    },
+    "time": {
+      "currentTime": "当前时间:",
+      "localTime": "时间",
+      "manualSetting": "手动",
+      "ntp": "NTP:",
+      "ntpServer": "NTP服务器:",
+      "syncPCTime": "同步PC时间",
+      "timezone": "时区:",
+      "title": "时间设置"
+    },
+    "title": "系统设置",
+    "upgrade": {
+      "currentVersion": "当前版本",
+      "firmware": "固件:",
+      "info": "信息",
+      "lastUpdateTime": "更新时间",
+      "maxTip": "升级固件不能超过80MB!",
+      "resetDefault": "恢复出厂设置:",
+      "title": "固件升级",
+      "upgradeOperationTip1": "将文件拖到此处，或",
+      "upgradeOperationTip2": "点击上传",
+      "upgradeTip": "警告:升级过程请不要断开电源,否则会导致设备损坏，等待150秒后升级完成页面会自动刷新!"
+    },
+    "voiceLanguage": {
+      "cn": "中文",
+      "en": "English",
+      "title": "语音设置",
+      "voiceLanguage": "语音语言:"
+    },
+    "volume": {
+      "speakerVolume": "扬声器音量(0~5):",
+      "title": "音量控制",
+      "toneVolume": "麦克风音量(0~9):",
+      "agc": "MIC自动增益:",
+      "agc_min_volume": "自动增益最小音量:",
+      "agc_max_volume": "自动增益最大音量:"
+    },
+    "ConfDownUp": {
+      "title": "配置导入/导出",
+      "downloadtitle": "导出",
+      "uploadtitle": "导入",
+      "downloadyaml": "导出YAML",
+      "downloadjson": "导出JSON",
+      "upload": "上传",
+      "filetype": "警告:只允许格式为yml,yaml,json的配置文件导入!",
+      "uploadtips": "警告:允许导入的配置文件格式为yaml/json，导入操作，设备将中断所有正在进行的广播或通话并重启以应用新的配置",
+      "maxTip": "上传文件不能超过2M!",
+      "fileNotFound": "配置文件不存在!",
+      "fileFormatError": "配置文件格式有误!",
+      "unknownError": "未知错误!",
+      "defaultError": "请检查此错误:",
+      "restoretips": "警告:正在导入配置,导入完成后，系统将重启以应用新的配置，重启完成后页面自动刷新!"
+    },
+    "sipApi": {
+      "title": "API设置",
+      "api": "API设置",
+      "call_enable": "通话API:",
+      "call_api": "呼出API:",
+      "el": "例:",
+      "answer_api": "应答API:",
+      "hold_api": "保持API:",
+      "hangup_api": "挂断API:",
+      "explain": "说明",
+      "line_explain_table": "SIP线路说明表",
+      "sip_line": "SIP线路",
+      "auto": "自动",
+      "account_info_1": "主SIP账号",
+      "account_info_2": "备SIP账号1",
+      "account_info_3": "备SIP账号2",
+      "p2p": "P2P账号"
+    },
+    "server-settings": {
+      "title": "服务器设置",
+      "masterTitle": "PIS主服务器",
+      "slaveTitle": "PIS备用服务器",
+      "addr": "地址:",
+      "port": "端口:"
+    },
+    "audio": {
+      "title": "音频文件",
+      "info": "音频文件上传",
+      "tip1": "音频文件只接受mp3格式!",
+      "customAudio": "离线提示音",
+      "currentlyDefault": "当前设置为默认",
+      "currentlyCustom": "当前设置为自定义",
+      "selectFile": "选取音频文件",
+      "upload": "上传",
+      "play": "播放",
+      "delete": "删除",
+      "upgradeFailure": "音频文件上传失败!",
+      "maxTip": "音频文件大于磁盘空间，当前磁盘空间还剩",
+      "diskFree": "当前磁盘空间剩余: "
+    }
+  },
+  "report": {
+    "title": "系统日志",
+    "date": "日期",
+    "time": "时间",
+    "type": "类型",
+    "action": "动作",
+    "mark": "备注",
+    "download": "下载",
+    "downloadTitle": "日志下载",
+    "logFilename": "日志名称",
+    "nodata": "无数据"
+  },
+  "sip": {
+    "account": {
+      "title": "SIP帐号",
+      "masterTitle": "主服务器配置",
+      "masterSipServer": "主服务器地址:",
+      "inUserId": "用户ID:",
+      "inPassword": "用户密码:",
+      "inEnable": "激活:",
+      "outUserId": "外部广播用户ID:",
+      "outPassword": "外部广播用户密码:",
+      "outEnable": "外部广播激活:",
+      "expires": "注册超时时间(30~3600秒):",
+      "slaveTitle": "备服务器配置",
+      "slaveSipServer": "备服务器地址:",
+      "slaveEnable": "备用服务器开启"
+    },
+    "audioCodecs": {
+      "codec711a": "G.711(Alaw):",
+      "codec711u": "G.711(Ulaw):",
+      "codec722": "G.722:",
+      "codecOpus": "Opus:",
+      "title": "音频编码"
+    },
+    "callSettings": {
+      "answerDelay": "自动应答延时(秒):",
+      "autoAnswer": "自动应答:",
+      "timeout": "RTP超时时间(秒):",
+      "title": "SIP通话设置"
+    },
+    "title": "SIP设置",
+    "sipAdvanceSettings": {
+      "localport": "本地端口:",
+      "rtpstartport": "RTP开始端口:",
+      "rtpendport": "RTP结束端口:",
+      "rtptimeout": "RTP超时时间(秒):",
+      "loud_ringer_title": "响亮的铃声",
+      "master_autoanswer": "主SIP账户:",
+      "slave_1_autoanswer": "备SIP账户1:",
+      "slave_2_autoanswer": "备SIP账户2:",
+      "ringfile": "铃声:",
+      "ring": "Ring",
+      "bigben": "Bigben",
+      "oldphone": "Oldphone",
+      "sweet": "Sweet",
+      "s_beep": "Start Beep",
+      "e_beep": "End Beep",
+      "alarm_tone0": "Alarm tone0",
+      "alarm_tone1": "Alarm tone1",
+      "alarm_tone2": "Alarm tone2",
+      "bell_burglar_ring": "Bell burglar ring",
+      "bells_music_tone": "Bells music tone",
+      "digital_telephone": "Digital telephone",
+      "emergency_alarm_tone": "Emergency alarm tone",
+      "emergency_beep_tone": "Emergency beep tone",
+      "special_music_tone": "Special music tone",
+      "toy": "Toy",
+      "customAudio1": "自定义音频1",
+      "customAudio2": "自定义音频2",
+      "customAudio3": "自定义音频3",
+      "customAudio4": "自定义音频4",
+      "customAudio5": "自定义音频5",
+      "tryplay": "试听",
+      "title": "SIP高级设置",
+      "paramTitle": "SIP参数设置",
+      "jbufftype": "网络抖动缓冲区:",
+      "off": "关闭",
+      "fixed": "固定",
+      "adaptive": "自适应",
+      "sip_autoanswer_beep": "SIP自动应答提示音:",
+      "ptp": "Ptp时间同步:",
+      "ptpTip": "与SIP服务器进行ptp时间同步，需SIP服务器支持",
+      "echocancel": "回音消除:",
+      "anr": "噪声抑制:",
+      "agc": "MIC自动增益:",
+      "cng": "舒适噪音:",
+      "agc_max_gain": "AGC最大增益(5~32dB):",
+      "agc_gate_threshold": "AGC门阈值(-87~-42dB):"
+    }
+  },
+  "status": {
+    "fail": "注册失败",
+    "ok": "注册成功",
+    "unknown": "未知状态",
+    "unregister": "未激活",
+    "disable": "未配置",
+    "undefined": "",
+    "idle": "空闲",
+    "answer": "通话中",
+    "ring": "响铃",
+    "ringing": "振铃"
+  },
+  "maintenance": {
+    "title": "系统维护",
+    "ping": {
+      "menuTitle": "诊断",
+      "host": "IP/域名:",
+      "title": "Ping"
+    },
+    "tcpdump": {
+      "menuTitle": "网络抓包",
+      "start": "开始",
+      "stop": "停止",
+      "title": "网络抓包"
+    },
+    "SoundCheck": {
+      "title": "检测",
+      "speakerCheck": {
+        "title": "扬声器检测",
+        "start": "开始检测",
+        "stop": "结束检测"
+      },
+      "micCheck": {
+        "title": "麦克风回环检测",
+        "start": "开始检测",
+        "stop": "结束检测",
+        "audioInputTitle": "音频输入回环检测"
+      },
+      "noiseCheck": {
+        "title": "噪声检测"
+      }
+    }
+  }
+}
