@@ -37,10 +37,9 @@
 
       <select v-model="filters.status">
         <option value="">全部状态</option>
-        <option value="draft">草稿</option>
-        <option value="testing">测试中</option>
-        <option value="released">已发布</option>
-        <option value="deprecated">已废弃</option>
+        <option value="trial">试产</option>
+        <option value="batch">批量</option>
+        <option value="sample">样品</option>
       </select>
 
       <button class="query-btn">查询</button>
@@ -177,10 +176,9 @@
           <label>
             版本状态
             <select v-model="hardwareForm.status">
-              <option value="draft">草稿</option>
-              <option value="testing">测试中</option>
-              <option value="released">已发布</option>
-              <option value="deprecated">已废弃</option>
+              <option value="trial">试产</option>
+              <option value="batch">批量</option>
+              <option value="sample">样品</option>
             </select>
           </label>
 
@@ -393,7 +391,7 @@ const hardwareForm = reactive({
   hardwareVersion: '',
   deviceType: '',
   owner: '',
-  status: 'draft',
+  status: 'trial',
   bindProjects: [],
   description: ''
 })
@@ -411,7 +409,7 @@ const hardwareVersionList = ref([
     hardwareVersion: 'HD-CRRC-HKTM.01.V1.1.0',
     deviceType: '广播控制盒',
     bindProjects: ['香港屯马项目', '波尔图二期项目'],
-    status: 'released',
+    status: 'batch',
     owner: '王宇',
     updateTime: '2026-05-10',
     zipFileName: '',
@@ -423,36 +421,36 @@ const hardwareVersionList = ref([
     hardwareVersion: 'HD-CRRC-AGTB-04.T1.1.0',
     deviceType: '客室解码板',
     bindProjects: ['阿根廷有轨项目'],
-    status: 'testing',
+    status: 'trial',
     owner: '王宇',
     updateTime: '2026-05-16',
     zipFileName: '',
     zipFileUrl: '',
-    description: '客室解码板硬件测试版本，用于车厢广播解码'
+    description: '客室解码板硬件试产版本，用于车厢广播解码'
   },
   {
     id: 3,
     hardwareVersion: 'HD-CRRC-BOGT-03.T1.1.0',
     deviceType: '乘客报警器',
     bindProjects: ['波哥大有轨项目'],
-    status: 'released',
+    status: 'batch',
     owner: '郑宇',
     updateTime: '2026-05-18',
     zipFileName: '',
     zipFileUrl: '',
-    description: '乘客报警器硬件冻结版本'
+    description: '乘客报警器硬件批量版本'
   },
   {
     id: 4,
     hardwareVersion: 'HD-CRRC-DUBAI-05.S1.1.0',
     deviceType: '编码板',
     bindProjects: ['迪拜项目'],
-    status: 'draft',
+    status: 'sample',
     owner: '郑宇',
     updateTime: '2026-05-20',
     zipFileName: '',
     zipFileUrl: '',
-    description: '编码板硬件草稿版本'
+    description: '编码板硬件样品版本'
   }
 ])
 
@@ -477,10 +475,9 @@ const filteredHardwareList = computed(() => {
 
 function getStatusText(status) {
   const map = {
-    draft: '草稿',
-    testing: '测试中',
-    released: '已发布',
-    deprecated: '已废弃'
+    trial: '试产',
+    batch: '批量',
+    sample: '样品'
   }
 
   return map[status] || status
@@ -499,7 +496,7 @@ function openCreateDialog() {
   hardwareForm.hardwareVersion = ''
   hardwareForm.deviceType = ''
   hardwareForm.owner = ''
-  hardwareForm.status = 'draft'
+  hardwareForm.status = 'trial'
   hardwareForm.bindProjects = []
   hardwareForm.description = ''
 
@@ -881,24 +878,19 @@ function exportHardwareVersions() {
   font-weight: 700;
 }
 
-.status-tag.draft {
-  background: #47556933;
-  color: #94a3b8;
-}
-
-.status-tag.testing {
+.status-tag.trial {
   background: #d9770633;
   color: #fbbf24;
 }
 
-.status-tag.released {
+.status-tag.batch {
   background: #16a34a33;
   color: #4ade80;
 }
 
-.status-tag.deprecated {
-  background: #dc262633;
-  color: #f87171;
+.status-tag.sample {
+  background: #1d4ed833;
+  color: #60a5fa;
 }
 
 .file-name {

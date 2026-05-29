@@ -15,7 +15,7 @@
     <div class="filter-card">
       <input
         v-model="filters.keyword"
-        placeholder="搜索项目名称 / 测试记录名称 / 上传人"
+        placeholder="搜索项目名称 / 测试记录名称 / 上传人 / 终端类型"
       />
 
       <select v-model="filters.projectName">
@@ -42,104 +42,98 @@
     </div>
 
     <!-- 数据表格 -->
-    <div class="table-card">
-      <table>
-        <thead>
-          <tr>
-            <th>测试记录名称</th>
-            <th>绑定项目</th>
-            <th>硬件版本</th>
-            <th>终端类型</th>
-            <th>上传人</th>
-            <th>上传时间</th>
-            <th>审核状态</th>
-            <th>审核人</th>
-            <th class="operation-col">操作</th>
-          </tr>
-        </thead>
+<div class="table-card">
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>终端类型</th>
+          <th>测试记录名称</th>
+          <th>绑定项目</th>
+          <th>硬件版本</th>
+          <th>上传人</th>
+          <th>上传时间</th>
+          <th>审核状态</th>
+          <th>审核人</th>
+          <th class="operation-col">操作</th>
+        </tr>
+      </thead>
 
-        <tbody>
-          <tr v-for="item in filteredTestList" :key="item.id">
-            <td>
-              <div class="record-name">{{ item.recordName }}</div>
-              <div class="file-name">{{ item.fileName }}</div>
-            </td>
+      <tbody>
+        <tr v-for="item in filteredTestList" :key="item.id">
+          <td>
+            <span class="device-tag">{{ item.deviceType }}</span>
+          </td>
 
-            <td>
-              <span class="project-tag">{{ item.projectName }}</span>
-            </td>
+          <td>
+            <div class="record-name">{{ item.recordName }}</div>
+            <div class="file-name">{{ item.fileName }}</div>
+          </td>
 
-            <td>
-              <span class="version-tag">{{ item.hardwareVersion }}</span>
-            </td>
+          <td>
+            <span class="project-tag">{{ item.projectName }}</span>
+          </td>
 
-            <td>
-              <div class="tag-list">
-                <span
-                  v-for="type in item.deviceTypes"
-                  :key="type"
-                  class="device-tag"
-                >
-                  {{ type }}
-                </span>
-              </div>
-            </td>
+          <td>
+            <span class="version-tag">{{ item.hardwareVersion }}</span>
+          </td>
 
-            <td>{{ item.uploader }}</td>
+          <td>{{ item.uploader }}</td>
 
-            <td class="muted">{{ item.uploadTime }}</td>
+          <td class="muted">{{ item.uploadTime }}</td>
 
-            <td>
-              <span class="status-tag" :class="item.auditStatus">
-                {{ getAuditStatusText(item.auditStatus) }}
-              </span>
-            </td>
+          <td>
+            <span class="status-tag" :class="item.auditStatus">
+              {{ getAuditStatusText(item.auditStatus) }}
+            </span>
+          </td>
 
-            <td>{{ item.auditor || '-' }}</td>
+          <td>{{ item.auditor || '-' }}</td>
 
-            <td class="operation-col">
-              <div class="action-group">
-                <button class="text-btn" @click="viewTest(item)">
-                  查看
-                </button>
+          <td class="operation-col">
+            <div class="action-group">
+              <button class="text-btn" @click="viewTest(item)">
+                查看
+              </button>
 
-                <button class="text-btn blue" @click="downloadTest(item)">
-                  下载
-                </button>
+              <button class="text-btn blue" @click="downloadTest(item)">
+                下载
+              </button>
 
-                <button
-                  v-if="item.auditStatus === 'draft' || item.auditStatus === 'rejected'"
-                  class="text-btn blue"
-                  @click="submitTest(item)"
-                >
-                  提交
-                </button>
+              <button
+                v-if="item.auditStatus === 'draft' || item.auditStatus === 'rejected'"
+                class="text-btn blue"
+                @click="submitTest(item)"
+              >
+                提交
+              </button>
 
-                <button
-                  v-if="item.auditStatus === 'submitted'"
-                  class="text-btn green"
-                  @click="auditTest(item)"
-                >
-                  审核
-                </button>
+              <button
+                v-if="item.auditStatus === 'submitted'"
+                class="text-btn green"
+                @click="auditTest(item)"
+              >
+                审核
+              </button>
 
-                <button
-                  v-if="item.auditStatus === 'draft' || item.auditStatus === 'rejected'"
-                  class="text-btn red"
-                  @click="deleteTest(item)"
-                >
-                  删除
-                </button>
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+              <button
+                v-if="item.auditStatus === 'draft' || item.auditStatus === 'rejected'"
+                class="text-btn red"
+                @click="deleteTest(item)"
+              >
+                删除
+              </button>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
 
-      <div class="table-footer">
-        共 {{ filteredTestList.length }} 条硬件测试记录
-      </div>
-    </div>
+  <div class="table-footer">
+    共 {{ filteredTestList.length }} 条硬件测试记录
+  </div>
+</div>
 
     <!-- 上传硬件测试记录弹窗 -->
     <div v-if="showUploadDialog" class="dialog-mask">
@@ -150,6 +144,20 @@
         </div>
 
         <div class="form-grid">
+          <label>
+            终端类型
+            <select v-model="uploadForm.deviceType">
+              <option value="">请选择终端类型</option>
+              <option
+                v-for="type in deviceTypeOptions"
+                :key="type"
+                :value="type"
+              >
+                {{ type }}
+              </option>
+            </select>
+          </label>
+
           <label>
             绑定项目
             <select v-model="uploadForm.projectName">
@@ -184,24 +192,6 @@
                 {{ version }}
               </option>
             </select>
-          </label>
-
-          <label class="full-row">
-            涉及终端类型
-            <div class="checkbox-list">
-              <label
-                v-for="type in deviceTypeOptions"
-                :key="type"
-                class="checkbox-item"
-              >
-                <input
-                  type="checkbox"
-                  :value="type"
-                  v-model="uploadForm.deviceTypes"
-                />
-                <span>{{ type }}</span>
-              </label>
-            </div>
           </label>
 
           <label>
@@ -271,13 +261,13 @@
           </div>
 
           <div>
-            <span>硬件版本</span>
-            <strong>{{ selectedTest.hardwareVersion }}</strong>
+            <span>终端类型</span>
+            <strong>{{ selectedTest.deviceType }}</strong>
           </div>
 
           <div>
-            <span>涉及终端类型</span>
-            <strong>{{ selectedTest.deviceTypes.join('、') }}</strong>
+            <span>硬件版本</span>
+            <strong>{{ selectedTest.hardwareVersion }}</strong>
           </div>
 
           <div>
@@ -384,7 +374,7 @@ const uploadForm = reactive({
   projectName: '',
   recordName: '',
   hardwareVersion: '',
-  deviceTypes: [],
+  deviceType: '',
   uploader: '',
   fileName: '',
   file: null,
@@ -398,7 +388,7 @@ const hardwareTestList = ref([
     projectName: '香港屯马项目',
     recordName: '香港屯马广播控制盒硬件测试记录',
     hardwareVersion: 'HD-CRRC-HKTM',
-    deviceTypes: ['广播控制盒', '乘客报警器'],
+    deviceType: '广播控制盒',
     fileName: '香港屯马硬件测试记录_V1.0.docx',
     fileUrl: '',
     uploader: '郑宇',
@@ -413,7 +403,7 @@ const hardwareTestList = ref([
     projectName: '波尔图二期项目',
     recordName: '波尔图客室解码板硬件测试记录',
     hardwareVersion: 'HD-CRRC-POR2',
-    deviceTypes: ['客室解码板'],
+    deviceType: '客室解码板',
     fileName: '波尔图硬件测试记录_V0.9.docx',
     fileUrl: '',
     uploader: '郑宇',
@@ -428,7 +418,7 @@ const hardwareTestList = ref([
     projectName: '阿根廷有轨项目',
     recordName: '阿根廷乘客报警器硬件测试记录',
     hardwareVersion: 'HD-CRRC-AGTB',
-    deviceTypes: ['乘客报警器'],
+    deviceType: '乘客报警器',
     fileName: '阿根廷硬件测试记录_草稿.docx',
     fileUrl: '',
     uploader: '郑宇',
@@ -443,7 +433,7 @@ const hardwareTestList = ref([
     projectName: '波哥大有轨项目',
     recordName: '波哥大编码板硬件测试记录',
     hardwareVersion: 'HD-CRRC-BOGT',
-    deviceTypes: ['编码板', '司机室广播控制盒', '乘客报警器'],
+    deviceType: '编码板',
     fileName: '波哥大硬件测试记录_V1.1.docx',
     fileUrl: '',
     uploader: '郑宇',
@@ -463,7 +453,7 @@ const filteredTestList = computed(() => {
       item.recordName.includes(filters.keyword) ||
       item.uploader.includes(filters.keyword) ||
       item.hardwareVersion.includes(filters.keyword) ||
-      item.deviceTypes.some(type => type.includes(filters.keyword))
+      item.deviceType.includes(filters.keyword)
 
     const projectMatch =
       !filters.projectName || item.projectName === filters.projectName
@@ -496,7 +486,7 @@ function openUploadDialog() {
   uploadForm.projectName = ''
   uploadForm.recordName = ''
   uploadForm.hardwareVersion = ''
-  uploadForm.deviceType = []
+  uploadForm.deviceType = ''
   uploadForm.uploader = ''
   uploadForm.fileName = ''
   uploadForm.file = null
@@ -525,6 +515,11 @@ function handleFileChange(event) {
 }
 
 function uploadTest() {
+  if (!uploadForm.deviceType) {
+    alert('请选择终端类型')
+    return
+  }
+
   if (!uploadForm.projectName) {
     alert('请选择硬件测试记录绑定项目')
     return
@@ -540,11 +535,6 @@ function uploadTest() {
     return
   }
 
-  if (uploadForm.deviceTypes.length === 0) {
-    alert('请至少勾选一个终端类型')
-    return
-  }
-
   if (!uploadForm.file) {
     alert('请上传 Word 硬件测试记录文档')
     return
@@ -555,7 +545,7 @@ function uploadTest() {
     projectName: uploadForm.projectName,
     recordName: uploadForm.recordName,
     hardwareVersion: uploadForm.hardwareVersion,
-    deviceTypes: [...uploadForm.deviceTypes],
+    deviceType: uploadForm.deviceType,
     fileName: uploadForm.fileName,
     fileUrl: uploadForm.fileUrl,
     uploader: uploadForm.uploader || '当前用户',
@@ -643,43 +633,6 @@ function deleteTest(item) {
   font-size: 26px;
   font-weight: 800;
 }
-
-.tag-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.checkbox-list {
-  background: #020617;
-  border: 1px solid #334155;
-  border-radius: 8px;
-  padding: 12px;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-}
-
-.checkbox-item {
-  display: flex !important;
-  flex-direction: row !important;
-  align-items: center;
-  gap: 6px !important;
-  font-size: 13px;
-  color: #cbd5e1;
-}
-
-@media (max-width: 960px) {
-  .checkbox-list {
-    grid-template-columns: 1fr;
-  }
-}
-
-.checkbox-item input {
-  width: 14px;
-  height: 14px;
-}
-
 
 .page-header p {
   margin: 8px 0 0;
@@ -797,8 +750,43 @@ function deleteTest(item) {
   overflow: hidden;
 }
 
+.table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.table-wrapper::-webkit-scrollbar {
+  height: 10px;
+}
+
+.table-wrapper::-webkit-scrollbar-track {
+  background: #020617;
+  border-radius: 999px;
+}
+
+.table-wrapper::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 999px;
+  border: 2px solid #020617;
+}
+
+.table-wrapper::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+.table-wrapper::-webkit-scrollbar-button {
+  display: none;
+}
+
+.table-wrapper {
+  scrollbar-width: thin;
+  scrollbar-color: #334155 #020617;
+}
+
 .table-card table {
   width: 100%;
+  min-width: 1200px;
   border-collapse: collapse;
   table-layout: fixed;
 }
@@ -1055,10 +1043,6 @@ function deleteTest(item) {
 @media (max-width: 960px) {
   .filter-card {
     grid-template-columns: 1fr;
-  }
-
-  .table-card {
-    overflow-x: auto;
   }
 
   .table-card table {

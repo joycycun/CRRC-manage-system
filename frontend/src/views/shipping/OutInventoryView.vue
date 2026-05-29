@@ -1,24 +1,23 @@
 <template>
   <div class="page">
-    <!-- 页面头部 -->
     <div class="page-header">
       <div>
-        <h1>库存情况管理</h1>
+        <h1>出库记录管理</h1>
       </div>
     </div>
 
     <!-- 统计卡片 -->
     <div class="summary-grid two-col">
-      <div class="summary-card">
-        <span>当前库存总数</span>
-        <strong>{{ totalCount }}</strong>
-        <p>当前仍在库存中的设备</p>
+      <div class="summary-card green">
+        <span>本月出库数量</span>
+        <strong>{{ currentMonthOutboundCount }}</strong>
+        <p>本月已进入出库记录的设备数量</p>
       </div>
 
-      <div class="summary-card green">
-        <span>当月出库数量</span>
-        <strong>{{ currentMonthOutboundCount }}</strong>
-        <p>本月已确认出库的设备数量</p>
+      <div class="summary-card blue">
+        <span>发货数量</span>
+        <strong>{{ shippingCount }}</strong>
+        <p>已从出库记录生成发货批次的设备数量</p>
       </div>
     </div>
 
@@ -26,7 +25,7 @@
     <div class="filter-card">
       <input
         v-model="filters.keyword"
-        placeholder="搜索 SN / MAC / 软件版本 / 硬件版本"
+        placeholder="搜索 SN / MAC / 软件版本 / 硬件版本 / 操作人"
       />
 
       <select v-model="filters.deviceType">
@@ -44,39 +43,20 @@
       <button class="reset-btn" @click="resetFilters">重置</button>
     </div>
 
-    <!-- 终端类型库存统计 -->
-    <div class="type-card">
-      <div class="section-title">
-        <h3>终端类型库存</h3>
-        <span>按终端类型统计当前库存数量</span>
-      </div>
-
-      <div class="type-grid">
-        <div
-          v-for="item in deviceTypeSummary"
-          :key="item.deviceType"
-          class="type-item"
-        >
-          <span>{{ item.deviceType }}</span>
-          <strong>{{ item.count }}</strong>
-        </div>
-      </div>
-    </div>
-
-    <!-- 当前库存表格 -->
+    <!-- 出库表格 -->
     <div class="table-card">
       <div class="table-card-header">
         <div>
-          <h3>当前库存列表</h3>
-          <span>已勾选 {{ selectedIds.length }} 条</span>
+          <h3>出库列表</h3>
+          <span>已勾选 {{ selectedOutboundIds.length }} 条，共 {{ filteredOutboundList.length }} 条</span>
         </div>
 
         <button
           class="ship-action-btn"
-          :disabled="selectedIds.length === 0"
-          @click="moveSelectedToOutbound"
+          :disabled="selectedOutboundIds.length === 0"
+          @click="goToShippingBatch"
         >
-          勾选出库
+          生成发货批次
         </button>
       </div>
 
@@ -97,17 +77,20 @@
               <th>软件版本</th>
               <th>硬件版本</th>
               <th>入库时间</th>
+              <th>出库时间</th>
+              <th>操作人</th>
+              <th>发货状态</th>
               <th class="operation-col">操作</th>
             </tr>
           </thead>
 
           <tbody>
-            <tr v-for="item in filteredInventoryList" :key="item.id">
+            <tr v-for="item in filteredOutboundList" :key="item.outboundId">
               <td class="check-col">
                 <input
                   type="checkbox"
-                  :value="item.id"
-                  v-model="selectedIds"
+                  :value="item.outboundId"
+                  v-model="selectedOutboundIds"
                 />
               </td>
 
@@ -140,11 +123,37 @@
               </td>
 
               <td class="muted">{{ item.inTime }}</td>
+              <td class="muted">{{ item.outboundTime }}</td>
+
+              <td>
+                <span class="normal-text" :title="item.operator">
+                  {{ item.operator }}
+                </span>
+              </td>
+
+              <td>
+                <span
+                  class="ship-status-tag"
+                  :class="item.outboundStatus === 'shipping' ? 'shipping' : 'pending'"
+                >
+                  {{ getOutboundStatusText(item.outboundStatus) }}
+                </span>
+              </td>
 
               <td class="operation-col">
-                <button class="text-btn blue" @click="viewInventory(item)">
-                  查看
-                </button>
+                <div class="action-group">
+                  <button class="text-btn" @click="viewOutbound(item)">
+                    查看
+                  </button>
+
+                  <button class="text-btn green" @click="returnToInventory(item)">
+                    返回入库
+                  </button>
+
+                  <button class="text-btn red" @click="deleteOutbound(item)">
+                    删除
+                  </button>
+                </div>
               </td>
             </tr>
           </tbody>
@@ -152,67 +161,76 @@
       </div>
 
       <div class="table-footer">
-        共 {{ filteredInventoryList.length }} 条库存设备记录。勾选设备后点击“勾选出库”，设备会自动进入 OutInventoryView.vue。
+        勾选需要发货的出库设备，点击“生成发货批次”后会自动跳转到发货管理页面。
       </div>
     </div>
 
-    <!-- 查看库存详情弹窗 -->
-    <div v-if="selectedInventory" class="dialog-mask">
+    <!-- 查看详情弹窗 -->
+    <div v-if="selectedOutbound" class="dialog-mask">
       <div class="dialog large-dialog">
         <div class="dialog-header">
-          <h3>库存设备详情</h3>
-          <button @click="selectedInventory = null">×</button>
+          <h3>出库设备详情</h3>
+          <button @click="selectedOutbound = null">×</button>
         </div>
 
         <div class="detail-card">
           <div>
             <span>终端类型</span>
-            <strong>{{ selectedInventory.deviceType }}</strong>
+            <strong>{{ selectedOutbound.deviceType }}</strong>
           </div>
 
           <div>
             <span>SN序列号</span>
-            <strong>{{ selectedInventory.sn }}</strong>
+            <strong>{{ selectedOutbound.sn }}</strong>
           </div>
 
           <div>
             <span>MAC地址</span>
-            <strong>{{ selectedInventory.macAddress }}</strong>
+            <strong>{{ selectedOutbound.macAddress }}</strong>
           </div>
 
           <div>
             <span>软件版本</span>
-            <strong>{{ selectedInventory.softwareVersion }}</strong>
+            <strong>{{ selectedOutbound.softwareVersion }}</strong>
           </div>
 
           <div>
             <span>硬件版本</span>
-            <strong>{{ selectedInventory.hardwareVersion }}</strong>
+            <strong>{{ selectedOutbound.hardwareVersion }}</strong>
           </div>
 
           <div>
             <span>入库时间</span>
-            <strong>{{ selectedInventory.inTime }}</strong>
+            <strong>{{ selectedOutbound.inTime }}</strong>
           </div>
 
           <div>
-            <span>库存状态</span>
-            <strong>{{ getInventoryStatusText(selectedInventory.inventoryStatus) }}</strong>
+            <span>出库时间</span>
+            <strong>{{ selectedOutbound.outboundTime }}</strong>
           </div>
 
           <div>
-            <span>最后更新时间</span>
-            <strong>{{ selectedInventory.updateTime }}</strong>
+            <span>操作人</span>
+            <strong>{{ selectedOutbound.operator }}</strong>
+          </div>
+
+          <div>
+            <span>发货状态</span>
+            <strong>{{ getOutboundStatusText(selectedOutbound.outboundStatus) }}</strong>
           </div>
         </div>
 
         <div class="remark-card">
-          <span>库存说明</span>
-          <p>{{ selectedInventory.remark || '暂无说明' }}</p>
+          <span>出库说明</span>
+          <p>{{ selectedOutbound.remark || '暂无说明' }}</p>
         </div>
 
         <div class="dialog-footer">
-          <button class="primary-btn" @click="selectedInventory = null">
+          <button class="green-btn" @click="returnToInventory(selectedOutbound)">
+            返回入库
+          </button>
+
+          <button class="primary-btn" @click="selectedOutbound = null">
             关闭
           </button>
         </div>
@@ -225,19 +243,19 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
+const router = useRouter()
+
 const STORAGE_INVENTORY_KEY = 'inventoryList'
 const STORAGE_OUTBOUND_KEY = 'outInventoryList'
-
-const router = useRouter()
+const STORAGE_PENDING_SHIPPING_KEY = 'pendingShippingDevices'
 
 const filters = reactive({
   keyword: '',
-  deviceType: '',
-  inventoryStatus: ''
+  deviceType: ''
 })
 
-const selectedInventory = ref(null)
-const selectedIds = ref([])
+const selectedOutbound = ref(null)
+const selectedOutboundIds = ref([])
 
 const deviceTypeOptions = [
   '司机室控制盒',
@@ -246,165 +264,6 @@ const deviceTypeOptions = [
   '噪声检测',
   '编码板',
   '功放板'
-]
-
-const defaultInventoryList = [
-  {
-    id: 1,
-    deviceType: '司机室控制盒',
-    sn: 'DCCU-202605100001',
-    macAddress: '00:11:22:33:44:01',
-    softwareVersion: 'SW-DCCU.V1.2.0',
-    hardwareVersion: 'HD-DCCU.V1.1.0',
-    inventoryStatus: 'ready',
-    inTime: '2026-05-10',
-    updateTime: '2026-05-11',
-    remark: '已完成烧录和出厂测试，可发货。'
-  },
-  {
-    id: 2,
-    deviceType: '司机室控制盒',
-    sn: 'DCCU-202605100002',
-    macAddress: '00:11:22:33:44:02',
-    softwareVersion: 'SW-DCCU.V1.2.0',
-    hardwareVersion: 'HD-DCCU.V1.1.0',
-    inventoryStatus: 'ready',
-    inTime: '2026-05-10',
-    updateTime: '2026-05-11',
-    remark: '已完成烧录和出厂测试，可发货。'
-  },
-  {
-    id: 3,
-    deviceType: '司机室控制盒',
-    sn: 'DCCU-202605100003',
-    macAddress: '00:11:22:33:44:03',
-    softwareVersion: 'SW-DCCU.V1.2.0',
-    hardwareVersion: 'HD-DCCU.V1.1.0',
-    inventoryStatus: 'ready',
-    inTime: '2026-05-10',
-    updateTime: '2026-05-10'
-  },
-  {
-    id: 4,
-    deviceType: '解码板',
-    sn: 'DEC-202605110001',
-    macAddress: '00:11:22:55:66:01',
-    softwareVersion: 'SW-DECODER.V1.0.3',
-    hardwareVersion: 'HD-DECODER.V1.1.0',
-    inventoryStatus: 'ready',
-    inTime: '2026-05-11',
-    updateTime: '2026-05-12'
-  },
-  {
-    id: 5,
-    deviceType: '解码板',
-    sn: 'DEC-202605110002',
-    macAddress: '00:11:22:55:66:02',
-    softwareVersion: 'SW-DECODER.V1.0.3',
-    hardwareVersion: 'HD-DECODER.V1.1.0',
-    inventoryStatus: 'ready',
-    inTime: '2026-05-11',
-    updateTime: '2026-05-12'
-  },
-  {
-    id: 6,
-    deviceType: '解码板',
-    sn: 'DEC-202605110003',
-    macAddress: '00:11:22:55:66:03',
-    softwareVersion: 'SW-DECODER.V1.0.2',
-    hardwareVersion: 'HD-DECODER.V1.0.0',
-    inventoryStatus: 'ready',
-    inTime: '2026-05-11',
-    updateTime: '2026-05-13'
-  },
-  {
-    id: 7,
-    deviceType: '司机提醒单元',
-    sn: 'DRU-202605120001',
-    macAddress: '00:11:22:77:88:01',
-    softwareVersion: 'SW-DRU.V1.0.0',
-    hardwareVersion: 'HD-DRU.V1.0.0',
-    inventoryStatus: 'ready',
-    inTime: '2026-05-12',
-    updateTime: '2026-05-13'
-  },
-  {
-    id: 8,
-    deviceType: '司机提醒单元',
-    sn: 'DRU-202605120002',
-    macAddress: '00:11:22:77:88:02',
-    softwareVersion: 'SW-DRU.V1.0.0',
-    hardwareVersion: 'HD-DRU.V1.0.0',
-    inventoryStatus: 'waiting_burn',
-    inTime: '2026-05-12',
-    updateTime: '2026-05-12'
-  },
-  {
-    id: 9,
-    deviceType: '噪声检测',
-    sn: 'NOISE-202605130001',
-    macAddress: '00:11:22:99:AA:01',
-    softwareVersion: 'SW-NOISE.V1.1.0',
-    hardwareVersion: 'HD-NOISE.V1.0.1',
-    inventoryStatus: 'ready',
-    inTime: '2026-05-13',
-    updateTime: '2026-05-14'
-  },
-  {
-    id: 10,
-    deviceType: '噪声检测',
-    sn: 'NOISE-202605130002',
-    macAddress: '00:11:22:99:AA:02',
-    softwareVersion: 'SW-NOISE.V1.1.0',
-    hardwareVersion: 'HD-NOISE.V1.0.1',
-    inventoryStatus: 'repair',
-    inTime: '2026-05-13',
-    updateTime: '2026-05-15'
-  },
-  {
-    id: 11,
-    deviceType: '编码板',
-    sn: 'ENC-202605140001',
-    macAddress: '00:11:22:BB:CC:01',
-    softwareVersion: 'SW-ENCODER.V1.3.0',
-    hardwareVersion: 'HD-ENCODER.V1.2.0',
-    inventoryStatus: 'ready',
-    inTime: '2026-05-14',
-    updateTime: '2026-05-15'
-  },
-  {
-    id: 12,
-    deviceType: '编码板',
-    sn: 'ENC-202605140002',
-    macAddress: '00:11:22:BB:CC:02',
-    softwareVersion: 'SW-ENCODER.V1.3.0',
-    hardwareVersion: 'HD-ENCODER.V1.2.0',
-    inventoryStatus: 'repair',
-    inTime: '2026-05-14',
-    updateTime: '2026-05-14'
-  },
-  {
-    id: 13,
-    deviceType: '功放板',
-    sn: 'AMP-202605150001',
-    macAddress: '00:11:22:DD:EE:01',
-    softwareVersion: 'SW-AMP.V1.0.5',
-    hardwareVersion: 'HD-AMP.V1.0.2',
-    inventoryStatus: 'ready',
-    inTime: '2026-05-15',
-    updateTime: '2026-05-16'
-  },
-  {
-    id: 14,
-    deviceType: '功放板',
-    sn: 'AMP-202605150002',
-    macAddress: '00:11:22:DD:EE:02',
-    softwareVersion: 'SW-AMP.V1.0.5',
-    hardwareVersion: 'HD-AMP.V1.0.2',
-    inventoryStatus: 'ready',
-    inTime: '2026-05-15',
-    updateTime: '2026-05-16'
-  }
 ]
 
 function readStorageList(key, fallback) {
@@ -421,7 +280,7 @@ function saveStorageList(key, value) {
   localStorage.setItem(key, JSON.stringify(value))
 }
 
-const inventoryList = ref(readStorageList(STORAGE_INVENTORY_KEY, defaultInventoryList))
+const inventoryList = ref(readStorageList(STORAGE_INVENTORY_KEY, []))
 const outboundList = ref(readStorageList(STORAGE_OUTBOUND_KEY, []))
 
 watch(
@@ -440,27 +299,23 @@ watch(
   { deep: true }
 )
 
-const filteredInventoryList = computed(() => {
-  return inventoryList.value.filter(item => {
+const filteredOutboundList = computed(() => {
+  return outboundList.value.filter(item => {
     const keywordMatch =
       !filters.keyword ||
       item.sn.includes(filters.keyword) ||
       item.macAddress.includes(filters.keyword) ||
       item.softwareVersion.includes(filters.keyword) ||
       item.hardwareVersion.includes(filters.keyword) ||
-      item.deviceType.includes(filters.keyword)
+      item.deviceType.includes(filters.keyword) ||
+      item.operator.includes(filters.keyword)
 
     const deviceTypeMatch =
       !filters.deviceType || item.deviceType === filters.deviceType
 
-    const inventoryStatusMatch =
-      !filters.inventoryStatus || item.inventoryStatus === filters.inventoryStatus
-
-    return keywordMatch && deviceTypeMatch && inventoryStatusMatch
+    return keywordMatch && deviceTypeMatch
   })
 })
-
-const totalCount = computed(() => inventoryList.value.length)
 
 const currentMonthOutboundCount = computed(() => {
   const currentMonth = new Date().toISOString().slice(0, 7)
@@ -470,98 +325,121 @@ const currentMonthOutboundCount = computed(() => {
   }).length
 })
 
-const deviceTypeSummary = computed(() => {
-  return deviceTypeOptions.map(type => {
-    return {
-      deviceType: type,
-      count: inventoryList.value.filter(item => item.deviceType === type).length
-    }
-  })
+const shippingCount = computed(() => {
+  return outboundList.value.filter(item => item.outboundStatus === 'shipping').length
 })
 
 const isAllSelected = computed(() => {
   return (
-    filteredInventoryList.value.length > 0 &&
-    filteredInventoryList.value.every(item => selectedIds.value.includes(item.id))
+    filteredOutboundList.value.length > 0 &&
+    filteredOutboundList.value.every(item =>
+      selectedOutboundIds.value.includes(item.outboundId)
+    )
   )
 })
 
-function getCurrentUserName() {
-  return (
-    localStorage.getItem('username') ||
-    localStorage.getItem('accountName') ||
-    localStorage.getItem('realName') ||
-    '当前用户'
-  )
-}
-
-function getInventoryStatusText(status) {
+function getOutboundStatusText(status) {
   const map = {
-    ready: '可发货',
-    waiting_burn: '待烧录',
-    repair: '返修库存',
-    testing: '出厂测试中'
+    pending: '待生成发货',
+    shipping: '已生成发货'
   }
 
-  return map[status] || status
+  return map[status] || '待生成发货'
 }
 
 function resetFilters() {
   filters.keyword = ''
   filters.deviceType = ''
-  filters.inventoryStatus = ''
-}
-
-function viewInventory(item) {
-  selectedInventory.value = item
 }
 
 function toggleSelectAll(event) {
   if (event.target.checked) {
-    selectedIds.value = filteredInventoryList.value.map(item => item.id)
+    selectedOutboundIds.value = filteredOutboundList.value.map(item => item.outboundId)
   } else {
-    selectedIds.value = []
+    selectedOutboundIds.value = []
   }
 }
 
-function moveSelectedToOutbound() {
-  if (selectedIds.value.length === 0) {
-    alert('请先勾选需要出库的设备')
+function goToShippingBatch() {
+  if (selectedOutboundIds.value.length === 0) {
+    alert('请先勾选需要生成发货批次的出库设备')
     return
   }
 
-  const ok = confirm(`确认将已选 ${selectedIds.value.length} 台设备加入出库列表吗？`)
-  if (!ok) return
-
-  const today = new Date().toISOString().slice(0, 10)
-  const operator = getCurrentUserName()
-
-  const selectedItems = inventoryList.value.filter(item =>
-    selectedIds.value.includes(item.id)
+  const selectedDevices = outboundList.value.filter(item =>
+    selectedOutboundIds.value.includes(item.outboundId)
   )
 
-  const outboundItems = selectedItems.map((item, index) => {
-    return {
-      ...item,
-      outboundId: Date.now() + index,
-      outboundTime: today,
-      operator,
-      outboundStatus: 'pending'
+  localStorage.setItem(
+    STORAGE_PENDING_SHIPPING_KEY,
+    JSON.stringify(selectedDevices)
+  )
+
+  outboundList.value = outboundList.value.map(item => {
+    if (selectedOutboundIds.value.includes(item.outboundId)) {
+      return {
+        ...item,
+        outboundStatus: 'shipping'
+      }
     }
+
+    return item
   })
 
-  outboundList.value.unshift(...outboundItems)
+  selectedOutboundIds.value = []
 
-  inventoryList.value = inventoryList.value.filter(
-    item => !selectedIds.value.includes(item.id)
+  alert('已选择出库设备，即将跳转到发货批次管理页面')
+
+  router.push('/shipping/batch')
+}
+
+function viewOutbound(item) {
+  selectedOutbound.value = item
+}
+
+function returnToInventory(item) {
+  const ok = confirm(`确认将设备【${item.sn}】返回库存吗？`)
+  if (!ok) return
+
+  inventoryList.value.unshift({
+    id: Date.now(),
+    deviceType: item.deviceType,
+    sn: item.sn,
+    macAddress: item.macAddress,
+    softwareVersion: item.softwareVersion,
+    hardwareVersion: item.hardwareVersion,
+    inventoryStatus: 'ready',
+    inTime: item.inTime,
+    updateTime: new Date().toISOString().slice(0, 10),
+    remark: '该设备由出库记录返回库存。'
+  })
+
+  outboundList.value = outboundList.value.filter(
+    record => record.outboundId !== item.outboundId
   )
 
-  selectedIds.value = []
-  selectedInventory.value = null
+  selectedOutboundIds.value = selectedOutboundIds.value.filter(
+    id => id !== item.outboundId
+  )
 
-  alert('已加入出库列表，即将跳转到出库管理界面')
+  selectedOutbound.value = null
 
-  router.push('/inventory/out')
+  alert('设备已返回库存')
+}
+
+function deleteOutbound(item) {
+  const ok = confirm(`确认删除出库记录【${item.sn}】吗？删除后不会返回库存。`)
+  if (!ok) return
+
+  outboundList.value = outboundList.value.filter(
+    record => record.outboundId !== item.outboundId
+  )
+
+  selectedOutboundIds.value = selectedOutboundIds.value.filter(
+    id => id !== item.outboundId
+  )
+
+  selectedOutbound.value = null
 }
 </script>
 
@@ -622,55 +500,35 @@ function moveSelectedToOutbound() {
   color: #4ade80;
 }
 
-.type-card {
-  background: #0f172a;
-  border: 1px solid #1e293b;
-  border-radius: 14px;
-  padding: 18px;
-  margin-bottom: 20px;
+.summary-card.blue strong {
+  color: #60a5fa;
 }
 
-.section-title {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
+.check-col {
+  width: 56px;
+  text-align: center !important;
 }
 
-.section-title h3 {
-  margin: 0;
-  font-size: 16px;
-  color: #f8fafc;
+.ship-action-btn {
+  height: 34px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 8px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.35);
 }
 
-.section-title span {
-  color: #64748b;
-  font-size: 12px;
+.ship-action-btn:hover {
+  background: #1d4ed8;
 }
 
-.type-grid {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 12px;
-}
-
-.type-item {
-  background: #020617;
-  border: 1px solid #1e293b;
-  border-radius: 10px;
-  padding: 14px;
-}
-
-.type-item span {
-  display: block;
-  color: #94a3b8;
-  font-size: 12px;
-  margin-bottom: 8px;
-}
-
-.type-item strong {
-  color: #f8fafc;
-  font-size: 22px;
+.ship-action-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .primary-btn,
@@ -702,6 +560,18 @@ function moveSelectedToOutbound() {
   border: 1px solid #334155;
   background: #1e293b;
   color: #cbd5e1;
+}
+
+.green-btn {
+  border: 1px solid #166534;
+  background: #052e16;
+  color: #86efac;
+}
+
+.red-btn {
+  border: 1px solid #7f1d1d;
+  background: #450a0a;
+  color: #fca5a5;
 }
 
 .filter-card {
@@ -792,7 +662,7 @@ function moveSelectedToOutbound() {
 
 .version-table {
   width: 100%;
-  min-width: 1120px;
+  min-width: 1420px;
   border-collapse: collapse;
   table-layout: fixed;
 }
@@ -825,14 +695,18 @@ function moveSelectedToOutbound() {
   overflow: hidden;
 }
 
-.check-col {
-  width: 56px;
-  text-align: center !important;
+.operation-col {
+  width: 250px;
+  text-align: right !important;
 }
 
-.operation-col {
-  width: 120px;
-  text-align: right !important;
+.action-group {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
 }
 
 .device-tag {
@@ -887,7 +761,8 @@ function moveSelectedToOutbound() {
   white-space: nowrap;
 }
 
-.mac-text {
+.mac-text,
+.normal-text {
   display: inline-block;
   max-width: 160px;
   color: #cbd5e1;
@@ -898,12 +773,36 @@ function moveSelectedToOutbound() {
   white-space: nowrap;
 }
 
+.normal-text {
+  font-family: inherit;
+  font-size: 13px;
+}
+
 .version-cell {
   overflow: hidden;
 }
 
 .muted {
   color: #94a3b8 !important;
+}
+
+.ship-status-tag {
+  display: inline-block;
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.ship-status-tag.pending {
+  background: #47556933;
+  color: #94a3b8;
+}
+
+.ship-status-tag.shipping {
+  background: #1d4ed833;
+  color: #60a5fa;
 }
 
 .text-btn {
@@ -919,36 +818,18 @@ function moveSelectedToOutbound() {
   color: #fff;
 }
 
-.text-btn.blue {
-  color: #60a5fa;
+.text-btn.green {
+  color: #4ade80;
+}
+
+.text-btn.red {
+  color: #f87171;
 }
 
 .table-footer {
   padding: 12px 16px;
   color: #64748b;
   font-size: 12px;
-}
-
-.ship-action-btn {
-  height: 34px;
-  padding: 0 16px;
-  border: none;
-  border-radius: 8px;
-  background: #2563eb;
-  color: #fff;
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.35);
-}
-
-.ship-action-btn:hover {
-  background: #1d4ed8;
-}
-
-.ship-action-btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
 }
 
 .dialog-mask {
@@ -1045,24 +926,17 @@ function moveSelectedToOutbound() {
   gap: 12px;
 }
 
-@media (max-width: 1200px) {
-  .type-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
-}
-
 @media (max-width: 960px) {
   .filter-card {
     grid-template-columns: 1fr;
   }
 
-  .summary-grid,
-  .type-grid {
+  .summary-grid {
     grid-template-columns: 1fr;
   }
 
   .version-table {
-    min-width: 1120px;
+    min-width: 1420px;
   }
 
   .detail-card {

@@ -24,17 +24,6 @@
         placeholder="搜索项目 / 终端 / SN / MAC / 维修人 / 故障现象"
       />
 
-      <select v-model="filters.projectName">
-        <option value="">全部项目</option>
-        <option
-          v-for="project in projectOptions"
-          :key="project"
-          :value="project"
-        >
-          {{ project }}
-        </option>
-      </select>
-
       <select v-model="filters.deviceType">
         <option value="">全部终端类型</option>
         <option
@@ -46,12 +35,15 @@
         </option>
       </select>
 
-      <select v-model="filters.repairStatus">
-        <option value="">全部维修状态</option>
-        <option value="pending">待维修</option>
-        <option value="repairing">维修中</option>
-        <option value="finished">维修完成</option>
-        <option value="failed">维修失败</option>
+      <select v-model="filters.projectName">
+        <option value="">全部项目</option>
+        <option
+          v-for="project in projectOptions"
+          :key="project"
+          :value="project"
+        >
+          {{ project }}
+        </option>
       </select>
 
       <button class="query-btn">查询</button>
@@ -71,12 +63,11 @@
         <table class="version-table">
           <thead>
             <tr>
-              <th>绑定项目</th>
               <th>终端类型</th>
+              <th>绑定项目</th>
               <th>SN序列号</th>
               <th>MAC地址</th>
               <th>故障现象</th>
-              <th>维修状态</th>
               <th>维修人</th>
               <th>维修时间</th>
               <th class="operation-col">操作</th>
@@ -86,11 +77,11 @@
           <tbody>
             <tr v-for="item in filteredRepairList" :key="item.id">
               <td>
-                <span class="project-tag">{{ item.projectName }}</span>
+                <span class="device-tag">{{ item.deviceType }}</span>
               </td>
 
               <td>
-                <span class="device-tag">{{ item.deviceType }}</span>
+                <span class="project-tag">{{ item.projectName }}</span>
               </td>
 
               <td>
@@ -111,12 +102,6 @@
                 </span>
               </td>
 
-              <td>
-                <span class="status-tag" :class="item.repairStatus">
-                  {{ getRepairStatusText(item.repairStatus) }}
-                </span>
-              </td>
-
               <td>{{ item.repairUser }}</td>
 
               <td class="muted">{{ item.repairTime }}</td>
@@ -131,19 +116,7 @@
                     修改
                   </button>
 
-                  <button
-                    v-if="item.repairStatus === 'failed'"
-                    class="text-btn red"
-                    @click="deleteRepair(item)"
-                  >
-                    删除错误记录
-                  </button>
-
-                  <button
-                    v-else
-                    class="text-btn red"
-                    @click="deleteRepair(item)"
-                  >
+                  <button class="text-btn red" @click="deleteRepair(item)">
                     删除
                   </button>
                 </div>
@@ -153,8 +126,7 @@
         </table>
       </div>
 
-      <div class="table-footer">
-      </div>
+      <div class="table-footer"></div>
     </div>
 
     <!-- 新增 / 修改维修记录弹窗 -->
@@ -167,20 +139,6 @@
 
         <div class="form-grid">
           <label>
-            绑定项目
-            <select v-model="repairForm.projectName">
-              <option value="">请选择项目</option>
-              <option
-                v-for="project in projectOptions"
-                :key="project"
-                :value="project"
-              >
-                {{ project }}
-              </option>
-            </select>
-          </label>
-
-          <label>
             终端类型
             <select v-model="repairForm.deviceType">
               <option value="">请选择终端类型</option>
@@ -190,6 +148,20 @@
                 :value="type"
               >
                 {{ type }}
+              </option>
+            </select>
+          </label>
+
+          <label>
+            绑定项目
+            <select v-model="repairForm.projectName">
+              <option value="">请选择项目</option>
+              <option
+                v-for="project in projectOptions"
+                :key="project"
+                :value="project"
+              >
+                {{ project }}
               </option>
             </select>
           </label>
@@ -208,16 +180,6 @@
               v-model="repairForm.macAddress"
               placeholder="例如：00:11:22:33:44:01"
             />
-          </label>
-
-          <label>
-            维修状态
-            <select v-model="repairForm.repairStatus">
-              <option value="pending">待维修</option>
-              <option value="repairing">维修中</option>
-              <option value="finished">维修完成</option>
-              <option value="failed">维修失败</option>
-            </select>
           </label>
 
           <label>
@@ -293,13 +255,13 @@
 
         <div class="detail-card">
           <div>
-            <span>绑定项目</span>
-            <strong>{{ selectedRepair.projectName }}</strong>
+            <span>终端类型</span>
+            <strong>{{ selectedRepair.deviceType }}</strong>
           </div>
 
           <div>
-            <span>终端类型</span>
-            <strong>{{ selectedRepair.deviceType }}</strong>
+            <span>绑定项目</span>
+            <strong>{{ selectedRepair.projectName }}</strong>
           </div>
 
           <div>
@@ -310,11 +272,6 @@
           <div>
             <span>MAC地址</span>
             <strong>{{ selectedRepair.macAddress }}</strong>
-          </div>
-
-          <div>
-            <span>维修状态</span>
-            <strong>{{ getRepairStatusText(selectedRepair.repairStatus) }}</strong>
           </div>
 
           <div>
@@ -373,8 +330,7 @@ import { computed, reactive, ref } from 'vue'
 const filters = reactive({
   keyword: '',
   projectName: '',
-  deviceType: '',
-  repairStatus: ''
+  deviceType: ''
 })
 
 const showEditDialog = ref(false)
@@ -405,7 +361,6 @@ const repairForm = reactive({
   sn: '',
   macAddress: '',
   faultDesc: '',
-  repairStatus: 'pending',
   repairUser: '',
   repairTime: '',
   repairMethod: '返厂维修',
@@ -421,7 +376,6 @@ const repairList = ref([
     sn: 'DCCU-202605100001',
     macAddress: '00:11:22:33:44:01',
     faultDesc: '设备上电后无音频输出',
-    repairStatus: 'finished',
     repairUser: '售后人员',
     repairTime: '2026-05-10',
     repairMethod: '返厂维修',
@@ -436,7 +390,6 @@ const repairList = ref([
     sn: 'DEC-202605110001',
     macAddress: '00:11:22:55:66:01',
     faultDesc: '客室广播偶发解码失败',
-    repairStatus: 'repairing',
     repairUser: '维修人员',
     repairTime: '2026-05-16',
     repairMethod: '现场维修',
@@ -451,7 +404,6 @@ const repairList = ref([
     sn: 'DRU-202605120001',
     macAddress: '00:11:22:77:88:01',
     faultDesc: '提醒音播放异常',
-    repairStatus: 'pending',
     repairUser: '售后人员',
     repairTime: '2026-05-18',
     repairMethod: '远程指导维修',
@@ -466,7 +418,6 @@ const repairList = ref([
     sn: 'ENC-202605140001',
     macAddress: '00:11:22:BB:CC:01',
     faultDesc: '远程维修失败，设备无法连接',
-    repairStatus: 'failed',
     repairUser: '售后人员',
     repairTime: '2026-05-20',
     repairMethod: '远程指导维修',
@@ -494,41 +445,25 @@ const filteredRepairList = computed(() => {
     const deviceTypeMatch =
       !filters.deviceType || item.deviceType === filters.deviceType
 
-    const statusMatch =
-      !filters.repairStatus || item.repairStatus === filters.repairStatus
-
-    return keywordMatch && projectMatch && deviceTypeMatch && statusMatch
+    return keywordMatch && projectMatch && deviceTypeMatch
   })
 })
-
-function getRepairStatusText(status) {
-  const map = {
-    pending: '待维修',
-    repairing: '维修中',
-    finished: '维修完成',
-    failed: '维修失败'
-  }
-
-  return map[status] || status
-}
 
 function resetFilters() {
   filters.keyword = ''
   filters.projectName = ''
   filters.deviceType = ''
-  filters.repairStatus = ''
 }
 
 function openCreateDialog() {
   editMode.value = 'create'
   currentEditRepair.value = null
 
-  repairForm.projectName = ''
   repairForm.deviceType = ''
+  repairForm.projectName = ''
   repairForm.sn = ''
   repairForm.macAddress = ''
   repairForm.faultDesc = ''
-  repairForm.repairStatus = 'pending'
   repairForm.repairUser = ''
   repairForm.repairTime = new Date().toISOString().slice(0, 10)
   repairForm.repairMethod = '返厂维修'
@@ -542,12 +477,11 @@ function openEditDialog(item) {
   editMode.value = 'edit'
   currentEditRepair.value = item
 
-  repairForm.projectName = item.projectName
   repairForm.deviceType = item.deviceType
+  repairForm.projectName = item.projectName
   repairForm.sn = item.sn
   repairForm.macAddress = item.macAddress
   repairForm.faultDesc = item.faultDesc
-  repairForm.repairStatus = item.repairStatus
   repairForm.repairUser = item.repairUser
   repairForm.repairTime = item.repairTime
   repairForm.repairMethod = item.repairMethod
@@ -558,13 +492,13 @@ function openEditDialog(item) {
 }
 
 function saveRepair() {
-  if (!repairForm.projectName) {
-    alert('请选择绑定项目')
+  if (!repairForm.deviceType) {
+    alert('请选择终端类型')
     return
   }
 
-  if (!repairForm.deviceType) {
-    alert('请选择终端设备')
+  if (!repairForm.projectName) {
+    alert('请选择绑定项目')
     return
   }
 
@@ -596,7 +530,6 @@ function saveRepair() {
       sn: repairForm.sn,
       macAddress: repairForm.macAddress,
       faultDesc: repairForm.faultDesc,
-      repairStatus: repairForm.repairStatus,
       repairUser: repairForm.repairUser,
       repairTime: repairForm.repairTime,
       repairMethod: repairForm.repairMethod,
@@ -605,12 +538,11 @@ function saveRepair() {
       remark: repairForm.remark
     })
   } else {
-    currentEditRepair.value.projectName = repairForm.projectName
     currentEditRepair.value.deviceType = repairForm.deviceType
+    currentEditRepair.value.projectName = repairForm.projectName
     currentEditRepair.value.sn = repairForm.sn
     currentEditRepair.value.macAddress = repairForm.macAddress
     currentEditRepair.value.faultDesc = repairForm.faultDesc
-    currentEditRepair.value.repairStatus = repairForm.repairStatus
     currentEditRepair.value.repairUser = repairForm.repairUser
     currentEditRepair.value.repairTime = repairForm.repairTime
     currentEditRepair.value.repairMethod = repairForm.repairMethod
@@ -635,12 +567,11 @@ function deleteRepair(item) {
 
 function exportRepairRecords() {
   const header = [
-    '绑定项目',
     '终端类型',
+    '绑定项目',
     'SN序列号',
     'MAC地址',
     '故障现象',
-    '维修状态',
     '维修方式',
     '维修人',
     '维修时间',
@@ -650,12 +581,11 @@ function exportRepairRecords() {
   ]
 
   const rows = repairList.value.map(item => [
-    item.projectName,
     item.deviceType,
+    item.projectName,
     item.sn,
     item.macAddress,
     item.faultDesc,
-    getRepairStatusText(item.repairStatus),
     item.repairMethod,
     item.repairUser,
     item.repairTime,
@@ -757,7 +687,7 @@ function exportRepairRecords() {
   border-radius: 14px;
   padding: 16px;
   display: grid;
-  grid-template-columns: 1.4fr 180px 180px 180px 90px 90px;
+  grid-template-columns: 1.4fr 180px 180px 90px 90px;
   gap: 12px;
   margin-bottom: 20px;
 }
@@ -857,7 +787,7 @@ function exportRepairRecords() {
 
 .version-table {
   width: 100%;
-  min-width: 1450px;
+  min-width: 1280px;
   border-collapse: collapse;
   table-layout: fixed;
 }
@@ -937,41 +867,12 @@ function exportRepairRecords() {
   white-space: nowrap;
 }
 
-.status-tag {
-  display: inline-flex;
-  padding: 4px 9px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.status-tag.pending {
-  background: #d9770633;
-  color: #fbbf24;
-}
-
-.status-tag.repairing {
-  background: #1d4ed833;
-  color: #60a5fa;
-}
-
-.status-tag.finished {
-  background: #16a34a33;
-  color: #4ade80;
-}
-
-.status-tag.failed {
-  background: #dc262633;
-  color: #f87171;
-}
-
 .muted {
   color: #94a3b8 !important;
 }
 
 .operation-col {
-  width: 300px;
+  width: 250px;
   text-align: right !important;
 }
 
@@ -980,7 +881,7 @@ function exportRepairRecords() {
   justify-content: flex-end;
   align-items: center;
   gap: 12px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .text-btn {
@@ -1134,7 +1035,7 @@ function exportRepairRecords() {
   }
 
   .version-table {
-    min-width: 1450px;
+    min-width: 1280px;
   }
 
   .form-grid,

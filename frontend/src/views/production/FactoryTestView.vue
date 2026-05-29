@@ -3,11 +3,11 @@
     <!-- 页面头部 -->
     <div class="page-header">
       <div>
-        <h1>出厂测试管理</h1>
+        <h1>板卡出厂测试管理</h1>
       </div>
 
       <button class="primary-btn" @click="openUploadDialog">
-        上传出厂测试记录
+        上传出厂测试文档
       </button>
     </div>
 
@@ -15,17 +15,17 @@
     <div class="filter-card">
       <input
         v-model="filters.keyword"
-        placeholder="搜索项目名称 / 测试记录名称 / 上传人"
+        placeholder="搜索产品型号 / MAC地址 / 测试文档 / 上传人"
       />
 
-      <select v-model="filters.projectName">
-        <option value="">全部项目</option>
+      <select v-model="filters.productModel">
+        <option value="">全部产品型号</option>
         <option
-          v-for="project in projectOptions"
-          :key="project"
-          :value="project"
+          v-for="model in productModelOptions"
+          :key="model"
+          :value="model"
         >
-          {{ project }}
+          {{ model }}
         </option>
       </select>
 
@@ -41,91 +41,192 @@
       <button class="reset-btn" @click="resetFilters">重置</button>
     </div>
 
-    <!-- 数据表格 -->
+    <!-- 按产品型号折叠 -->
     <div class="table-card">
       <div class="table-wrapper">
-        <table class="version-table">
+        <table class="model-table">
           <thead>
             <tr>
-              <th>出厂测试记录</th>
-              <th>绑定项目</th>
+              <th>产品型号</th>
+              <th>MAC数量</th>
+              <th>测试文档</th>
               <th>上传人</th>
               <th>上传时间</th>
               <th>审核状态</th>
-              <th>审核人</th>
               <th class="operation-col">操作</th>
             </tr>
           </thead>
 
           <tbody>
-            <tr v-for="item in filteredFactoryTestList" :key="item.id">
-              <td>
-                <button class="record-link" @click="viewFactoryTest(item)">
-                  {{ item.recordName }}
-                </button>
-                <div class="file-name">{{ item.fileName }}</div>
-              </td>
-
-              <td>
-                <span class="project-tag">
-                  {{ item.projectName }}
-                </span>
-              </td>
-
-              <td>{{ item.uploader }}</td>
-
-              <td class="muted">{{ item.uploadTime }}</td>
-
-              <td>
-                <span class="status-tag" :class="item.auditStatus">
-                  {{ getAuditStatusText(item.auditStatus) }}
-                </span>
-              </td>
-
-              <td>{{ item.auditor || '-' }}</td>
-
-              <td class="operation-col">
-                <div class="action-group">
-                  <button class="text-btn" @click="viewFactoryTest(item)">
-                    查看
-                  </button>
-
-                  <button class="text-btn blue" @click="downloadFactoryTest(item)">
-                    下载
-                  </button>
-
+            <template
+              v-for="group in visibleModelGroupList"
+              :key="group.productModel"
+            >
+              <!-- 第一层：产品型号 -->
+              <tr class="model-row">
+                <td>
                   <button
-                    v-if="item.auditStatus === 'draft' || item.auditStatus === 'rejected'"
-                    class="text-btn blue"
-                    @click="submitFactoryTest(item)"
+                    class="model-name-btn"
+                    @click="toggleModel(group.productModel)"
                   >
-                    提交
+                    <span class="expand-icon">
+                      {{ expandedModel === group.productModel ? '▼' : '▶' }}
+                    </span>
+                    {{ group.productModel }}
                   </button>
+                </td>
 
-                  <button
-                    v-if="item.auditStatus === 'submitted'"
-                    class="text-btn green"
-                    @click="auditFactoryTest(item)"
-                  >
-                    审核
-                  </button>
+                <td>
+                  <span class="count-tag">
+                    {{ group.records.length }} 个 MAC
+                  </span>
+                </td>
 
-                  <button
-                    v-if="item.auditStatus === 'draft' || item.auditStatus === 'rejected'"
-                    class="text-btn red"
-                    @click="deleteFactoryTest(item)"
-                  >
-                    删除
-                  </button>
-                </div>
-              </td>
-            </tr>
+                <td>
+                  <span class="file-text" :title="group.fileName">
+                    {{ group.fileName }}
+                  </span>
+                </td>
+
+                <td>
+                  <span class="normal-text" :title="group.uploader">
+                    {{ group.uploader }}
+                  </span>
+                </td>
+
+                <td class="muted nowrap">
+                  {{ group.uploadTime }}
+                </td>
+
+                <td>
+                  <span class="status-tag" :class="group.auditStatus">
+                    {{ getAuditStatusText(group.auditStatus) }}
+                  </span>
+                </td>
+
+                <td class="operation-col">
+                  <div class="action-group">
+                    <button
+                      class="text-btn blue"
+                      @click="toggleModel(group.productModel)"
+                    >
+                      {{ expandedModel === group.productModel ? '收起' : '查看MAC' }}
+                    </button>
+
+                    <button
+                      class="text-btn red"
+                      @click="deleteModelGroup(group)"
+                    >
+                      删除型号
+                    </button>
+                  </div>
+                </td>
+              </tr>
+
+              <!-- 第二层：该型号下面的 MAC 明细 -->
+              <tr
+                v-if="expandedModel === group.productModel"
+                class="child-row"
+              >
+                <td colspan="7">
+                  <div class="child-table-wrapper">
+                    <table class="child-table">
+                      <thead>
+                        <tr>
+                          <th>MAC地址</th>
+                          <th>测试文档</th>
+                          <th>上传人</th>
+                          <th>上传时间</th>
+                          <th>审核状态</th>
+                          <th>审核人</th>
+                          <th class="child-operation-col">操作</th>
+                        </tr>
+                      </thead>
+
+                      <tbody>
+                        <tr
+                          v-for="item in group.records"
+                          :key="item.id"
+                        >
+                          <td>
+                            <span class="mac-tag" :title="item.macAddress">
+                              {{ item.macAddress }}
+                            </span>
+                          </td>
+
+                          <td>
+                            <button class="record-link" @click="viewFactoryTest(item)">
+                              {{ item.fileName }}
+                            </button>
+                          </td>
+
+                          <td>
+                            <span class="normal-text" :title="item.uploader">
+                              {{ item.uploader }}
+                            </span>
+                          </td>
+
+                          <td class="muted nowrap">
+                            {{ item.uploadTime }}
+                          </td>
+
+                          <td>
+                            <span class="status-tag" :class="item.auditStatus">
+                              {{ getAuditStatusText(item.auditStatus) }}
+                            </span>
+                          </td>
+
+                          <td>{{ item.auditor || '-' }}</td>
+
+                          <td class="child-operation-col">
+                            <div class="action-group">
+                              <button class="text-btn" @click="viewFactoryTest(item)">
+                                查看
+                              </button>
+
+                              <button class="text-btn blue" @click="downloadFactoryTest(item)">
+                                下载
+                              </button>
+
+                              <button
+                                v-if="item.auditStatus === 'draft' || item.auditStatus === 'rejected'"
+                                class="text-btn blue"
+                                @click="submitFactoryTest(item)"
+                              >
+                                提交
+                              </button>
+
+                              <button
+                                v-if="item.auditStatus === 'submitted'"
+                                class="text-btn green"
+                                @click="auditFactoryTest(item)"
+                              >
+                                审核
+                              </button>
+
+                              <button
+                                v-if="item.auditStatus === 'draft' || item.auditStatus === 'rejected'"
+                                class="text-btn red"
+                                @click="deleteFactoryTest(item)"
+                              >
+                                删除
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </td>
+              </tr>
+            </template>
           </tbody>
         </table>
       </div>
 
       <div class="table-footer">
-        共 {{ filteredFactoryTestList.length }} 条出厂测试记录
+        <!-- 共 {{ filteredFactoryTestList.length }} 条 MAC 出厂测试记录，按 {{ filteredModelGroupList.length }} 个产品型号归类展示。
+        MAC 地址来自生产烧录记录页面解析出的数据。 -->
       </div>
     </div>
 
@@ -133,52 +234,85 @@
     <div v-if="showUploadDialog" class="dialog-mask">
       <div class="dialog">
         <div class="dialog-header">
-          <h3>上传出厂测试记录</h3>
+          <h3>上传出厂测试文档</h3>
           <button @click="showUploadDialog = false">×</button>
+        </div>
+
+        <div class="upload-tip">
+          <strong>填写说明：</strong>
+          <p>
+            出厂测试文档按产品型号上传。同一个产品型号只上传一份测试文档。
+          </p>
+          <p>
+            MAC 地址来自生产烧录记录页面上传 Excel 后解析出的 MAC 地址。这里选择产品型号后，只能勾选该型号下面的 MAC。
+          </p>
+          <p>
+            测试记录名称自动使用上传的文件名；上传人自动读取当前登录账号。
+          </p>
         </div>
 
         <div class="form-grid">
           <label>
-            绑定项目
-            <select v-model="uploadForm.projectName">
-              <option value="">请选择项目</option>
+            产品型号
+            <select v-model="uploadForm.productModel" @change="onProductModelChange">
+              <option value="">请选择产品型号</option>
               <option
-                v-for="project in projectOptions"
-                :key="project"
-                :value="project"
+                v-for="model in productionProductModelOptions"
+                :key="model"
+                :value="model"
               >
-                {{ project }}
+                {{ model }}
               </option>
             </select>
           </label>
 
           <label>
-            出厂测试记录名称
-            <input
-              v-model="uploadForm.recordName"
-              placeholder="例如：香港屯马项目出厂测试记录"
-            />
-          </label>
-
-          <label>
             上传人
             <input
-              v-model="uploadForm.uploader"
-              placeholder="请输入上传人"
-            />
-          </label>
-
-          <label>
-            文件名称
-            <input
-              v-model="uploadForm.fileName"
-              placeholder="选择文件后自动填充"
+              v-model="currentUserName"
               disabled
             />
           </label>
 
           <label class="full-row">
-            出厂测试记录文件
+            测试文档名称
+            <input
+              v-model="uploadForm.fileName"
+              placeholder="选择文件后自动读取文件名称"
+              disabled
+            />
+          </label>
+
+          <label class="full-row">
+            关联 MAC 地址
+            <div class="mac-select-panel">
+              <div v-if="!uploadForm.productModel" class="empty-mac">
+                请先选择产品型号
+              </div>
+
+              <div v-else-if="availableMacList.length === 0" class="empty-mac">
+                当前产品型号暂无可关联 MAC，请先在生产烧录记录页面上传 Excel 并解析 MAC 地址
+              </div>
+
+              <label
+                v-for="mac in availableMacList"
+                v-else
+                :key="mac.macAddress"
+                class="mac-check-item"
+              >
+                <input
+                  v-model="uploadForm.selectedMacs"
+                  type="checkbox"
+                  :value="mac.macAddress"
+                />
+                <span>{{ mac.macAddress }}</span>
+                <em>{{ mac.productName || '-' }}</em>
+              </label>
+            </div>
+          </label>
+
+          <label class="full-row">
+            出厂测试文档
             <input
               type="file"
               accept=".doc,.docx,.xls,.xlsx,.pdf,.txt,.csv,.zip"
@@ -190,7 +324,7 @@
             出厂测试说明
             <textarea
               v-model="uploadForm.remark"
-              placeholder="例如：记录本批次设备的出厂测试结果、测试人员、测试时间、异常项、复测结果等"
+              placeholder="例如：该型号板卡出厂测试通过，测试项包括网络通信、音频、按键、接口、电源等"
             ></textarea>
           </label>
         </div>
@@ -217,17 +351,17 @@
 
         <div class="detail-card">
           <div>
-            <span>出厂测试记录名称</span>
-            <strong>{{ selectedFactoryTest.recordName }}</strong>
+            <span>产品型号</span>
+            <strong>{{ selectedFactoryTest.productModel }}</strong>
           </div>
 
           <div>
-            <span>绑定项目</span>
-            <strong>{{ selectedFactoryTest.projectName }}</strong>
+            <span>MAC地址</span>
+            <strong>{{ selectedFactoryTest.macAddress }}</strong>
           </div>
 
           <div>
-            <span>文件名称</span>
+            <span>测试文档</span>
             <strong>{{ selectedFactoryTest.fileName }}</strong>
           </div>
 
@@ -302,52 +436,132 @@
 <script setup>
 import { computed, reactive, ref } from 'vue'
 
+/**
+ * 当前登录账号：
+ * 实际项目里可以从 Pinia / Vuex / localStorage / 后端用户接口中读取。
+ */
+const currentUserName = ref(
+  localStorage.getItem('username') ||
+  localStorage.getItem('accountName') ||
+  localStorage.getItem('realName') ||
+  '当前用户'
+)
+
 const filters = reactive({
   keyword: '',
-  projectName: '',
+  productModel: '',
   auditStatus: ''
 })
 
 const showUploadDialog = ref(false)
 const selectedFactoryTest = ref(null)
-
-const projectOptions = [
-  '香港屯马项目',
-  '波尔图二期项目',
-  '阿根廷有轨项目',
-  '波哥大有轨项目',
-  '迪拜项目'
-]
+const expandedModel = ref('')
 
 const uploadForm = reactive({
-  projectName: '',
-  recordName: '',
-  uploader: '',
+  productModel: '',
+  selectedMacs: [],
   fileName: '',
   file: null,
   fileUrl: '',
   remark: ''
 })
 
+/**
+ * 这里模拟“生产烧录记录页面”解析 Excel 后得到的数据。
+ * 实际项目中建议从后端接口获取，例如：
+ * GET /api/production/burn-records
+ *
+ * 字段来源就是你生产烧录页面 Excel 解析出的：
+ * 产品名称、产品型号、产品编码、序列号、MAC地址、硬件版本、软件版本、PCB二维码、备注
+ */
+const productionBurnRecordList = ref([
+  {
+    id: 1,
+    productName: '控制盒',
+    productModel: 'DACU-SIP-Porto',
+    productCode: 'M00004665176',
+    serialNumber: 'ZDAPO2300001',
+    macAddress: '68:69:2E:DD:17:27',
+    hardwareVersion: '-',
+    softwareVersion: '-'
+  },
+  {
+    id: 2,
+    productName: '控制盒',
+    productModel: 'DACU-SIP-Porto',
+    productCode: 'M00004665176',
+    serialNumber: 'ZDAPO2300002',
+    macAddress: '68:69:2E:DD:1A:E6',
+    hardwareVersion: '-',
+    softwareVersion: '-'
+  },
+  {
+    id: 3,
+    productName: '控制盒',
+    productModel: 'DACU-SIP-Porto',
+    productCode: 'M00004665176',
+    serialNumber: 'ZDAPO2300003',
+    macAddress: '68:69:2E:DD:1A:E7',
+    hardwareVersion: '-',
+    softwareVersion: '-'
+  },
+  {
+    id: 4,
+    productName: '乘客报警器',
+    productModel: 'PECU-BOG-Metro-PCBA',
+    productCode: 'M00004665176',
+    serialNumber: 'ZPEBOG230000X',
+    macAddress: '68:69:2E:DD:22:01',
+    hardwareVersion: '-',
+    softwareVersion: '-'
+  },
+  {
+    id: 5,
+    productName: '编码板',
+    productModel: 'ACSU-BOG-Encode-PCBA',
+    productCode: 'M00004665172',
+    serialNumber: 'ZENBOG230000X',
+    macAddress: '68:69:2E:DD:33:01',
+    hardwareVersion: '-',
+    softwareVersion: '-'
+  }
+])
+
 const factoryTestList = ref([
   {
     id: 1,
-    projectName: '香港屯马项目',
-    recordName: '香港屯马项目出厂测试记录',
-    fileName: '香港屯马出厂测试记录_V1.0.xlsx',
+    productModel: 'DACU-SIP-Porto',
+    macAddress: '68:69:2E:DD:17:27',
+    recordName: 'DACU-SIP-Porto_出厂测试记录_V1.0.xlsx',
+    fileName: 'DACU-SIP-Porto_出厂测试记录_V1.0.xlsx',
     fileUrl: '',
     uploader: '生产人员',
     uploadTime: '2026-05-10',
     auditStatus: 'approved',
     auditor: '领导',
     auditTime: '2026-05-11',
-    remark: '该批次设备出厂测试通过，广播、报警、网络通信、按键和音频输出均正常。'
+    remark: '该型号板卡出厂测试通过。'
   },
   {
     id: 2,
-    projectName: '波尔图二期项目',
-    recordName: '波尔图二期出厂测试记录',
-    fileName: '波尔图二期出厂测试记录_V0.9.xlsx',
+    productModel: 'DACU-SIP-Porto',
+    macAddress: '68:69:2E:DD:1A:E6',
+    recordName: 'DACU-SIP-Porto_出厂测试记录_V1.0.xlsx',
+    fileName: 'DACU-SIP-Porto_出厂测试记录_V1.0.xlsx',
+    fileUrl: '',
+    uploader: '生产人员',
+    uploadTime: '2026-05-10',
+    auditStatus: 'approved',
+    auditor: '领导',
+    auditTime: '2026-05-11',
+    remark: '同型号板卡使用同一份测试文档。'
+  },
+  {
+    id: 3,
+    productModel: 'PECU-BOG-Metro-PCBA',
+    macAddress: '68:69:2E:DD:22:01',
+    recordName: 'PECU-BOG-Metro-PCBA_出厂测试记录_V1.0.xlsx',
+    fileName: 'PECU-BOG-Metro-PCBA_出厂测试记录_V1.0.xlsx',
     fileUrl: '',
     uploader: '生产人员',
     uploadTime: '2026-05-16',
@@ -355,52 +569,113 @@ const factoryTestList = ref([
     auditor: '',
     auditTime: '',
     remark: '待领导审核确认。'
-  },
-  {
-    id: 3,
-    projectName: '阿根廷有轨项目',
-    recordName: '阿根廷DACU出厂测试记录',
-    fileName: '阿根廷DACU出厂测试记录_草稿.xlsx',
-    fileUrl: '',
-    uploader: '生产人员',
-    uploadTime: '2026-05-18',
-    auditStatus: 'draft',
-    auditor: '',
-    auditTime: '',
-    remark: '草稿，尚未提交审核。'
-  },
-  {
-    id: 4,
-    projectName: '波哥大有轨项目',
-    recordName: '波哥大乘客报警器出厂测试记录',
-    fileName: '波哥大乘客报警器出厂测试记录_V1.1.pdf',
-    fileUrl: '',
-    uploader: '生产人员',
-    uploadTime: '2026-05-20',
-    auditStatus: 'rejected',
-    auditor: '领导',
-    auditTime: '2026-05-21',
-    remark: '测试记录不完整，需要补充MAC地址、SN序列号和异常复测结果。'
   }
 ])
 
+const productionProductModelOptions = computed(() => {
+  const models = productionBurnRecordList.value
+    .map(item => item.productModel)
+    .filter(Boolean)
+
+  return [...new Set(models)]
+})
+
+const productModelOptions = computed(() => {
+  const models = factoryTestList.value
+    .map(item => item.productModel)
+    .filter(Boolean)
+
+  return [...new Set(models)]
+})
+
+const availableMacList = computed(() => {
+  if (!uploadForm.productModel) {
+    return []
+  }
+
+  return productionBurnRecordList.value.filter(item => {
+    return item.productModel === uploadForm.productModel && item.macAddress
+  })
+})
+
 const filteredFactoryTestList = computed(() => {
   return factoryTestList.value.filter(item => {
-    const keywordMatch =
-      !filters.keyword ||
-      item.projectName.includes(filters.keyword) ||
-      item.recordName.includes(filters.keyword) ||
-      item.uploader.includes(filters.keyword) ||
-      item.fileName.includes(filters.keyword)
+    const keyword = filters.keyword.trim()
 
-    const projectMatch =
-      !filters.projectName || item.projectName === filters.projectName
+    const keywordMatch =
+      !keyword ||
+      item.productModel.includes(keyword) ||
+      item.macAddress.includes(keyword) ||
+      item.recordName.includes(keyword) ||
+      item.uploader.includes(keyword) ||
+      item.fileName.includes(keyword)
+
+    const modelMatch =
+      !filters.productModel || item.productModel === filters.productModel
 
     const auditStatusMatch =
       !filters.auditStatus || item.auditStatus === filters.auditStatus
 
-    return keywordMatch && projectMatch && auditStatusMatch
+    return keywordMatch && modelMatch && auditStatusMatch
   })
+})
+
+const filteredModelGroupList = computed(() => {
+  const map = new Map()
+
+  filteredFactoryTestList.value.forEach(item => {
+    const model = item.productModel || '未填写型号'
+
+    if (!map.has(model)) {
+      map.set(model, {
+        productModel: model,
+        records: []
+      })
+    }
+
+    map.get(model).records.push(item)
+  })
+
+  return Array.from(map.values()).map(group => {
+    const sortedRecords = [...group.records].sort((a, b) => {
+      return String(a.macAddress).localeCompare(String(b.macAddress))
+    })
+
+    const fileNames = [
+      ...new Set(sortedRecords.map(item => item.fileName).filter(Boolean))
+    ]
+
+    const uploaders = [
+      ...new Set(sortedRecords.map(item => item.uploader).filter(Boolean))
+    ]
+
+    const uploadTimes = [
+      ...new Set(sortedRecords.map(item => item.uploadTime).filter(Boolean))
+    ]
+
+    const auditStatuses = [
+      ...new Set(sortedRecords.map(item => item.auditStatus).filter(Boolean))
+    ]
+
+    return {
+      productModel: group.productModel,
+      records: sortedRecords,
+      fileName: fileNames.length > 1 ? `${fileNames.length} 份测试文档` : fileNames[0] || '-',
+      uploader: uploaders.length > 1 ? `${uploaders.length} 个上传人` : uploaders[0] || '-',
+      uploadTime: uploadTimes.length > 1 ? `${uploadTimes.length} 个上传时间` : uploadTimes[0] || '-',
+      auditStatus: auditStatuses.length > 1 ? 'mixed' : auditStatuses[0] || 'draft'
+    }
+  })
+})
+
+const visibleModelGroupList = computed(() => {
+  if (!expandedModel.value) {
+    return filteredModelGroupList.value
+  }
+
+  return filteredModelGroupList.value.filter(
+    group => group.productModel === expandedModel.value
+  )
 })
 
 function getAuditStatusText(status) {
@@ -408,7 +683,8 @@ function getAuditStatusText(status) {
     draft: '草稿',
     submitted: '待审核',
     approved: '审核通过',
-    rejected: '审核驳回'
+    rejected: '审核驳回',
+    mixed: '多状态'
   }
 
   return map[status] || status
@@ -416,20 +692,32 @@ function getAuditStatusText(status) {
 
 function resetFilters() {
   filters.keyword = ''
-  filters.projectName = ''
+  filters.productModel = ''
   filters.auditStatus = ''
+  expandedModel.value = ''
+}
+
+function toggleModel(productModel) {
+  if (expandedModel.value === productModel) {
+    expandedModel.value = ''
+  } else {
+    expandedModel.value = productModel
+  }
 }
 
 function openUploadDialog() {
-  uploadForm.projectName = ''
-  uploadForm.recordName = ''
-  uploadForm.uploader = ''
+  uploadForm.productModel = ''
+  uploadForm.selectedMacs = []
   uploadForm.fileName = ''
   uploadForm.file = null
   uploadForm.fileUrl = ''
   uploadForm.remark = ''
 
   showUploadDialog.value = true
+}
+
+function onProductModelChange() {
+  uploadForm.selectedMacs = []
 }
 
 function handleFileChange(event) {
@@ -442,40 +730,44 @@ function handleFileChange(event) {
 }
 
 function uploadFactoryTest() {
-  if (!uploadForm.projectName) {
-    alert('请选择出厂测试记录绑定项目')
+  if (!uploadForm.productModel) {
+    alert('请选择产品型号')
     return
   }
 
-  if (!uploadForm.recordName) {
-    alert('请输入出厂测试记录名称')
-    return
-  }
-
-  if (!uploadForm.uploader) {
-    alert('请输入上传人')
+  if (uploadForm.selectedMacs.length === 0) {
+    alert('请选择至少一个 MAC 地址')
     return
   }
 
   if (!uploadForm.file) {
-    alert('请上传出厂测试记录文件')
+    alert('请上传出厂测试文档')
     return
   }
 
-  factoryTestList.value.unshift({
-    id: Date.now(),
-    projectName: uploadForm.projectName,
-    recordName: uploadForm.recordName,
-    fileName: uploadForm.fileName,
-    fileUrl: uploadForm.fileUrl,
-    uploader: uploadForm.uploader,
-    uploadTime: new Date().toISOString().slice(0, 10),
-    auditStatus: 'draft',
-    auditor: '',
-    auditTime: '',
-    remark: uploadForm.remark
+  const today = new Date().toISOString().slice(0, 10)
+  const uploader = currentUserName.value
+  const recordName = uploadForm.fileName
+
+  const newRecords = uploadForm.selectedMacs.map((mac, index) => {
+    return {
+      id: Date.now() + index,
+      productModel: uploadForm.productModel,
+      macAddress: mac,
+      recordName,
+      fileName: uploadForm.fileName,
+      fileUrl: uploadForm.fileUrl,
+      uploader,
+      uploadTime: today,
+      auditStatus: 'draft',
+      auditor: '',
+      auditTime: '',
+      remark: uploadForm.remark
+    }
   })
 
+  factoryTestList.value.unshift(...newRecords)
+  expandedModel.value = uploadForm.productModel
   showUploadDialog.value = false
 }
 
@@ -510,7 +802,7 @@ function submitFactoryTest(item) {
   item.auditStatus = 'submitted'
   item.auditor = ''
   item.auditTime = ''
-  alert(`出厂测试记录【${item.recordName}】已提交领导审核`)
+  alert(`出厂测试文档【${item.fileName}】已提交领导审核`)
 }
 
 function auditFactoryTest(item) {
@@ -522,7 +814,7 @@ function approveFactoryTest(item) {
   item.auditor = '领导'
   item.auditTime = new Date().toISOString().slice(0, 10)
   selectedFactoryTest.value = null
-  alert(`出厂测试记录【${item.recordName}】审核通过`)
+  alert(`出厂测试文档【${item.fileName}】审核通过`)
 }
 
 function rejectFactoryTest(item) {
@@ -530,16 +822,31 @@ function rejectFactoryTest(item) {
   item.auditor = '领导'
   item.auditTime = new Date().toISOString().slice(0, 10)
   selectedFactoryTest.value = null
-  alert(`出厂测试记录【${item.recordName}】已驳回`)
+  alert(`出厂测试文档【${item.fileName}】已驳回`)
 }
 
 function deleteFactoryTest(item) {
-  const ok = confirm(`确认删除出厂测试记录【${item.recordName}】吗？`)
+  const ok = confirm(`确认删除 MAC【${item.macAddress}】的出厂测试记录吗？`)
   if (!ok) return
 
   factoryTestList.value = factoryTestList.value.filter(
     record => record.id !== item.id
   )
+}
+
+function deleteModelGroup(group) {
+  const ok = confirm(`确认删除产品型号【${group.productModel}】下的全部 ${group.records.length} 条出厂测试记录吗？`)
+  if (!ok) return
+
+  const ids = group.records.map(item => item.id)
+
+  factoryTestList.value = factoryTestList.value.filter(
+    record => !ids.includes(record.id)
+  )
+
+  if (expandedModel.value === group.productModel) {
+    expandedModel.value = ''
+  }
 }
 </script>
 
@@ -561,12 +868,6 @@ function deleteFactoryTest(item) {
   margin: 0;
   font-size: 26px;
   font-weight: 800;
-}
-
-.page-header p {
-  margin: 8px 0 0;
-  color: #94a3b8;
-  font-size: 14px;
 }
 
 .primary-btn,
@@ -679,70 +980,253 @@ function deleteFactoryTest(item) {
   overflow: hidden;
 }
 
-.table-wrapper {
+.table-wrapper,
+.child-table-wrapper {
   width: 100%;
   overflow-x: auto;
   overflow-y: hidden;
 }
 
-.table-wrapper::-webkit-scrollbar {
+.table-wrapper::-webkit-scrollbar,
+.child-table-wrapper::-webkit-scrollbar {
   height: 10px;
 }
 
-.table-wrapper::-webkit-scrollbar-track {
+.table-wrapper::-webkit-scrollbar-track,
+.child-table-wrapper::-webkit-scrollbar-track {
   background: #020617;
   border-radius: 999px;
 }
 
-.table-wrapper::-webkit-scrollbar-thumb {
+.table-wrapper::-webkit-scrollbar-thumb,
+.child-table-wrapper::-webkit-scrollbar-thumb {
   background: #334155;
   border-radius: 999px;
   border: 2px solid #020617;
 }
 
-.table-wrapper::-webkit-scrollbar-thumb:hover {
+.table-wrapper::-webkit-scrollbar-thumb:hover,
+.child-table-wrapper::-webkit-scrollbar-thumb:hover {
   background: #475569;
 }
 
-.table-wrapper::-webkit-scrollbar-button {
+.table-wrapper::-webkit-scrollbar-button,
+.child-table-wrapper::-webkit-scrollbar-button {
   display: none;
 }
 
-.table-wrapper {
+.table-wrapper,
+.child-table-wrapper {
   scrollbar-width: thin;
   scrollbar-color: #334155 #020617;
 }
 
-.version-table {
+.model-table {
   width: 100%;
-  min-width: 1100px;
+  min-width: 1250px;
   border-collapse: collapse;
   table-layout: fixed;
 }
 
-.version-table thead {
+.model-table thead {
   background: #020617;
 }
 
-.version-table th {
+.model-table th,
+.model-table td {
+  box-sizing: border-box;
+  white-space: nowrap;
+}
+
+.model-table th {
   padding: 14px 16px;
   color: #94a3b8;
   font-size: 12px;
   font-weight: 600;
   text-align: left;
   border-bottom: 1px solid #1e293b;
-  white-space: nowrap;
 }
 
-.version-table td {
+.model-table td {
   padding: 15px 16px;
   font-size: 13px;
   color: #e2e8f0;
   border-bottom: 1px solid #1e293b;
   vertical-align: middle;
+  overflow: hidden;
+}
+
+.model-table th:nth-child(1),
+.model-table td:nth-child(1) {
+  width: 220px;
+}
+
+.model-table th:nth-child(2),
+.model-table td:nth-child(2) {
+  width: 120px;
+}
+
+.model-table th:nth-child(3),
+.model-table td:nth-child(3) {
+  width: 280px;
+}
+
+.model-table th:nth-child(4),
+.model-table td:nth-child(4) {
+  width: 120px;
+}
+
+.model-table th:nth-child(5),
+.model-table td:nth-child(5) {
+  width: 140px;
+}
+
+.model-table th:nth-child(6),
+.model-table td:nth-child(6) {
+  width: 140px;
+}
+
+.model-table th:nth-child(7),
+.model-table td:nth-child(7) {
+  width: 230px;
+}
+
+.model-row {
+  background: #0f172a;
+}
+
+.model-row:hover {
+  background: #1e293b80;
+}
+
+.model-name-btn {
+  display: inline-block;
+  max-width: 190px;
+  border: none;
+  background: transparent;
+  color: #60a5fa;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.model-name-btn:hover {
+  color: #93c5fd;
+  text-decoration: underline;
+}
+
+.expand-icon {
+  display: inline-block;
+  width: 18px;
+  color: #94a3b8;
+}
+
+.count-tag {
+  display: inline-block;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: #33415566;
+  color: #cbd5e1;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.child-row td {
+  padding: 0;
+  background: #020617;
+}
+
+.child-table-wrapper {
+  padding: 12px 16px 16px;
+  box-sizing: border-box;
+}
+
+.child-table {
+  width: 100%;
+  min-width: 1280px;
+  border-collapse: collapse;
+  table-layout: fixed;
+  border: 1px solid #1e293b;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.child-table thead {
+  background: #0f172a;
+}
+
+.child-table th,
+.child-table td {
+  box-sizing: border-box;
+  white-space: nowrap;
+}
+
+.child-table th {
+  padding: 12px 14px;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 600;
+  border-bottom: 1px solid #1e293b;
+}
+
+.child-table td {
+  padding: 13px 14px;
+  border-bottom: 1px solid #1e293b;
+  color: #e2e8f0;
+  font-size: 13px;
+  vertical-align: middle;
+  overflow: hidden;
+}
+
+.child-table tbody tr:hover {
+  background: #1e293b80;
+}
+
+.child-table th:nth-child(1),
+.child-table td:nth-child(1) {
+  width: 190px;
+}
+
+.child-table th:nth-child(2),
+.child-table td:nth-child(2) {
+  width: 260px;
+}
+
+.child-table th:nth-child(3),
+.child-table td:nth-child(3) {
+  width: 120px;
+}
+
+.child-table th:nth-child(4),
+.child-table td:nth-child(4) {
+  width: 130px;
+}
+
+.child-table th:nth-child(5),
+.child-table td:nth-child(5) {
+  width: 130px;
+}
+
+.child-table th:nth-child(6),
+.child-table td:nth-child(6) {
+  width: 110px;
+}
+
+.child-table th:nth-child(7),
+.child-table td:nth-child(7) {
+  width: 280px;
 }
 
 .record-link {
+  display: inline-block;
+  max-width: 240px;
   border: none;
   background: transparent;
   color: #60a5fa;
@@ -751,6 +1235,10 @@ function deleteFactoryTest(item) {
   cursor: pointer;
   padding: 0;
   text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 
 .record-link:hover {
@@ -758,22 +1246,29 @@ function deleteFactoryTest(item) {
   text-decoration: underline;
 }
 
-.file-name {
-  margin-top: 4px;
-  color: #64748b;
+.mac-tag,
+.file-text,
+.normal-text {
+  display: inline-block;
+  max-width: 100%;
+  color: #cbd5e1;
   font-size: 12px;
-  word-break: break-all;
+  font-family: Consolas, Monaco, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 
-.project-tag {
-  display: inline-flex;
-  padding: 4px 9px;
+.mac-tag {
+  padding: 3px 8px;
   border-radius: 999px;
-  background: #1d4ed833;
-  color: #60a5fa;
-  font-size: 12px;
-  font-weight: 700;
-  white-space: nowrap;
+  background: #33415566;
+}
+
+.normal-text {
+  font-family: inherit;
+  font-size: 13px;
 }
 
 .status-tag {
@@ -782,6 +1277,7 @@ function deleteFactoryTest(item) {
   border-radius: 999px;
   font-size: 12px;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .status-tag.draft {
@@ -804,12 +1300,21 @@ function deleteFactoryTest(item) {
   color: #f87171;
 }
 
+.status-tag.mixed {
+  background: #9333ea33;
+  color: #c084fc;
+}
+
 .muted {
   color: #94a3b8 !important;
 }
 
-.operation-col {
-  width: 280px;
+.nowrap {
+  white-space: nowrap !important;
+}
+
+.operation-col,
+.child-operation-col {
   text-align: right !important;
 }
 
@@ -818,7 +1323,8 @@ function deleteFactoryTest(item) {
   justify-content: flex-end;
   align-items: center;
   gap: 12px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  white-space: nowrap;
 }
 
 .text-btn {
@@ -828,6 +1334,7 @@ function deleteFactoryTest(item) {
   font-size: 13px;
   cursor: pointer;
   white-space: nowrap;
+  padding: 0;
 }
 
 .text-btn:hover {
@@ -852,6 +1359,86 @@ function deleteFactoryTest(item) {
   font-size: 12px;
 }
 
+.upload-tip {
+  margin: 18px 20px 0;
+  padding: 12px;
+  background: #020617;
+  border: 1px solid #1e293b;
+  border-radius: 10px;
+}
+
+.upload-tip strong {
+  color: #f8fafc;
+  font-size: 13px;
+}
+
+.upload-tip p {
+  margin: 6px 0 0;
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.mac-select-panel {
+  min-height: 96px;
+  max-height: 210px;
+  overflow-y: auto;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  background: #020617;
+  padding: 10px;
+}
+
+.mac-select-panel::-webkit-scrollbar {
+  width: 8px;
+}
+
+.mac-select-panel::-webkit-scrollbar-track {
+  background: #020617;
+}
+
+.mac-select-panel::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 999px;
+}
+
+.empty-mac {
+  color: #64748b;
+  font-size: 13px;
+  padding: 8px 0;
+}
+
+.mac-check-item {
+  display: grid !important;
+  grid-template-columns: 18px 180px 1fr;
+  align-items: center;
+  gap: 8px !important;
+  padding: 8px;
+  border-bottom: 1px solid #1e293b;
+  color: #cbd5e1 !important;
+}
+
+.mac-check-item:last-child {
+  border-bottom: none;
+}
+
+.mac-check-item input {
+  width: 14px;
+  height: 14px;
+}
+
+.mac-check-item span {
+  font-family: Consolas, Monaco, monospace;
+  color: #e2e8f0;
+  font-size: 12px;
+}
+
+.mac-check-item em {
+  color: #64748b;
+  font-size: 12px;
+  font-style: normal;
+}
+
 /* 弹窗 */
 .dialog-mask {
   position: fixed;
@@ -865,8 +1452,10 @@ function deleteFactoryTest(item) {
 }
 
 .dialog {
-  width: 720px;
+  width: 760px;
   max-width: 100%;
+  max-height: 92vh;
+  overflow-y: auto;
   background: #0f172a;
   border: 1px solid #334155;
   border-radius: 16px;
@@ -875,7 +1464,7 @@ function deleteFactoryTest(item) {
 }
 
 .large-dialog {
-  width: 860px;
+  width: 900px;
 }
 
 .dialog-header {
@@ -986,13 +1575,25 @@ function deleteFactoryTest(item) {
     grid-template-columns: 1fr;
   }
 
-  .version-table {
-    min-width: 1100px;
+  .model-table {
+    min-width: 1250px;
+  }
+
+  .child-table {
+    min-width: 1280px;
   }
 
   .form-grid,
   .detail-card {
     grid-template-columns: 1fr;
+  }
+
+  .mac-check-item {
+    grid-template-columns: 18px 1fr;
+  }
+
+  .mac-check-item em {
+    grid-column: 2;
   }
 }
 </style>

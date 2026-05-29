@@ -59,8 +59,8 @@
         <table class="version-table">
           <thead>
             <tr>
-              <th>项目名称</th>
               <th>终端类型</th>
+              <th>项目名称</th>
               <th>硬件版本</th>
               <th>软件版本</th>
               <th>最近更新时间</th>
@@ -71,16 +71,17 @@
           <tbody>
             <tr v-for="item in filteredMatrixList" :key="item.id">
               <td>
+                <span class="device-tag">
+                  {{ item.deviceType }}
+                </span>
+              </td>
+
+              <td>
                 <button class="record-link" @click="viewMatrix(item)">
                   {{ item.projectName }}
                 </button>
               </td>
 
-              <td>
-                <span class="device-tag">
-                  {{ item.deviceType }}
-                </span>
-              </td>
 
               <td class="version-cell">
                 <span class="hardware-tag" :title="item.hardwareVersion">
@@ -122,13 +123,14 @@
 
         <div class="detail-card">
           <div>
-            <span>项目名称</span>
-            <strong>{{ selectedMatrix.projectName }}</strong>
-          </div>
-
-          <div>
             <span>终端类型</span>
             <strong>{{ selectedMatrix.deviceType }}</strong>
+          </div>
+
+
+          <div>
+            <span>项目名称</span>
+            <strong>{{ selectedMatrix.projectName }}</strong>
           </div>
 
           <div>
@@ -300,8 +302,8 @@ function viewMatrix(item) {
 
 function exportVersionMatrix() {
   const header = [
+    '终端类型', 
     '项目名称',
-    '终端类型',
     '硬件版本',
     '软件版本',
     '最近更新时间',

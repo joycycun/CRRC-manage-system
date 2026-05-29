@@ -46,74 +46,75 @@
 
     <!-- 数据表格 -->
     <div class="table-card">
-      <table>
-        <thead>
-          <tr>
-            <th>项目分支</th>
-            <th>绑定项目</th>
-            <th>终端类型</th>
-            <th>软件负责人</th>
-            <th>创建时间</th>
-            <th>Clone 地址</th>
-            <th class="operation-col">操作</th>
-          </tr>
-        </thead>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>项目分支</th>
+              <th>绑定项目</th>
+              <th>终端类型</th>
+              <th>软件负责人</th>
+              <th>创建时间</th>
+              <th>Clone 地址</th>
+              <th class="operation-col">操作</th>
+            </tr>
+          </thead>
 
-        <tbody>
-          <tr v-for="item in filteredBranchList" :key="item.id">
-            <td>
-              <button class="branch-link" @click="openCloneUrl(item)">
-                {{ item.branchName }}
-              </button>
-              <div class="branch-desc">{{ item.description }}</div>
-            </td>
-
-            <td>
-              <span class="project-tag">
-                {{ item.projectName }}
-              </span>
-            </td>
-
-            <td>
-              <span class="device-tag">
-                {{ item.deviceType }}
-              </span>
-            </td>
-
-            <td>{{ item.owner }}</td>
-
-            <td class="muted">
-              {{ item.createTime }}
-            </td>
-
-            <td>
-              <div class="clone-url">
-                {{ item.cloneUrl }}
-              </div>
-            </td>
-
-            <td class="operation-col">
-              <div class="action-group">
-                <button class="text-btn" @click="viewBranch(item)">
-                  查看
+          <tbody>
+            <tr v-for="item in filteredBranchList" :key="item.id">
+              <td>
+                <button class="branch-link" @click="openCloneUrl(item)">
+                  {{ item.branchName }}
                 </button>
+              </td>
 
-                <button class="text-btn blue" @click="openEditDialog(item)">
-                  修改
-                </button>
+              <td>
+                <span class="project-tag">
+                  {{ item.projectName }}
+                </span>
+              </td>
 
-                <button class="text-btn green" @click="openCloneUrl(item)">
-                  打开
-                </button>
+              <td>
+                <span class="device-tag">
+                  {{ item.deviceType }}
+                </span>
+              </td>
 
-                <button class="text-btn yellow" @click="copyCloneUrl(item)">
-                  复制
-                </button>
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+              <td>{{ item.owner }}</td>
+
+              <td class="muted">
+                {{ item.createTime }}
+              </td>
+
+              <td>
+                <div class="clone-url" :title="item.cloneUrl">
+                  {{ item.cloneUrl }}
+                </div>
+              </td>
+
+              <td class="operation-col">
+                <div class="action-group">
+                  <button class="text-btn" @click="viewBranch(item)">
+                    查看
+                  </button>
+
+                  <button class="text-btn blue" @click="openEditDialog(item)">
+                    修改
+                  </button>
+
+                  <button class="text-btn green" @click="openCloneUrl(item)">
+                    打开
+                  </button>
+
+                  <button class="text-btn yellow" @click="copyCloneUrl(item)">
+                    复制
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
       <div class="table-footer">
         共 {{ filteredBranchList.length }} 条项目分支记录
@@ -188,14 +189,6 @@
               placeholder="例如：http://bc.zycoo.com:3000/speaker/X10-Series_PA_Intercom.git"
             />
           </label>
-
-          <label class="full-row">
-            分支说明
-            <textarea
-              v-model="branchForm.description"
-              placeholder="例如：波尔图二期项目广播控制盒软件开发分支，用于PA广播和对讲业务"
-            ></textarea>
-          </label>
         </div>
 
         <div class="dialog-footer">
@@ -239,7 +232,6 @@
             <strong>{{ selectedBranch.owner }}</strong>
           </div>
 
-
           <div>
             <span>创建时间</span>
             <strong>{{ selectedBranch.createTime }}</strong>
@@ -251,11 +243,6 @@
               {{ selectedBranch.cloneUrl }}
             </button>
           </div>
-        </div>
-
-        <div class="remark-card">
-          <span>分支说明</span>
-          <p>{{ selectedBranch.description || '暂无说明' }}</p>
         </div>
 
         <div class="dialog-footer">
@@ -313,8 +300,7 @@ const branchForm = reactive({
   branchName: '',
   owner: '',
   createTime: '',
-  cloneUrl: '',
-  description: ''
+  cloneUrl: ''
 })
 
 const branchList = ref([
@@ -325,8 +311,7 @@ const branchList = ref([
     branchName: 'dev_dacu_porto2',
     owner: '傅建豪',
     createTime: '2026-05-10',
-    cloneUrl: 'http://bc.zycoo.com:3000/speaker/X10-Series_PA_Intercom.git',
-    description: '波尔图二期项目广播控制盒软件开发分支，用于PA广播和对讲业务'
+    cloneUrl: 'http://bc.zycoo.com:3000/speaker/X10-Series_PA_Intercom.git'
   },
   {
     id: 2,
@@ -335,8 +320,7 @@ const branchList = ref([
     branchName: 'Argentina_DACU_PA',
     owner: '彭泉鑫',
     createTime: '2026-05-16',
-    cloneUrl: 'http://bc.zycoo.com:3000/speaker/Argentina_DACU_PA.git',
-    description: '阿根廷项目DACU广播控制盒软件分支，用于人工广播、OCC广播和PAD广播'
+    cloneUrl: 'http://bc.zycoo.com:3000/speaker/Argentina_DACU_PA.git'
   },
   {
     id: 3,
@@ -345,8 +329,7 @@ const branchList = ref([
     branchName: 'HKTM_PECU_Alarm',
     owner: '卢进',
     createTime: '2026-05-18',
-    cloneUrl: 'http://bc.zycoo.com:3000/speaker/HKTM_PECU_Alarm.git',
-    description: '香港屯马项目乘客报警器软件分支，用于乘客报警、司机接听和报警复位'
+    cloneUrl: 'http://bc.zycoo.com:3000/speaker/HKTM_PECU_Alarm.git'
   },
   {
     id: 4,
@@ -355,8 +338,7 @@ const branchList = ref([
     branchName: 'Dubai_ECU_Encoder',
     owner: '丁sir',
     createTime: '2026-05-20',
-    cloneUrl: 'http://bc.zycoo.com:3000/speaker/Dubai_ECU_Encoder.git',
-    description: '迪拜项目编码板旧分支，当前已归档'
+    cloneUrl: 'http://bc.zycoo.com:3000/speaker/Dubai_ECU_Encoder.git'
   }
 ])
 
@@ -376,7 +358,7 @@ const filteredBranchList = computed(() => {
     const deviceTypeMatch =
       !filters.deviceType || item.deviceType === filters.deviceType
 
-    return keywordMatch && projectMatch && deviceTypeMatch 
+    return keywordMatch && projectMatch && deviceTypeMatch
   })
 })
 
@@ -396,7 +378,6 @@ function openCreateDialog() {
   branchForm.owner = ''
   branchForm.createTime = new Date().toISOString().slice(0, 10)
   branchForm.cloneUrl = ''
-  branchForm.description = ''
 
   showEditDialog.value = true
 }
@@ -411,7 +392,6 @@ function openEditDialog(item) {
   branchForm.owner = item.owner
   branchForm.createTime = item.createTime
   branchForm.cloneUrl = item.cloneUrl
-  branchForm.description = item.description
 
   showEditDialog.value = true
 }
@@ -450,8 +430,7 @@ function saveBranch() {
       branchName: branchForm.branchName,
       owner: branchForm.owner,
       createTime: branchForm.createTime || new Date().toISOString().slice(0, 10),
-      cloneUrl: branchForm.cloneUrl,
-      description: branchForm.description
+      cloneUrl: branchForm.cloneUrl
     })
   } else {
     currentEditBranch.value.projectName = branchForm.projectName
@@ -460,7 +439,6 @@ function saveBranch() {
     currentEditBranch.value.owner = branchForm.owner
     currentEditBranch.value.createTime = branchForm.createTime
     currentEditBranch.value.cloneUrl = branchForm.cloneUrl
-    currentEditBranch.value.description = branchForm.description
   }
 
   showEditDialog.value = false
@@ -520,12 +498,6 @@ async function copyCloneUrl(item) {
   font-weight: 800;
 }
 
-.page-header p {
-  margin: 8px 0 0;
-  color: #94a3b8;
-  font-size: 14px;
-}
-
 .primary-btn,
 .query-btn,
 .reset-btn {
@@ -561,7 +533,7 @@ async function copyCloneUrl(item) {
   border-radius: 14px;
   padding: 16px;
   display: grid;
-  grid-template-columns: 1.4fr 200px 180px 160px 90px 90px;
+  grid-template-columns: 1.4fr 200px 180px 90px 90px;
   gap: 12px;
   margin-bottom: 20px;
 }
@@ -569,32 +541,18 @@ async function copyCloneUrl(item) {
 .filter-card input,
 .filter-card select,
 .form-grid input,
-.form-grid select,
-.form-grid textarea {
+.form-grid select {
   border: 1px solid #334155;
   border-radius: 8px;
   background: #020617;
   color: #e2e8f0;
   padding: 0 12px;
   outline: none;
-}
-
-.filter-card input,
-.filter-card select,
-.form-grid input,
-.form-grid select {
   height: 36px;
 }
 
-.form-grid textarea {
-  min-height: 90px;
-  padding: 10px 12px;
-  resize: vertical;
-}
-
 .filter-card input::placeholder,
-.form-grid input::placeholder,
-.form-grid textarea::placeholder {
+.form-grid input::placeholder {
   color: #64748b;
 }
 
@@ -605,8 +563,43 @@ async function copyCloneUrl(item) {
   overflow: hidden;
 }
 
+.table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.table-wrapper::-webkit-scrollbar {
+  height: 10px;
+}
+
+.table-wrapper::-webkit-scrollbar-track {
+  background: #020617;
+  border-radius: 999px;
+}
+
+.table-wrapper::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 999px;
+  border: 2px solid #020617;
+}
+
+.table-wrapper::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+.table-wrapper::-webkit-scrollbar-button {
+  display: none;
+}
+
+.table-wrapper {
+  scrollbar-width: thin;
+  scrollbar-color: #334155 #020617;
+}
+
 .table-card table {
   width: 100%;
+  min-width: 1150px;
   border-collapse: collapse;
   table-layout: fixed;
 }
@@ -633,7 +626,39 @@ async function copyCloneUrl(item) {
   vertical-align: middle;
 }
 
+.table-card th:nth-child(1),
+.table-card td:nth-child(1) {
+  width: 180px;
+}
+
+.table-card th:nth-child(2),
+.table-card td:nth-child(2) {
+  width: 160px;
+}
+
+.table-card th:nth-child(3),
+.table-card td:nth-child(3) {
+  width: 140px;
+}
+
+.table-card th:nth-child(4),
+.table-card td:nth-child(4) {
+  width: 120px;
+}
+
+.table-card th:nth-child(5),
+.table-card td:nth-child(5) {
+  width: 120px;
+}
+
+.table-card th:nth-child(6),
+.table-card td:nth-child(6) {
+  width: 280px;
+}
+
 .branch-link {
+  display: inline-block;
+  max-width: 160px;
   border: none;
   background: transparent;
   color: #60a5fa;
@@ -642,6 +667,10 @@ async function copyCloneUrl(item) {
   cursor: pointer;
   padding: 0;
   text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 
 .branch-link:hover {
@@ -649,22 +678,18 @@ async function copyCloneUrl(item) {
   text-decoration: underline;
 }
 
-.branch-desc {
-  margin-top: 4px;
-  color: #64748b;
-  font-size: 12px;
-  line-height: 1.5;
-  word-break: break-all;
-}
-
 .project-tag,
 .device-tag {
-  display: inline-flex;
+  display: inline-block;
+  max-width: 130px;
   padding: 4px 9px;
   border-radius: 999px;
   font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
 }
 
 .project-tag {
@@ -677,12 +702,14 @@ async function copyCloneUrl(item) {
   color: #5eead4;
 }
 
-
 .clone-url {
+  display: block;
+  max-width: 260px;
   color: #94a3b8;
   font-size: 12px;
-  word-break: break-all;
-  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .muted {
@@ -814,8 +841,7 @@ async function copyCloneUrl(item) {
   gap: 14px;
 }
 
-.detail-card div,
-.remark-card {
+.detail-card div {
   background: #020617;
   border: 1px solid #1e293b;
   border-radius: 10px;
@@ -826,8 +852,7 @@ async function copyCloneUrl(item) {
   grid-column: 1 / -1;
 }
 
-.detail-card span,
-.remark-card span {
+.detail-card span {
   display: block;
   color: #64748b;
   font-size: 12px;
@@ -855,28 +880,13 @@ async function copyCloneUrl(item) {
   text-decoration: underline;
 }
 
-.remark-card {
-  margin: 0 20px 20px;
-}
-
-.remark-card p {
-  margin: 0;
-  color: #cbd5e1;
-  font-size: 13px;
-  line-height: 1.6;
-}
-
 @media (max-width: 960px) {
   .filter-card {
     grid-template-columns: 1fr;
   }
 
-  .table-card {
-    overflow-x: auto;
-  }
-
   .table-card table {
-    min-width: 1200px;
+    min-width: 1150px;
   }
 
   .form-grid,

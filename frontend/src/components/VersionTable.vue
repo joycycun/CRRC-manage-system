@@ -18,8 +18,8 @@
       <table class="version-table">
         <thead>
           <tr>
-            <th>项目名称</th>
             <th>终端类型</th>
+            <th>项目名称</th>
             <th>硬件版本</th>
             <th>软件版本</th>
             <th>当前状态</th>
@@ -31,12 +31,12 @@
 
         <tbody>
           <tr v-for="item in versionList" :key="item.id">
-            <td class="project-name">
-              {{ item.projectName }}
-            </td>
-
             <td>
               {{ item.deviceType }}
+            </td>
+
+            <td class="project-name">
+              {{ item.projectName }}
             </td>
 
             <td>

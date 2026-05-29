@@ -15,7 +15,7 @@
     <div class="filter-card">
       <input
         v-model="filters.keyword"
-        placeholder="搜索批次号 / 上传人 / 发货单文件"
+        placeholder="搜索批次号 / SN序列号 / 上传人 / 发货单文件 / 快递单号"
       />
 
       <select v-model="filters.auditStatus">
@@ -28,6 +28,18 @@
 
       <button class="query-btn">查询</button>
       <button class="reset-btn" @click="resetFilters">重置</button>
+    </div>
+
+    <!-- 待生成发货批次提示 -->
+    <div v-if="pendingShippingDevices.length > 0" class="pending-card">
+      <div>
+        <strong>已从出库管理选择 {{ pendingShippingDevices.length }} 台设备</strong>
+        <p>点击“新增发货批次”后，系统会自动带入这些设备的 SN 序列号和设备数量。</p>
+      </div>
+
+      <button class="primary-btn" @click="openCreateDialog">
+        使用已选设备生成发货批次
+      </button>
     </div>
 
     <!-- 发货批次表格 -->
@@ -51,6 +63,7 @@
               <th>审核状态</th>
               <th>审核人</th>
               <th class="operation-col">操作</th>
+              <th>快递单号</th>
             </tr>
           </thead>
 
@@ -121,12 +134,20 @@
                   </button>
                 </div>
               </td>
+
+              <td>
+                <span class="express-tag" :title="item.expressNo">
+                  {{ item.expressNo || '-' }}
+                </span>
+              </td>
             </tr>
           </tbody>
         </table>
       </div>
 
-      <div class="table-footer"></div>
+      <div class="table-footer">
+        支持按发货批次号、SN序列号、上传人、发货单文件、快递单号查询。
+      </div>
     </div>
 
     <!-- 新增发货批次弹窗 -->
@@ -152,7 +173,7 @@
               v-model.number="batchForm.deviceCount"
               type="number"
               min="1"
-              placeholder="请输入本批次设备数量"
+              disabled
             />
           </label>
 
@@ -162,6 +183,34 @@
               v-model="batchForm.uploader"
               placeholder="请输入上传人"
             />
+          </label>
+
+          <label>
+            快递单号
+            <input
+              v-model="batchForm.expressNo"
+              placeholder="例如：SF1234567890"
+            />
+          </label>
+
+          <label class="full-row">
+            已选出库设备 SN
+            <div class="selected-device-panel">
+              <div v-if="batchForm.snList.length === 0" class="empty-device">
+                暂无已选设备，请先到出库管理页面勾选设备并跳转到发货管理。
+              </div>
+
+              <div
+                v-for="device in batchForm.deviceList"
+                v-else
+                :key="device.outboundId || device.id"
+                class="selected-device-item"
+              >
+                <span>{{ device.deviceType }}</span>
+                <strong>{{ device.sn }}</strong>
+                <em>{{ device.macAddress }}</em>
+              </div>
+            </div>
           </label>
 
           <label class="full-row">
@@ -218,6 +267,11 @@
           </div>
 
           <div>
+            <span>快递单号</span>
+            <strong>{{ selectedBatch.expressNo || '-' }}</strong>
+          </div>
+
+          <div>
             <span>发货单文件</span>
             <strong>{{ selectedBatch.fileName }}</strong>
           </div>
@@ -261,6 +315,23 @@
         </div>
 
         <div class="remark-card">
+          <span>SN序列号</span>
+          <div class="sn-list">
+            <span
+              v-for="sn in selectedBatch.snList"
+              :key="sn"
+              class="sn-tag"
+              :title="sn"
+            >
+              {{ sn }}
+            </span>
+            <p v-if="!selectedBatch.snList || selectedBatch.snList.length === 0">
+              暂无 SN 序列号
+            </p>
+          </div>
+        </div>
+
+        <div class="remark-card">
           <span>发货说明</span>
           <p>{{ selectedBatch.remark || '暂无说明' }}</p>
         </div>
@@ -298,6 +369,8 @@
 <script setup>
 import { computed, reactive, ref } from 'vue'
 
+const STORAGE_PENDING_SHIPPING_KEY = 'pendingShippingDevices'
+
 const filters = reactive({
   keyword: '',
   auditStatus: ''
@@ -306,10 +379,15 @@ const filters = reactive({
 const showCreateDialog = ref(false)
 const selectedBatch = ref(null)
 
+const pendingShippingDevices = ref(readStorageList(STORAGE_PENDING_SHIPPING_KEY, []))
+
 const batchForm = reactive({
   batchNo: '',
   deviceCount: 0,
   uploader: '',
+  expressNo: '',
+  snList: [],
+  deviceList: [],
   fileName: '',
   file: null,
   fileUrl: '',
@@ -320,7 +398,13 @@ const batchList = ref([
   {
     id: 1,
     batchNo: '0000013289',
-    deviceCount: 18,
+    deviceCount: 3,
+    expressNo: 'SF202605100001',
+    snList: [
+      'DCCU-202605100001',
+      'DCCU-202605100002',
+      'DCCU-202605100003'
+    ],
     fileName: '5月第一批司机室控制盒发货单.xlsx',
     fileUrl: '',
     uploader: '袁晓兰',
@@ -333,7 +417,13 @@ const batchList = ref([
   {
     id: 2,
     batchNo: '0000013290',
-    deviceCount: 26,
+    deviceCount: 3,
+    expressNo: 'SF202605160001',
+    snList: [
+      'DEC-202605110001',
+      'DEC-202605110002',
+      'DEC-202605110003'
+    ],
     fileName: '5月第二批解码板发货单.xlsx',
     fileUrl: '',
     uploader: '袁晓兰',
@@ -342,42 +432,24 @@ const batchList = ref([
     auditor: '',
     auditTime: '',
     remark: '待领导审核确认。'
-  },
-  {
-    id: 3,
-    batchNo: '0000013291',
-    deviceCount: 12,
-    fileName: '司机提醒单元发货单.xlsx',
-    fileUrl: '',
-    uploader: '袁晓兰',
-    uploadTime: '2026-05-18',
-    auditStatus: 'draft',
-    auditor: '',
-    auditTime: '',
-    remark: '草稿，尚未提交审核。'
-  },
-  {
-    id: 4,
-    batchNo: '0000013294',
-    deviceCount: 30,
-    fileName: '编码板_功放板混合发货单.xlsx',
-    fileUrl: '',
-    uploader: '袁晓兰',
-    uploadTime: '2026-05-20',
-    auditStatus: 'rejected',
-    auditor: '领导',
-    auditTime: '2026-05-21',
-    remark: '发货单设备数量与系统记录不一致，需要重新核对。'
   }
 ])
 
 const filteredBatchList = computed(() => {
   return batchList.value.filter(item => {
+    const keyword = filters.keyword.trim()
+
+    const snMatch =
+      item.snList &&
+      item.snList.some(sn => sn.includes(keyword))
+
     const keywordMatch =
-      !filters.keyword ||
-      item.batchNo.includes(filters.keyword) ||
-      item.uploader.includes(filters.keyword) ||
-      item.fileName.includes(filters.keyword)
+      !keyword ||
+      item.batchNo.includes(keyword) ||
+      item.uploader.includes(keyword) ||
+      item.fileName.includes(keyword) ||
+      item.expressNo.includes(keyword) ||
+      snMatch
 
     const auditStatusMatch =
       !filters.auditStatus || item.auditStatus === filters.auditStatus
@@ -385,6 +457,29 @@ const filteredBatchList = computed(() => {
     return keywordMatch && auditStatusMatch
   })
 })
+
+function readStorageList(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key)
+    if (!raw) return fallback
+    return JSON.parse(raw)
+  } catch (error) {
+    return fallback
+  }
+}
+
+function saveStorageList(key, value) {
+  localStorage.setItem(key, JSON.stringify(value))
+}
+
+function getCurrentUserName() {
+  return (
+    localStorage.getItem('username') ||
+    localStorage.getItem('accountName') ||
+    localStorage.getItem('realName') ||
+    '当前用户'
+  )
+}
 
 function getAuditStatusText(status) {
   const map = {
@@ -403,9 +498,15 @@ function resetFilters() {
 }
 
 function openCreateDialog() {
+  const pendingDevices = readStorageList(STORAGE_PENDING_SHIPPING_KEY, [])
+  pendingShippingDevices.value = pendingDevices
+
   batchForm.batchNo = ''
-  batchForm.deviceCount = 0
-  batchForm.uploader = ''
+  batchForm.deviceList = pendingDevices
+  batchForm.snList = pendingDevices.map(item => item.sn).filter(Boolean)
+  batchForm.deviceCount = batchForm.snList.length
+  batchForm.uploader = getCurrentUserName()
+  batchForm.expressNo = ''
   batchForm.fileName = ''
   batchForm.file = null
   batchForm.fileUrl = ''
@@ -430,12 +531,12 @@ function createBatch() {
   }
 
   if (!batchForm.deviceCount || batchForm.deviceCount <= 0) {
-    alert('请输入正确的设备数量')
+    alert('暂无已选设备，请先到出库管理页面勾选设备')
     return
   }
 
   if (!batchForm.uploader) {
-    alert('请输入上传人')
+    alert('上传人读取失败')
     return
   }
 
@@ -448,6 +549,9 @@ function createBatch() {
     id: Date.now(),
     batchNo: batchForm.batchNo,
     deviceCount: batchForm.deviceCount,
+    expressNo: batchForm.expressNo,
+    snList: [...batchForm.snList],
+    deviceList: [...batchForm.deviceList],
     fileName: batchForm.fileName,
     fileUrl: batchForm.fileUrl,
     uploader: batchForm.uploader,
@@ -458,7 +562,11 @@ function createBatch() {
     remark: batchForm.remark
   })
 
+  localStorage.removeItem(STORAGE_PENDING_SHIPPING_KEY)
+  pendingShippingDevices.value = []
   showCreateDialog.value = false
+
+  alert('发货批次已生成，SN 已从出库管理页面自动带入')
 }
 
 function viewBatch(item) {
@@ -541,12 +649,6 @@ function deleteBatch(item) {
   margin: 0;
   font-size: 26px;
   font-weight: 800;
-}
-
-.page-header p {
-  margin: 8px 0 0;
-  color: #94a3b8;
-  font-size: 14px;
 }
 
 .primary-btn,
@@ -652,6 +754,29 @@ function deleteBatch(item) {
   cursor: pointer;
 }
 
+.pending-card {
+  background: #0f172a;
+  border: 1px solid #1d4ed8;
+  border-radius: 14px;
+  padding: 16px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.pending-card strong {
+  color: #f8fafc;
+  font-size: 15px;
+}
+
+.pending-card p {
+  margin: 6px 0 0;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
 .table-card {
   background: #0f172a;
   border: 1px solid #1e293b;
@@ -715,13 +840,19 @@ function deleteBatch(item) {
 
 .version-table {
   width: 100%;
-  min-width: 1150px;
+  min-width: 1320px;
   border-collapse: collapse;
   table-layout: fixed;
 }
 
 .version-table thead {
   background: #020617;
+}
+
+.version-table th,
+.version-table td {
+  box-sizing: border-box;
+  white-space: nowrap;
 }
 
 .version-table th {
@@ -731,7 +862,6 @@ function deleteBatch(item) {
   font-weight: 600;
   text-align: left;
   border-bottom: 1px solid #1e293b;
-  white-space: nowrap;
 }
 
 .version-table td {
@@ -740,9 +870,12 @@ function deleteBatch(item) {
   color: #e2e8f0;
   border-bottom: 1px solid #1e293b;
   vertical-align: middle;
+  overflow: hidden;
 }
 
 .record-link {
+  display: inline-block;
+  max-width: 130px;
   border: none;
   background: transparent;
   color: #60a5fa;
@@ -751,6 +884,9 @@ function deleteBatch(item) {
   cursor: pointer;
   padding: 0;
   text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .record-link:hover {
@@ -758,7 +894,8 @@ function deleteBatch(item) {
   text-decoration: underline;
 }
 
-.file-tag {
+.file-tag,
+.express-tag {
   display: inline-block;
   width: 150px;
   max-width: 150px;
@@ -771,6 +908,12 @@ function deleteBatch(item) {
   text-overflow: ellipsis;
   white-space: nowrap;
   vertical-align: middle;
+}
+
+.express-tag {
+  background: #1d4ed833;
+  color: #60a5fa;
+  font-family: Consolas, Monaco, monospace;
 }
 
 .count-tag {
@@ -827,7 +970,8 @@ function deleteBatch(item) {
   justify-content: flex-end;
   align-items: center;
   gap: 12px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  white-space: nowrap;
 }
 
 .text-btn {
@@ -837,6 +981,7 @@ function deleteBatch(item) {
   font-size: 13px;
   cursor: pointer;
   white-space: nowrap;
+  padding: 0;
 }
 
 .text-btn:hover {
@@ -861,7 +1006,6 @@ function deleteBatch(item) {
   font-size: 12px;
 }
 
-/* 弹窗 */
 .dialog-mask {
   position: fixed;
   inset: 0;
@@ -876,6 +1020,8 @@ function deleteBatch(item) {
 .dialog {
   width: 760px;
   max-width: 100%;
+  max-height: 92vh;
+  overflow-y: auto;
   background: #0f172a;
   border: 1px solid #334155;
   border-radius: 16px;
@@ -925,6 +1071,48 @@ function deleteBatch(item) {
 
 .full-row {
   grid-column: 1 / -1;
+}
+
+.selected-device-panel {
+  min-height: 120px;
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  background: #020617;
+  padding: 10px;
+}
+
+.selected-device-item {
+  display: grid;
+  grid-template-columns: 140px 1fr 180px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border-bottom: 1px solid #1e293b;
+}
+
+.selected-device-item:last-child {
+  border-bottom: none;
+}
+
+.selected-device-item span {
+  color: #5eead4;
+  font-size: 12px;
+}
+
+.selected-device-item strong,
+.selected-device-item em {
+  color: #cbd5e1;
+  font-size: 12px;
+  font-family: Consolas, Monaco, monospace;
+  font-style: normal;
+}
+
+.empty-device {
+  color: #64748b;
+  font-size: 13px;
+  padding: 10px 0;
 }
 
 .dialog-footer {
@@ -990,17 +1178,41 @@ function deleteBatch(item) {
   line-height: 1.6;
 }
 
+.sn-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sn-tag {
+  display: inline-block;
+  max-width: 180px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: #33415566;
+  color: #cbd5e1;
+  font-size: 12px;
+  font-family: Consolas, Monaco, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 @media (max-width: 960px) {
   .filter-card {
     grid-template-columns: 1fr;
   }
 
   .version-table {
-    min-width: 1150px;
+    min-width: 1320px;
   }
 
   .form-grid,
   .detail-card {
+    grid-template-columns: 1fr;
+  }
+
+  .selected-device-item {
     grid-template-columns: 1fr;
   }
 }

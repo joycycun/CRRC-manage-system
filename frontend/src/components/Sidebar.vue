@@ -54,6 +54,14 @@
           >
             需求变更
           </router-link>
+
+          <router-link
+            to="/requirement/customer-supplied"  
+            class="submenu-item"
+            :class="{ active: isActive('/requirement/customer-supplied') }"
+          >
+            客供资料
+          </router-link>
         </div>
       </div>
 
@@ -114,13 +122,13 @@
           </router-link>
 
 
-          <router-link
+          <!-- <router-link
             to="/software/project-config"
             class="submenu-item"
             :class="{ active: isActive('/software/project-config') }"
           >
             项目配置资料
-          </router-link>
+          </router-link> -->
         </div>
       </div>
 
@@ -177,7 +185,7 @@
             class="submenu-item"
             :class="{ active: isActive('/production/burn') }"
           >
-            生产烧录记录
+            生产烧录
           </router-link>
 
           <router-link
@@ -209,24 +217,40 @@
         </button>
 
         <div v-show="openedMenus.shipping" class="submenu">
-          <router-link
+          <!-- <router-link
             to="/shipping/batch"
             class="submenu-item"
             :class="{ active: isActive('/shipping/batch') }"
           >
             发货批次
-          </router-link>
+          </router-link> -->
 
-          <router-link
+
+          <!-- <router-link
             to="/shipping/receipt"
             class="submenu-item"
             :class="{ active: isActive('/shipping/receipt') }"
           >
             收货记录
-          </router-link>
-        </div>
-      </div>
+          </router-link> -->
 
+          <router-link
+            to="/shipping/out"
+            class="submenu-item"
+            :class="{ active: isActive('/shipping/out') }"
+          >
+            出库记录
+          </router-link>
+            <router-link
+                  to="/shipping/batch"
+                  class="submenu-item"
+                  :class="{ active: isActive('/shipping/batch') }"
+                >
+                  发货批次
+                </router-link> 
+              </div>
+      </div>
+ 
       <!-- 售后管理 -->
       <div class="menu-group">
         <button class="menu-item menu-button" @click="toggleMenu('aftersales')">
@@ -238,13 +262,13 @@
         </button>
 
         <div v-show="openedMenus.aftersales" class="submenu">
-          <router-link
+          <!-- <router-link
             to="/aftersales/upgrade"
             class="submenu-item"
             :class="{ active: isActive('/aftersales/upgrade') }"
           >
             升级记录
-          </router-link>
+          </router-link> -->
 
           <router-link
             to="/aftersales/repair"

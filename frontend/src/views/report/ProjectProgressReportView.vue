@@ -322,8 +322,8 @@ const stageOptions = [
     percent: 20
   },
   {
-    value: 'hardware_check',
-    label: '硬件检测',
+    value: 'hardware_development',
+    label: '硬件开发',
     percent: 30
   },
   {

@@ -7,13 +7,14 @@ import ProjectManageView from "@/views/project/ProjectManageView.vue";
 
 import RequirementBookView from "@/views/requirement/RequirementBookView.vue";
 import RequirementChangeView from "@/views/requirement/RequirementChangeView.vue";
+import CustomerSuppliedView from "@/views/requirement/CustomerSuppliedView.vue";
 
 import HardwareVersionView from "@/views/hardware/HardwareVersionView.vue";
 import HardwareTestView from "@/views/hardware/HardwareTestView.vue";
 
 import SoftwareVersionView from "@/views/software/SoftwareVersionView.vue";
 import ProjectBranchView from "@/views/software/ProjectBranchView.vue";
-import ProjectConfigFileView from "@/views/software/ProjectConfigFileView.vue";
+// import ProjectConfigFileView from "@/views/software/ProjectConfigFileView.vue";
 
 import TestCaseView from "@/views/test/TestCaseView.vue";
 import TestReportView from "@/views/test/TestReportView.vue";
@@ -24,9 +25,10 @@ import FactoryTestView from "@/views/production/FactoryTestView.vue";
 import InventoryView from "@/views/production/InventoryView.vue";
 
 import ShippingBatchView from "@/views/shipping/ShippingBatchView.vue";
-import ReceiptRecordView from "@/views/shipping/ReceiptRecordView.vue";
+// import ReceiptRecordView from "@/views/shipping/ReceiptRecordView.vue";
+import OutInventoryView from "@/views/shipping/OutInventoryView.vue";
 
-import UpgradeRecordView from "@/views/aftersales/UpgradeRecordView.vue";
+// import UpgradeRecordView from "@/views/aftersales/UpgradeRecordView.vue";
 import RepairRecordView from "@/views/aftersales/RepairRecordView.vue";
 import FaultAnalysisView from "@/views/aftersales/FaultAnalysisView.vue";
 
@@ -52,13 +54,13 @@ const routes = [
 
   { path: "/requirement/book", component: RequirementBookView },
   { path: "/requirement/change", component: RequirementChangeView },
-
+  { path: "/requirement/customer-supplied", component: CustomerSuppliedView },
   { path: "/hardware/version", component: HardwareVersionView },
   { path: "/hardware/test", component: HardwareTestView },
 
   { path: "/software/version", component: SoftwareVersionView },
   { path: "/software/branch", component: ProjectBranchView },
-  { path: "/software/project-config", component: ProjectConfigFileView },
+  // { path: "/software/project-config", component: ProjectConfigFileView },
 
   { path: "/test/case", component: TestCaseView },
   { path: "/test/report", component: TestReportView },
@@ -67,11 +69,16 @@ const routes = [
   { path: "/production/burn", component: ProductionBurnRecordView },
   { path: "/production/factory-test", component: FactoryTestView },
   { path: "/production/inventory", component: InventoryView },
+  {
+    path: '/inventory/out',
+    name: 'OutInventory',
+    component: () => import('@/views/shipping/OutInventoryView.vue')
+  },
 
   { path: "/shipping/batch", component: ShippingBatchView },
-  { path: "/shipping/receipt", component: ReceiptRecordView },
-
-  { path: "/aftersales/upgrade", component: UpgradeRecordView },
+  // { path: "/shipping/receipt", component: ReceiptRecordView },
+  { path: "/shipping/out", component: OutInventoryView },
+  // { path: "/aftersales/upgrade", component: UpgradeRecordView },
   { path: "/aftersales/repair", component: RepairRecordView },
   { path: "/aftersales/fault-analysis", component: FaultAnalysisView },
 

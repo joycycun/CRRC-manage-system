@@ -3,11 +3,11 @@
     <!-- 页面头部 -->
     <div class="page-header">
       <div>
-        <h1>配置文件管理</h1>
+        <h1>客供资料</h1>
       </div>
 
       <button class="primary-btn" @click="openUploadDialog">
-        上传配置文件
+        上传资料
       </button>
     </div>
 
@@ -15,7 +15,7 @@
     <div class="filter-card">
       <input
         v-model="filters.keyword"
-        placeholder="搜索项目名称 / 配置文件名称 / 上传人"
+        placeholder="搜索项目名称 / 资料名称 / 上传人 / 文件名"
       />
 
       <select v-model="filters.projectName">
@@ -29,92 +29,145 @@
         </option>
       </select>
 
-      <select v-model="filters.configType">
-        <option value="">全部配置类型</option>
-        <option
-          v-for="type in configTypeOptions"
-          :key="type"
-          :value="type"
-        >
-          {{ type }}
-        </option>
-      </select>
-
       <button class="query-btn">查询</button>
       <button class="reset-btn" @click="resetFilters">重置</button>
     </div>
 
-    <!-- 数据表格 -->
+    <!-- 项目资料列表 -->
     <div class="table-card">
-      <table>
-        <thead>
-          <tr>
-            <th>配置文件</th>
-            <th>绑定项目</th>
-            <th>配置类型</th>
-            <th>上传人</th>
-            <th>上传时间</th>
-            <th>文件大小</th>
-            <th class="operation-col">操作</th>
-          </tr>
-        </thead>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>项目名称</th>
+              <th>资料数量</th>
+              <th>最近上传时间</th>
+              <th>最近上传人</th>
+              <th class="operation-col">操作</th>
+            </tr>
+          </thead>
 
-        <tbody>
-          <tr v-for="item in filteredConfigList" :key="item.id">
-            <td>
-              <button class="file-link" @click="viewConfig(item)">
-                {{ item.configName }}
-              </button>
-              <div class="file-name">{{ item.fileName }}</div>
-            </td>
+          <tbody>
+            <template
+              v-for="project in filteredProjectGroupList"
+              :key="project.projectName"
+            >
+              <!-- 第一层：只展示项目名称 -->
+              <tr class="project-row">
+                <td>
+                  <button
+                    class="project-name-btn"
+                    @click="toggleProject(project.projectName)"
+                  >
+                    <span class="expand-icon">
+                      {{ expandedProjects.includes(project.projectName) ? '▼' : '▶' }}
+                    </span>
+                    {{ project.projectName }}
+                  </button>
+                </td>
 
-            <td>
-              <span class="project-tag">
-                {{ item.projectName }}
-              </span>
-            </td>
+                <td>
+                  <span class="count-tag">
+                    {{ project.files.length }} 份资料
+                  </span>
+                </td>
 
-            <td>
-              <span class="config-tag" :class="getConfigTypeClass(item.configType)">
-                {{ item.configType }}
-              </span>
-            </td>
+                <td class="muted">
+                  {{ project.latestUploadTime || '-' }}
+                </td>
 
-            <td>{{ item.uploader }}</td>
+                <td>
+                  {{ project.latestUploader || '-' }}
+                </td>
 
-            <td class="muted">{{ item.uploadTime }}</td>
+                <td class="operation-col">
+                  <div class="action-group">
+                    <button
+                      class="text-btn blue"
+                      @click="toggleProject(project.projectName)"
+                    >
+                      {{ expandedProjects.includes(project.projectName) ? '收起' : '查看资料' }}
+                    </button>
+                  </div>
+                </td>
+              </tr>
 
-            <td class="muted">{{ item.fileSize || '-' }}</td>
+              <!-- 第二层：点击项目后展示资料 -->
+              <tr
+                v-if="expandedProjects.includes(project.projectName)"
+                class="child-row"
+              >
+                <td colspan="5">
+                  <div class="child-table-wrapper">
+                    <table class="child-table">
+                      <thead>
+                        <tr>
+                          <th>资料名称</th>
+                          <th>文件名称</th>
+                          <th>上传人</th>
+                          <th>上传时间</th>
+                          <th>文件大小</th>
+                          <th class="child-operation-col">操作</th>
+                        </tr>
+                      </thead>
 
-            <td class="operation-col">
-              <div class="action-group">
-                <button class="text-btn" @click="viewConfig(item)">
-                  查看
-                </button>
+                      <tbody>
+                        <tr
+                          v-for="item in project.files"
+                          :key="item.id"
+                        >
+                          <td>
+                            <button class="file-link" @click="viewConfig(item)">
+                              {{ item.configName }}
+                            </button>
+                          </td>
 
-                <button class="text-btn blue" @click="downloadConfig(item)">
-                  下载
-                </button>
+                          <td>
+                            <div class="file-name">{{ item.fileName }}</div>
+                          </td>
 
-                <button class="text-btn red" @click="deleteConfig(item)">
-                  删除
-                </button>
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+                          <td>{{ item.uploader }}</td>
+
+                          <td class="muted">{{ item.uploadTime }}</td>
+
+                          <td class="muted">{{ item.fileSize || '-' }}</td>
+
+                          <td class="child-operation-col">
+                            <div class="action-group">
+                              <button class="text-btn" @click="viewConfig(item)">
+                                查看
+                              </button>
+
+                              <button class="text-btn blue" @click="downloadConfig(item)">
+                                下载
+                              </button>
+
+                              <button class="text-btn red" @click="deleteConfig(item)">
+                                删除
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
 
       <div class="table-footer">
-        共 {{ filteredConfigList.length }} 条配置文件记录
+        共 {{ filteredConfigList.length }} 条资料记录，按项目归类展示
       </div>
     </div>
 
-    <!-- 上传配置文件弹窗 -->
+    <!-- 上传资料弹窗 -->
     <div v-if="showUploadDialog" class="dialog-mask">
       <div class="dialog">
         <div class="dialog-header">
-          <h3>上传配置文件</h3>
+          <h3>上传资料</h3>
           <button @click="showUploadDialog = false">×</button>
         </div>
 
@@ -134,45 +187,22 @@
           </label>
 
           <label>
-            配置类型
-            <select v-model="uploadForm.configType">
-              <option value="">请选择配置类型</option>
-              <option
-                v-for="type in configTypeOptions"
-                :key="type"
-                :value="type"
-              >
-                {{ type }}
-              </option>
-            </select>
-          </label>
-
-          <label>
-            配置名称
+            资料名称
             <input
               v-model="uploadForm.configName"
-              placeholder="例如：阿根廷项目SIP账号配置"
+              placeholder="例如：阿根廷项目SIP账号资料"
             />
           </label>
 
           <label>
             上传人
             <input
-              v-model="uploadForm.uploader"
-              placeholder="请输入上传人"
+              v-model="currentUserName"
+              disabled
             />
           </label>
 
-          <label class="full-row">
-            配置文件
-            <input
-              type="file"
-              accept=".txt,.ini,.conf,.json,.xml,.yaml,.yml,.cfg,.xlsx,.xls,.doc,.docx,.zip"
-              @change="handleFileChange"
-            />
-          </label>
-
-          <label class="full-row">
+          <label>
             文件名称
             <input
               v-model="uploadForm.fileName"
@@ -182,10 +212,19 @@
           </label>
 
           <label class="full-row">
-            配置说明
+            资料文件
+            <input
+              type="file"
+              accept=".txt,.ini,.conf,.json,.xml,.yaml,.yml,.cfg,.xlsx,.xls,.doc,.docx,.zip,.pdf"
+              @change="handleFileChange"
+            />
+          </label>
+
+          <label class="full-row">
+            资料说明
             <textarea
               v-model="uploadForm.description"
-              placeholder="例如：包含SIP账号、服务器IP、组播地址、协议参数、终端编号等配置内容"
+              placeholder="例如：包含SIP账号、服务器IP、组播地址、协议参数、终端编号等资料内容"
             ></textarea>
           </label>
         </div>
@@ -202,28 +241,23 @@
       </div>
     </div>
 
-    <!-- 查看配置文件详情弹窗 -->
+    <!-- 查看资料详情弹窗 -->
     <div v-if="selectedConfig" class="dialog-mask">
       <div class="dialog large-dialog">
         <div class="dialog-header">
-          <h3>配置文件详情</h3>
+          <h3>资料详情</h3>
           <button @click="selectedConfig = null">×</button>
         </div>
 
         <div class="detail-card">
           <div>
-            <span>配置名称</span>
+            <span>资料名称</span>
             <strong>{{ selectedConfig.configName }}</strong>
           </div>
 
           <div>
             <span>绑定项目</span>
             <strong>{{ selectedConfig.projectName }}</strong>
-          </div>
-
-          <div>
-            <span>配置类型</span>
-            <strong>{{ selectedConfig.configType }}</strong>
           </div>
 
           <div>
@@ -255,12 +289,12 @@
         </div>
 
         <div class="remark-card">
-          <span>配置说明</span>
+          <span>资料说明</span>
           <p>{{ selectedConfig.description || '暂无说明' }}</p>
         </div>
 
         <div class="remark-card">
-          <span>配置内容示例</span>
+          <span>资料内容示例</span>
           <pre>{{ selectedConfig.previewContent || '当前文件暂无可预览内容，可点击下载查看原文件。' }}</pre>
         </div>
 
@@ -285,14 +319,21 @@
 <script setup>
 import { computed, reactive, ref } from 'vue'
 
+const currentUserName = ref(
+  localStorage.getItem('username') ||
+  localStorage.getItem('accountName') ||
+  localStorage.getItem('realName') ||
+  '当前用户'
+)
+
 const filters = reactive({
   keyword: '',
-  projectName: '',
-  configType: ''
+  projectName: ''
 })
 
 const showUploadDialog = ref(false)
 const selectedConfig = ref(null)
+const expandedProjects = ref([])
 
 const projectOptions = [
   '香港屯马项目',
@@ -302,21 +343,9 @@ const projectOptions = [
   '迪拜项目'
 ]
 
-const configTypeOptions = [
-  'SIP账号设置',
-  'IP地址设置',
-  '协议配置',
-  '服务器配置',
-  '音频参数配置',
-  '终端编号配置',
-  '其他配置'
-]
-
 const uploadForm = reactive({
   projectName: '',
-  configType: '',
   configName: '',
-  uploader: '',
   fileName: '',
   fileSize: '',
   file: null,
@@ -329,8 +358,7 @@ const configFileList = ref([
   {
     id: 1,
     projectName: '阿根廷有轨项目',
-    configType: 'SIP账号设置',
-    configName: '阿根廷项目DACU SIP账号配置',
+    configName: '阿根廷项目DACU SIP账号资料',
     fileName: 'Argentina_DACU_sip_accounts.ini',
     fileSize: '12 KB',
     fileUrl: '',
@@ -349,7 +377,6 @@ transport=udp`
   {
     id: 2,
     projectName: '波尔图二期项目',
-    configType: 'IP地址设置',
     configName: '波尔图二期终端IP地址规划',
     fileName: 'Porto_IP_Address_Config.xlsx',
     fileSize: '28 KB',
@@ -367,8 +394,7 @@ transport=udp`
   {
     id: 3,
     projectName: '香港屯马项目',
-    configType: '协议配置',
-    configName: '香港屯马PA协议配置',
+    configName: '香港屯马PA协议资料',
     fileName: 'HKTM_PA_protocol_config.json',
     fileSize: '18 KB',
     fileUrl: '',
@@ -386,8 +412,7 @@ transport=udp`
   {
     id: 4,
     projectName: '迪拜项目',
-    configType: '音频参数配置',
-    configName: '迪拜项目编码板音频参数配置',
+    configName: '迪拜项目编码板音频参数资料',
     fileName: 'Dubai_ECU_audio_config.conf',
     fileSize: '9 KB',
     fileUrl: '',
@@ -400,6 +425,21 @@ codec=opus
 channels=2
 bitrate=64000
 rtp_payload_type=111`
+  },
+  {
+    id: 5,
+    projectName: '阿根廷有轨项目',
+    configName: '阿根廷项目服务器地址资料',
+    fileName: 'Argentina_Server_Address.xlsx',
+    fileSize: '21 KB',
+    fileUrl: '',
+    uploader: '卢进',
+    uploadTime: '2026-05-21',
+    description: '阿根廷项目主备服务器地址、网关、终端编号等资料。',
+    previewContent:
+`主服务器：10.0.11.11
+备用服务器：10.0.11.81
+网关：10.0.24.1`
   }
 ])
 
@@ -409,31 +449,61 @@ const filteredConfigList = computed(() => {
       !filters.keyword ||
       item.projectName.includes(filters.keyword) ||
       item.configName.includes(filters.keyword) ||
-      item.configType.includes(filters.keyword) ||
       item.uploader.includes(filters.keyword) ||
-      item.fileName.includes(filters.keyword)
+      item.fileName.includes(filters.keyword) ||
+      item.description.includes(filters.keyword)
 
     const projectMatch =
       !filters.projectName || item.projectName === filters.projectName
 
-    const configTypeMatch =
-      !filters.configType || item.configType === filters.configType
+    return keywordMatch && projectMatch
+  })
+})
 
-    return keywordMatch && projectMatch && configTypeMatch
+const filteredProjectGroupList = computed(() => {
+  const map = new Map()
+
+  filteredConfigList.value.forEach(item => {
+    if (!map.has(item.projectName)) {
+      map.set(item.projectName, {
+        projectName: item.projectName,
+        files: []
+      })
+    }
+
+    map.get(item.projectName).files.push(item)
+  })
+
+  return Array.from(map.values()).map(project => {
+    const sortedFiles = [...project.files].sort((a, b) => {
+      return new Date(b.uploadTime) - new Date(a.uploadTime)
+    })
+
+    return {
+      projectName: project.projectName,
+      files: sortedFiles,
+      latestUploadTime: sortedFiles[0]?.uploadTime || '',
+      latestUploader: sortedFiles[0]?.uploader || ''
+    }
   })
 })
 
 function resetFilters() {
   filters.keyword = ''
   filters.projectName = ''
-  filters.configType = ''
+}
+
+function toggleProject(projectName) {
+  if (expandedProjects.value.includes(projectName)) {
+    expandedProjects.value = expandedProjects.value.filter(item => item !== projectName)
+  } else {
+    expandedProjects.value.push(projectName)
+  }
 }
 
 function openUploadDialog() {
   uploadForm.projectName = ''
-  uploadForm.configType = ''
   uploadForm.configName = ''
-  uploadForm.uploader = ''
   uploadForm.fileName = ''
   uploadForm.fileSize = ''
   uploadForm.file = null
@@ -472,44 +542,42 @@ function handleFileChange(event) {
 
     reader.readAsText(file)
   } else {
-    uploadForm.previewContent = '当前文件不是纯文本配置，建议下载后查看原文件。'
+    uploadForm.previewContent = '当前文件不是纯文本资料，建议下载后查看原文件。'
   }
 }
 
 function uploadConfig() {
   if (!uploadForm.projectName) {
-    alert('请选择配置文件绑定项目')
-    return
-  }
-
-  if (!uploadForm.configType) {
-    alert('请选择配置类型')
+    alert('请选择资料绑定项目')
     return
   }
 
   if (!uploadForm.configName) {
-    alert('请输入配置名称')
+    alert('请输入资料名称')
     return
   }
 
   if (!uploadForm.file) {
-    alert('请上传配置文件')
+    alert('请上传资料文件')
     return
   }
 
   configFileList.value.unshift({
     id: Date.now(),
     projectName: uploadForm.projectName,
-    configType: uploadForm.configType,
     configName: uploadForm.configName,
     fileName: uploadForm.fileName,
     fileSize: uploadForm.fileSize,
     fileUrl: uploadForm.fileUrl,
-    uploader: uploadForm.uploader || '当前用户',
+    uploader: currentUserName.value,
     uploadTime: new Date().toISOString().slice(0, 10),
     description: uploadForm.description,
     previewContent: uploadForm.previewContent
   })
+
+  if (!expandedProjects.value.includes(uploadForm.projectName)) {
+    expandedProjects.value.push(uploadForm.projectName)
+  }
 
   showUploadDialog.value = false
 }
@@ -529,20 +597,20 @@ function openConfigFile(item) {
 
 function downloadConfig(item) {
   if (!item.fileUrl) {
-    alert('当前是模拟数据，暂无可下载的原始配置文件')
+    alert('当前是模拟数据，暂无可下载的原始资料文件')
     return
   }
 
   const link = document.createElement('a')
   link.href = item.fileUrl
-  link.download = item.fileName || '配置文件'
+  link.download = item.fileName || '资料文件'
   document.body.appendChild(link)
   link.click()
   document.body.removeChild(link)
 }
 
 function deleteConfig(item) {
-  const ok = confirm(`确认删除配置文件【${item.configName}】吗？`)
+  const ok = confirm(`确认删除资料【${item.configName}】吗？`)
   if (!ok) return
 
   configFileList.value = configFileList.value.filter(
@@ -560,20 +628,6 @@ function formatFileSize(size) {
   }
 
   return `${(size / 1024 / 1024).toFixed(1)} MB`
-}
-
-function getConfigTypeClass(type) {
-  const map = {
-    SIP账号设置: 'sip',
-    IP地址设置: 'ip',
-    协议配置: 'protocol',
-    服务器配置: 'server',
-    音频参数配置: 'audio',
-    终端编号配置: 'terminal',
-    其他配置: 'other'
-  }
-
-  return map[type] || 'other'
 }
 </script>
 
@@ -595,12 +649,6 @@ function getConfigTypeClass(type) {
   margin: 0;
   font-size: 26px;
   font-weight: 800;
-}
-
-.page-header p {
-  margin: 8px 0 0;
-  color: #94a3b8;
-  font-size: 14px;
 }
 
 .primary-btn,
@@ -638,7 +686,7 @@ function getConfigTypeClass(type) {
   border-radius: 14px;
   padding: 16px;
   display: grid;
-  grid-template-columns: 1.4fr 220px 200px 90px 90px;
+  grid-template-columns: 1.4fr 220px 90px 90px;
   gap: 12px;
   margin-bottom: 20px;
 }
@@ -699,8 +747,49 @@ function getConfigTypeClass(type) {
   overflow: hidden;
 }
 
+.table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.table-wrapper::-webkit-scrollbar,
+.child-table-wrapper::-webkit-scrollbar {
+  height: 10px;
+}
+
+.table-wrapper::-webkit-scrollbar-track,
+.child-table-wrapper::-webkit-scrollbar-track {
+  background: #020617;
+  border-radius: 999px;
+}
+
+.table-wrapper::-webkit-scrollbar-thumb,
+.child-table-wrapper::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 999px;
+  border: 2px solid #020617;
+}
+
+.table-wrapper::-webkit-scrollbar-thumb:hover,
+.child-table-wrapper::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+.table-wrapper::-webkit-scrollbar-button,
+.child-table-wrapper::-webkit-scrollbar-button {
+  display: none;
+}
+
+.table-wrapper,
+.child-table-wrapper {
+  scrollbar-width: thin;
+  scrollbar-color: #334155 #020617;
+}
+
 .table-card table {
   width: 100%;
+  min-width: 950px;
   border-collapse: collapse;
   table-layout: fixed;
 }
@@ -727,6 +816,92 @@ function getConfigTypeClass(type) {
   vertical-align: middle;
 }
 
+.project-row {
+  background: #0f172a;
+}
+
+.project-row:hover {
+  background: #1e293b80;
+}
+
+.project-name-btn {
+  border: none;
+  background: transparent;
+  color: #60a5fa;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+
+.project-name-btn:hover {
+  color: #93c5fd;
+  text-decoration: underline;
+}
+
+.expand-icon {
+  display: inline-block;
+  width: 18px;
+  color: #94a3b8;
+}
+
+.count-tag {
+  display: inline-flex;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: #33415566;
+  color: #cbd5e1;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.child-row td {
+  padding: 0;
+  background: #020617;
+}
+
+.child-table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 12px 16px 16px;
+  box-sizing: border-box;
+}
+
+.child-table {
+  width: 100%;
+  min-width: 850px;
+  border-collapse: collapse;
+  table-layout: fixed;
+  border: 1px solid #1e293b;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.child-table thead {
+  background: #0f172a;
+}
+
+.child-table th {
+  padding: 12px 14px;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 600;
+  border-bottom: 1px solid #1e293b;
+}
+
+.child-table td {
+  padding: 13px 14px;
+  border-bottom: 1px solid #1e293b;
+  color: #e2e8f0;
+  font-size: 13px;
+}
+
+.child-table tbody tr:hover {
+  background: #1e293b80;
+}
+
 .file-link {
   border: none;
   background: transparent;
@@ -744,60 +919,9 @@ function getConfigTypeClass(type) {
 }
 
 .file-name {
-  margin-top: 4px;
-  color: #64748b;
+  color: #cbd5e1;
   font-size: 12px;
   word-break: break-all;
-}
-
-.project-tag,
-.config-tag {
-  display: inline-flex;
-  padding: 4px 9px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.project-tag {
-  background: #1d4ed833;
-  color: #60a5fa;
-}
-
-.config-tag.sip {
-  background: #16a34a33;
-  color: #4ade80;
-}
-
-.config-tag.ip {
-  background: #1d4ed833;
-  color: #60a5fa;
-}
-
-.config-tag.protocol {
-  background: #9333ea33;
-  color: #c084fc;
-}
-
-.config-tag.server {
-  background: #d9770633;
-  color: #fbbf24;
-}
-
-.config-tag.audio {
-  background: #0f766e33;
-  color: #5eead4;
-}
-
-.config-tag.terminal {
-  background: #be123c33;
-  color: #fb7185;
-}
-
-.config-tag.other {
-  background: #47556933;
-  color: #94a3b8;
 }
 
 .muted {
@@ -805,6 +929,11 @@ function getConfigTypeClass(type) {
 }
 
 .operation-col {
+  width: 180px;
+  text-align: right !important;
+}
+
+.child-operation-col {
   width: 220px;
   text-align: right !important;
 }
@@ -988,12 +1117,12 @@ function getConfigTypeClass(type) {
     grid-template-columns: 1fr;
   }
 
-  .table-card {
-    overflow-x: auto;
+  .table-card table {
+    min-width: 950px;
   }
 
-  .table-card table {
-    min-width: 1100px;
+  .child-table {
+    min-width: 850px;
   }
 
   .form-grid,

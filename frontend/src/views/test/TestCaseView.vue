@@ -43,85 +43,85 @@
 
     <!-- 数据表格 -->
     <div class="table-card">
-      <table>
-        <thead>
-          <tr>
-            <th>测试用例</th>
-            <th>绑定项目</th>
-            <th>上传人</th>
-            <th>上传时间</th>
-            <th>审核状态</th>
-            <th>审核人</th>
-            <th class="operation-col">操作</th>
-          </tr>
-        </thead>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>测试用例</th>
+              <th>绑定项目</th>
+              <th>上传人</th>
+              <th>上传时间</th>
+              <th>审核状态</th>
+              <th>审核人</th>
+              <th class="operation-col">操作</th>
+            </tr>
+          </thead>
 
-        <tbody>
-          <tr v-for="item in filteredTestCaseList" :key="item.id">
-            <td>
-              <button class="case-link" @click="viewTestCase(item)">
-                {{ item.caseName }}
-              </button>
-              <div class="file-name">{{ item.fileName }}</div>
-            </td>
-
-            <td>
-              <span class="project-tag">
-                {{ item.projectName }}
-              </span>
-            </td>
-
-
-            <td>{{ item.uploader }}</td>
-
-            <td class="muted">{{ item.uploadTime }}</td>
-
-            <td>
-              <span class="status-tag" :class="item.auditStatus">
-                {{ getAuditStatusText(item.auditStatus) }}
-              </span>
-            </td>
-
-            <td>{{ item.auditor || '-' }}</td>
-
-            <td class="operation-col">
-              <div class="action-group">
-                <button class="text-btn" @click="viewTestCase(item)">
-                  查看
+          <tbody>
+            <tr v-for="item in filteredTestCaseList" :key="item.id">
+              <td>
+                <button class="case-link" @click="viewTestCase(item)">
+                  {{ item.caseName }}
                 </button>
+              </td>
 
-                <button class="text-btn blue" @click="downloadTestCase(item)">
-                  下载
-                </button>
+              <td>
+                <span class="project-tag">
+                  {{ item.projectName }}
+                </span>
+              </td>
 
-                <button
-                  v-if="item.auditStatus === 'draft' || item.auditStatus === 'rejected'"
-                  class="text-btn blue"
-                  @click="submitTestCase(item)"
-                >
-                  提交
-                </button>
+              <td>{{ item.uploader }}</td>
 
-                <button
-                  v-if="item.auditStatus === 'submitted'"
-                  class="text-btn green"
-                  @click="auditTestCase(item)"
-                >
-                  审核
-                </button>
+              <td class="muted">{{ item.uploadTime }}</td>
 
-                <button
-                  v-if="item.auditStatus === 'draft' || item.auditStatus === 'rejected'"
-                  class="text-btn red"
-                  @click="deleteTestCase(item)"
-                >
-                  删除
-                </button>
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+              <td>
+                <span class="status-tag" :class="item.auditStatus">
+                  {{ getAuditStatusText(item.auditStatus) }}
+                </span>
+              </td>
+
+              <td>{{ item.auditor || '-' }}</td>
+
+              <td class="operation-col">
+                <div class="action-group">
+                  <button class="text-btn" @click="viewTestCase(item)">
+                    查看
+                  </button>
+
+                  <button class="text-btn blue" @click="downloadTestCase(item)">
+                    下载
+                  </button>
+
+                  <button
+                    v-if="item.auditStatus === 'draft' || item.auditStatus === 'rejected'"
+                    class="text-btn blue"
+                    @click="submitTestCase(item)"
+                  >
+                    提交
+                  </button>
+
+                  <button
+                    v-if="item.auditStatus === 'submitted'"
+                    class="text-btn green"
+                    @click="auditTestCase(item)"
+                  >
+                    审核
+                  </button>
+
+                  <button
+                    v-if="item.auditStatus === 'draft' || item.auditStatus === 'rejected'"
+                    class="text-btn red"
+                    @click="deleteTestCase(item)"
+                  >
+                    删除
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
       <div class="table-footer">
         共 {{ filteredTestCaseList.length }} 条测试用例记录
@@ -177,15 +177,6 @@
           </label>
 
           <label class="full-row">
-            文件名称
-            <input
-              v-model="uploadForm.fileName"
-              placeholder="选择文件后自动填充"
-              disabled
-            />
-          </label>
-
-          <label class="full-row">
             测试用例说明
             <textarea
               v-model="uploadForm.remark"
@@ -225,10 +216,9 @@
             <strong>{{ selectedTestCase.projectName }}</strong>
           </div>
 
-
           <div>
             <span>文件名称</span>
-            <strong>{{ selectedTestCase.fileName }}</strong>
+            <strong>{{ selectedTestCase.fileName || '-' }}</strong>
           </div>
 
           <div>
@@ -558,12 +548,6 @@ function deleteTestCase(item) {
   font-weight: 800;
 }
 
-.page-header p {
-  margin: 8px 0 0;
-  color: #94a3b8;
-  font-size: 14px;
-}
-
 .primary-btn,
 .query-btn,
 .reset-btn,
@@ -674,8 +658,43 @@ function deleteTestCase(item) {
   overflow: hidden;
 }
 
+.table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.table-wrapper::-webkit-scrollbar {
+  height: 10px;
+}
+
+.table-wrapper::-webkit-scrollbar-track {
+  background: #020617;
+  border-radius: 999px;
+}
+
+.table-wrapper::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 999px;
+  border: 2px solid #020617;
+}
+
+.table-wrapper::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+.table-wrapper::-webkit-scrollbar-button {
+  display: none;
+}
+
+.table-wrapper {
+  scrollbar-width: thin;
+  scrollbar-color: #334155 #020617;
+}
+
 .table-card table {
   width: 100%;
+  min-width: 1100px;
   border-collapse: collapse;
   table-layout: fixed;
 }
@@ -702,7 +721,39 @@ function deleteTestCase(item) {
   vertical-align: middle;
 }
 
+.table-card th:nth-child(1),
+.table-card td:nth-child(1) {
+  width: 220px;
+}
+
+.table-card th:nth-child(2),
+.table-card td:nth-child(2) {
+  width: 180px;
+}
+
+.table-card th:nth-child(3),
+.table-card td:nth-child(3) {
+  width: 120px;
+}
+
+.table-card th:nth-child(4),
+.table-card td:nth-child(4) {
+  width: 130px;
+}
+
+.table-card th:nth-child(5),
+.table-card td:nth-child(5) {
+  width: 130px;
+}
+
+.table-card th:nth-child(6),
+.table-card td:nth-child(6) {
+  width: 120px;
+}
+
 .case-link {
+  display: inline-block;
+  max-width: 200px;
   border: none;
   background: transparent;
   color: #60a5fa;
@@ -711,6 +762,10 @@ function deleteTestCase(item) {
   cursor: pointer;
   padding: 0;
   text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 
 .case-link:hover {
@@ -718,15 +773,9 @@ function deleteTestCase(item) {
   text-decoration: underline;
 }
 
-.file-name {
-  margin-top: 4px;
-  color: #64748b;
-  font-size: 12px;
-  word-break: break-all;
-}
-
 .project-tag {
-  display: inline-flex;
+  display: inline-block;
+  max-width: 150px;
   padding: 4px 9px;
   border-radius: 999px;
   background: #1d4ed833;
@@ -734,6 +783,9 @@ function deleteTestCase(item) {
   font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
 }
 
 .status-tag {
@@ -944,10 +996,6 @@ function deleteTestCase(item) {
 @media (max-width: 960px) {
   .filter-card {
     grid-template-columns: 1fr;
-  }
-
-  .table-card {
-    overflow-x: auto;
   }
 
   .table-card table {

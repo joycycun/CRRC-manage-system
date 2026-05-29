@@ -15,7 +15,7 @@
     <div class="filter-card">
       <input
         v-model="filters.keyword"
-        placeholder="搜索软件版本 / 项目 / 终端 / 业务说明"
+        placeholder="搜索软件版本 / 软件描述 / 项目 / 终端 / 硬件版本"
       />
 
       <select v-model="filters.projectName">
@@ -40,91 +40,84 @@
         </option>
       </select>
 
-      <select v-model="filters.status">
-        <option value="">全部状态</option>
-        <option value="developing">开发中</option>
-        <option value="testing">测试中</option>
-        <option value="released">已发布</option>
-        <option value="deprecated">已废弃</option>
-      </select>
-
       <button class="query-btn">查询</button>
       <button class="reset-btn" @click="resetFilters">重置</button>
     </div>
 
     <!-- 数据表格 -->
     <div class="table-card">
-      <table>
-        <thead>
-          <tr>
-            <th>软件版本</th>
-            <th>适配项目</th>
-            <th>适配终端</th>
-            <th>适配硬件版本</th>
-            <th>版本状态</th>
-            <th>负责人</th>
-            <th>发布日期</th>
-            <th class="operation-col">操作</th>
-          </tr>
-        </thead>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>软件版本</th>
+              <th>软件描述</th>
+              <th>适配项目</th>
+              <th>适配终端</th>
+              <th>适配硬件版本</th>
+              <th>负责人</th>
+              <th>发布日期</th>
+              <th class="operation-col">操作</th>
+            </tr>
+          </thead>
 
-        <tbody>
-          <tr v-for="item in filteredSoftwareList" :key="item.id">
-            <td>
-              <button class="version-link" @click="openDownloadPage(item)">
-                {{ item.softwareVersion }}
-              </button>
-              <div class="business-desc">{{ item.businessDesc }}</div>
-            </td>
-
-            <td>
-              <span class="project-tag">
-                {{ item.projectName }}
-              </span>
-            </td>
-
-            <td>
-              <span class="device-tag">
-                {{ item.deviceType }}
-              </span>
-            </td>
-
-            <td>
-              <span class="hardware-tag">
-                {{ item.hardwareVersion }}
-              </span>
-            </td>
-
-            <td>
-              <span class="status-tag" :class="item.status">
-                {{ getStatusText(item.status) }}
-              </span>
-            </td>
-
-            <td>{{ item.owner }}</td>
-
-            <td class="muted">
-              {{ item.releaseDate }}
-            </td>
-
-            <td class="operation-col">
-              <div class="action-group">
-                <button class="text-btn" @click="viewSoftware(item)">
-                  查看
+          <tbody>
+            <tr v-for="item in filteredSoftwareList" :key="item.id">
+              <td>
+                <button class="version-link" @click="openDownloadPage(item)">
+                  {{ item.softwareVersion }}
                 </button>
+              </td>
 
-                <button class="text-btn blue" @click="openEditDialog(item)">
-                  修改
-                </button>
+              <td>
+                <div class="software-desc" :title="item.businessDesc">
+                  {{ item.businessDesc }}
+                </div>
+              </td>
 
-                <button class="text-btn green" @click="openDownloadPage(item)">
-                  跳转下载
-                </button>
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+              <td>
+                <span class="project-tag">
+                  {{ item.projectName }}
+                </span>
+              </td>
+
+              <td>
+                <span class="device-tag">
+                  {{ item.deviceType }}
+                </span>
+              </td>
+
+              <td class="hardware-version-cell">
+                <span class="hardware-tag" :title="item.hardwareVersion">
+                  {{ item.hardwareVersion }}
+                </span>
+              </td>
+
+              <td>{{ item.owner }}</td>
+
+              <td class="muted">
+                {{ item.releaseDate }}
+              </td>
+
+              <td class="operation-col">
+                <div class="action-group">
+                  <button class="text-btn" @click="viewSoftware(item)">
+                    查看
+                  </button>
+
+                  <button class="text-btn blue" @click="openEditDialog(item)">
+                    修改
+                  </button>
+
+                  <button class="text-btn green" @click="openDownloadPage(item)">
+                    跳转下载
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
       <div class="table-footer">
         共 {{ filteredSoftwareList.length }} 条软件版本记录
@@ -191,16 +184,6 @@
           </label>
 
           <label>
-            版本状态
-            <select v-model="softwareForm.status">
-              <option value="developing">开发中</option>
-              <option value="testing">测试中</option>
-              <option value="released">已发布</option>
-              <option value="deprecated">已废弃</option>
-            </select>
-          </label>
-
-          <label>
             负责人
             <input
               v-model="softwareForm.owner"
@@ -217,7 +200,7 @@
           </label>
 
           <label class="full-row">
-            当前版本实现的业务
+            软件描述
             <textarea
               v-model="softwareForm.businessDesc"
               placeholder="例如：实现阿根廷项目 DACU 广播控制盒的人工广播、OCC广播、PAD广播、紧急广播等业务功能"
@@ -275,11 +258,6 @@
           </div>
 
           <div>
-            <span>版本状态</span>
-            <strong>{{ getStatusText(selectedSoftware.status) }}</strong>
-          </div>
-
-          <div>
             <span>负责人</span>
             <strong>{{ selectedSoftware.owner }}</strong>
           </div>
@@ -298,7 +276,7 @@
         </div>
 
         <div class="remark-card">
-          <span>当前版本实现的业务</span>
+          <span>软件描述</span>
           <p>{{ selectedSoftware.businessDesc || '暂无说明' }}</p>
         </div>
 
@@ -323,8 +301,7 @@ import { computed, reactive, ref } from 'vue'
 const filters = reactive({
   keyword: '',
   projectName: '',
-  deviceType: '',
-  status: ''
+  deviceType: ''
 })
 
 const showEditDialog = ref(false)
@@ -355,7 +332,6 @@ const hardwareVersionList = ref([
     hardwareVersion: 'HD-CRRC-HKTM.01.V1.1.0',
     deviceType: '广播控制盒',
     bindProjects: ['香港屯马项目', '波尔图二期项目'],
-    status: 'released',
     owner: '王宇',
     updateTime: '2026-05-10',
     zipFileName: '',
@@ -367,7 +343,6 @@ const hardwareVersionList = ref([
     hardwareVersion: 'HD-CRRC-AGTB-04.T1.1.0',
     deviceType: '客室解码板',
     bindProjects: ['阿根廷有轨项目'],
-    status: 'testing',
     owner: '王宇',
     updateTime: '2026-05-16',
     zipFileName: '',
@@ -379,7 +354,6 @@ const hardwareVersionList = ref([
     hardwareVersion: 'HD-CRRC-BOGT-03.T1.1.0',
     deviceType: '乘客报警器',
     bindProjects: ['波哥大有轨项目'],
-    status: 'released',
     owner: '郑宇',
     updateTime: '2026-05-18',
     zipFileName: '',
@@ -391,7 +365,6 @@ const hardwareVersionList = ref([
     hardwareVersion: 'HD-CRRC-DUBAI-05.S1.1.0',
     deviceType: '编码板',
     bindProjects: ['迪拜项目'],
-    status: 'draft',
     owner: '郑宇',
     updateTime: '2026-05-20',
     zipFileName: '',
@@ -405,7 +378,6 @@ const softwareForm = reactive({
   projectName: '',
   deviceType: '',
   hardwareVersion: '',
-  status: 'developing',
   owner: '',
   downloadUrl: '',
   businessDesc: '',
@@ -419,7 +391,6 @@ const softwareVersionList = ref([
     projectName: '阿根廷有轨项目',
     deviceType: '广播控制盒',
     hardwareVersion: 'HD-CRRC-HKTM.01.V1.1.0',
-    status: 'released',
     owner: '卢进',
     releaseDate: '2026-05-10',
     downloadUrl: 'http://bc.zycoo.com:8050/files/Argentina/DACU/',
@@ -432,12 +403,11 @@ const softwareVersionList = ref([
     projectName: '香港屯马项目',
     deviceType: '广播控制盒',
     hardwareVersion: 'HD-CRRC-HKTM.01.V1.1.0',
-    status: 'testing',
     owner: '卢进',
     releaseDate: '2026-05-16',
     downloadUrl: 'http://bc.zycoo.com:8050/files/HongKong/PACU/',
     businessDesc: '实现香港屯马项目 PACU 人工广播、乘客报警联动、司机室广播优先级处理。',
-    description: '当前版本处于测试中，等待内部初始测试问题闭环。'
+    description: '当前版本等待内部初始测试问题闭环。'
   },
   {
     id: 3,
@@ -445,12 +415,11 @@ const softwareVersionList = ref([
     projectName: '波哥大有轨项目',
     deviceType: '乘客报警器',
     hardwareVersion: 'HD-CRRC-BOGT-03.T1.1.0',
-    status: 'developing',
     owner: '寸诗睿',
     releaseDate: '2026-05-18',
     downloadUrl: 'http://bc.zycoo.com:8050/files/Bogota/PECU/',
     businessDesc: '实现乘客报警器呼叫、报警上报、司机室接听、报警状态恢复等业务。',
-    description: '开发阶段版本，尚未进入发布测试。'
+    description: '用于乘客报警器业务流程验证。'
   },
   {
     id: 4,
@@ -458,12 +427,11 @@ const softwareVersionList = ref([
     projectName: '迪拜项目',
     deviceType: '编码板',
     hardwareVersion: 'HD-CRRC-DUBAI-05.S1.1.0',
-    status: 'deprecated',
     owner: '寸诗睿',
     releaseDate: '2026-05-20',
     downloadUrl: 'http://bc.zycoo.com:8050/files/Dubai/ECU/',
     businessDesc: '实现迪拜项目编码板音频编码、码流发送、网络传输基础业务。',
-    description: '旧测试版本，已废弃，不建议继续使用。'
+    description: '旧测试版本，仅用于历史记录。'
   }
 ])
 
@@ -505,7 +473,8 @@ const filteredSoftwareList = computed(() => {
       item.projectName.includes(filters.keyword) ||
       item.deviceType.includes(filters.keyword) ||
       item.hardwareVersion.includes(filters.keyword) ||
-      item.businessDesc.includes(filters.keyword)
+      item.businessDesc.includes(filters.keyword) ||
+      item.description.includes(filters.keyword)
 
     const projectMatch =
       !filters.projectName || item.projectName === filters.projectName
@@ -513,29 +482,14 @@ const filteredSoftwareList = computed(() => {
     const deviceTypeMatch =
       !filters.deviceType || item.deviceType === filters.deviceType
 
-    const statusMatch =
-      !filters.status || item.status === filters.status
-
-    return keywordMatch && projectMatch && deviceTypeMatch && statusMatch
+    return keywordMatch && projectMatch && deviceTypeMatch
   })
 })
-
-function getStatusText(status) {
-  const map = {
-    developing: '开发中',
-    testing: '测试中',
-    released: '已发布',
-    deprecated: '已废弃'
-  }
-
-  return map[status] || status
-}
 
 function resetFilters() {
   filters.keyword = ''
   filters.projectName = ''
   filters.deviceType = ''
-  filters.status = ''
 }
 
 function onProjectChange() {
@@ -551,7 +505,6 @@ function openCreateDialog() {
   softwareForm.projectName = ''
   softwareForm.deviceType = ''
   softwareForm.hardwareVersion = ''
-  softwareForm.status = 'developing'
   softwareForm.owner = ''
   softwareForm.downloadUrl = ''
   softwareForm.businessDesc = ''
@@ -568,7 +521,6 @@ function openEditDialog(item) {
   softwareForm.projectName = item.projectName
   softwareForm.deviceType = item.deviceType
   softwareForm.hardwareVersion = item.hardwareVersion
-  softwareForm.status = item.status
   softwareForm.owner = item.owner
   softwareForm.downloadUrl = item.downloadUrl
   softwareForm.businessDesc = item.businessDesc
@@ -599,7 +551,7 @@ function saveSoftwareVersion() {
   }
 
   if (!softwareForm.businessDesc) {
-    alert('请填写当前软件版本实现了哪些业务')
+    alert('请填写软件描述')
     return
   }
 
@@ -615,7 +567,6 @@ function saveSoftwareVersion() {
       projectName: softwareForm.projectName,
       deviceType: softwareForm.deviceType,
       hardwareVersion: softwareForm.hardwareVersion,
-      status: softwareForm.status,
       owner: softwareForm.owner || '未填写',
       releaseDate: new Date().toISOString().slice(0, 10),
       downloadUrl: softwareForm.downloadUrl,
@@ -627,7 +578,6 @@ function saveSoftwareVersion() {
     currentEditSoftware.value.projectName = softwareForm.projectName
     currentEditSoftware.value.deviceType = softwareForm.deviceType
     currentEditSoftware.value.hardwareVersion = softwareForm.hardwareVersion
-    currentEditSoftware.value.status = softwareForm.status
     currentEditSoftware.value.owner = softwareForm.owner || '未填写'
     currentEditSoftware.value.releaseDate = new Date().toISOString().slice(0, 10)
     currentEditSoftware.value.downloadUrl = softwareForm.downloadUrl
@@ -672,12 +622,6 @@ function openDownloadPage(item) {
   font-weight: 800;
 }
 
-.page-header p {
-  margin: 8px 0 0;
-  color: #94a3b8;
-  font-size: 14px;
-}
-
 .primary-btn,
 .query-btn,
 .reset-btn {
@@ -713,7 +657,7 @@ function openDownloadPage(item) {
   border-radius: 14px;
   padding: 16px;
   display: grid;
-  grid-template-columns: 1.4fr 200px 180px 160px 90px 90px;
+  grid-template-columns: 1.4fr 200px 180px 90px 90px;
   gap: 12px;
   margin-bottom: 20px;
 }
@@ -757,8 +701,60 @@ function openDownloadPage(item) {
   overflow: hidden;
 }
 
+.table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.table-wrapper::-webkit-scrollbar {
+  height: 10px;
+}
+
+.table-wrapper::-webkit-scrollbar-track {
+  background: #020617;
+  border-radius: 999px;
+}
+
+.table-wrapper::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 999px;
+  border: 2px solid #020617;
+}
+
+.table-wrapper::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+.table-wrapper::-webkit-scrollbar-button {
+  display: none;
+}
+
+.table-wrapper {
+  scrollbar-width: thin;
+  scrollbar-color: #334155 #020617;
+}
+.table-card th:nth-child(5),
+.table-card td:nth-child(5) {
+  width: 180px;
+  max-width: 180px;
+  overflow: hidden;
+}
+
+.table-card th:nth-child(6),
+.table-card td:nth-child(6) {
+  width: 100px;
+  max-width: 100px;
+}
+
+.table-card th:nth-child(7),
+.table-card td:nth-child(7) {
+  width: 120px;
+  max-width: 120px;
+}
 .table-card table {
   width: 100%;
+  min-width: 1250px;
   border-collapse: collapse;
   table-layout: fixed;
 }
@@ -801,12 +797,14 @@ function openDownloadPage(item) {
   text-decoration: underline;
 }
 
-.business-desc {
-  margin-top: 4px;
-  color: #64748b;
+.software-desc {
+  color: #cbd5e1;
   font-size: 12px;
   line-height: 1.5;
-  word-break: break-all;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .project-tag,
@@ -818,7 +816,11 @@ function openDownloadPage(item) {
   font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
+
 
 .project-tag {
   background: #1d4ed833;
@@ -833,36 +835,31 @@ function openDownloadPage(item) {
 .hardware-tag {
   background: #9333ea33;
   color: #c084fc;
-}
-
-.status-tag {
-  display: inline-flex;
+  display: block;
+  width: 100%;
+  max-width: 170px;
   padding: 4px 9px;
   border-radius: 999px;
   font-size: 12px;
   font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+.hardware-version-cell {
+  overflow: hidden;
+  max-width: 0;
 }
 
-.status-tag.developing {
-  background: #47556933;
-  color: #94a3b8;
+.hardware-version-cell .hardware-tag {
+  display: block;
+  width: 100%;
+  max-width: 170px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-
-.status-tag.testing {
-  background: #d9770633;
-  color: #fbbf24;
-}
-
-.status-tag.released {
-  background: #16a34a33;
-  color: #4ade80;
-}
-
-.status-tag.deprecated {
-  background: #dc262633;
-  color: #f87171;
-}
-
 .muted {
   color: #94a3b8 !important;
 }
@@ -1039,13 +1036,47 @@ function openDownloadPage(item) {
     grid-template-columns: 1fr;
   }
 
-  .table-card {
-    overflow-x: auto;
-  }
+.table-card table {
+  width: 100%;
+  min-width: 1250px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
 
-  .table-card table {
-    min-width: 1200px;
-  }
+.table-card th:nth-child(1),
+.table-card td:nth-child(1) {
+  width: 190px;
+}
+
+.table-card th:nth-child(2),
+.table-card td:nth-child(2) {
+  width: 280px;
+}
+
+.table-card th:nth-child(3),
+.table-card td:nth-child(3) {
+  width: 150px;
+}
+
+.table-card th:nth-child(4),
+.table-card td:nth-child(4) {
+  width: 140px;
+}
+
+.table-card th:nth-child(5),
+.table-card td:nth-child(5) {
+  width: 210px;
+}
+
+.table-card th:nth-child(6),
+.table-card td:nth-child(6) {
+  width: 100px;
+}
+
+.table-card th:nth-child(7),
+.table-card td:nth-child(7) {
+  width: 110px;
+}
 
   .form-grid,
   .detail-card {

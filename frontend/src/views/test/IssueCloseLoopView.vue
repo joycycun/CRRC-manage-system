@@ -21,7 +21,7 @@
     <div class="filter-card">
       <input
         v-model="filters.keyword"
-        placeholder="搜索项目名称 / 问题标题 / 负责人 / 提出人"
+        placeholder="搜索项目名称 / 问题名称 / 负责人 / 提出人"
       />
 
       <select v-model="filters.projectName">
@@ -66,105 +66,109 @@
 
     <!-- 数据表格 -->
     <div class="table-card">
-      <table>
-        <thead>
-          <tr>
-            <th>问题标题</th>
-            <th>绑定项目</th>
-            <th>终端类型</th>
-            <th>问题来源</th>
-            <th>严重等级</th>
-            <th>负责人</th>
-            <th>关闭状态</th>
-            <th>提出时间</th>
-            <th class="operation-col">操作</th>
-          </tr>
-        </thead>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>问题名称</th>
+              <th>绑定项目</th>
+              <th>终端类型</th>
+              <th>问题来源</th>
+              <th>严重等级</th>
+              <th>负责人</th>
+              <th>创建者</th>
+              <th>关闭状态</th>
+              <th>提出时间</th>
+              <th class="operation-col">操作</th>
+            </tr>
+          </thead>
 
-        <tbody>
-          <tr v-for="item in filteredIssueList" :key="item.id">
-            <td>
-              <button class="issue-link" @click="viewIssue(item)">
-                {{ item.issueTitle }}
-              </button>
-              <div class="issue-desc">{{ item.issueDesc }}</div>
-            </td>
-
-            <td>
-              <span class="project-tag">{{ item.projectName }}</span>
-            </td>
-
-            <td>
-              <span class="device-tag">{{ item.deviceType }}</span>
-            </td>
-
-            <td>
-              <span class="source-tag" :class="getSourceClass(item.issueSource)">
-                {{ item.issueSource }}
-              </span>
-            </td>
-
-            <td>
-              <span class="level-tag" :class="getLevelClass(item.level)">
-                {{ item.level }}
-              </span>
-            </td>
-
-            <td>{{ item.owner }}</td>
-
-            <td>
-              <span class="close-tag" :class="item.closeStatus">
-                {{ getCloseStatusText(item.closeStatus) }}
-              </span>
-            </td>
-
-            <td class="muted">{{ item.createTime }}</td>
-
-            <td class="operation-col">
-              <div class="action-group">
-                <button class="text-btn" @click="viewIssue(item)">
-                  查看
+          <tbody>
+            <tr v-for="item in filteredIssueList" :key="item.id">
+              <td>
+                <button class="issue-link" @click="viewIssue(item)">
+                  {{ item.issueTitle }}
                 </button>
+              </td>
 
-                <button
-                  v-if="item.closeStatus === 'open'"
-                  class="text-btn blue"
-                  @click="openEditDialog(item)"
-                >
-                  修改
-                </button>
+              <td>
+                <span class="project-tag">{{ item.projectName }}</span>
+              </td>
 
-                <button
-                  v-if="item.closeStatus === 'open'"
-                  class="text-btn green"
-                  @click="openReplyDialog(item)"
-                >
-                  回复
-                </button>
+              <td>
+                <span class="device-tag">{{ item.deviceType }}</span>
+              </td>
 
-                <button
-                  v-if="item.closeStatus === 'open'"
-                  class="text-btn red"
-                  @click="closeIssue(item)"
-                >
-                  关闭
-                </button>
+              <td>
+                <span class="source-tag" :class="getSourceClass(item.issueSource)">
+                  {{ item.issueSource }}
+                </span>
+              </td>
 
-                <button
-                  v-if="item.closeStatus === 'closed'"
-                  class="text-btn yellow"
-                  @click="reopenIssue(item)"
-                >
-                  重新打开
-                </button>
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+              <td>
+                <span class="level-tag" :class="getLevelClass(item.level)">
+                  {{ item.level }}
+                </span>
+              </td>
+
+              <td>{{ item.owner }}</td>
+
+              <td>{{ item.creator }}</td>
+
+              <td>
+                <span class="close-tag" :class="item.closeStatus">
+                  {{ getCloseStatusText(item.closeStatus) }}
+                </span>
+              </td>
+
+              <td class="muted">{{ item.createTime }}</td>
+
+              <td class="operation-col">
+                <div class="action-group">
+                  <button class="text-btn" @click="viewIssue(item)">
+                    查看
+                  </button>
+
+                  <button
+                    v-if="item.closeStatus === 'open'"
+                    class="text-btn blue"
+                    @click="openEditDialog(item)"
+                  >
+                    修改
+                  </button>
+
+                  <button
+                    v-if="item.closeStatus === 'open'"
+                    class="text-btn green"
+                    @click="openReplyDialog(item)"
+                  >
+                    回复
+                  </button>
+
+                  <button
+                    v-if="item.closeStatus === 'open' && canCloseIssue(item)"
+                    class="text-btn red"
+                    @click="closeIssue(item)"
+                  >
+                    关闭
+                  </button>
+
+                  <button
+                    v-if="item.closeStatus === 'closed' && canCloseIssue(item)"
+                    class="text-btn yellow"
+                    @click="reopenIssue(item)"
+                  >
+                    重新打开
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
       <div class="table-footer">
-        共 {{ filteredIssueList.length }} 条问题记录
+        <!-- 共 {{ filteredIssueList.length }} 条问题记录。只有问题创建者可以关闭或重新打开问题。 -->
       </div>
     </div>
 
@@ -227,7 +231,7 @@
           </label>
 
           <label>
-            问题标题
+            问题名称
             <input
               v-model="issueForm.issueTitle"
               placeholder="例如：广播控制盒上电后无声音输出"
@@ -257,14 +261,6 @@
               type="date"
             />
           </label>
-
-          <label class="full-row">
-            问题描述
-            <textarea
-              v-model="issueForm.issueDesc"
-              placeholder="请输入问题现象、复现步骤、影响范围、现场条件等"
-            ></textarea>
-          </label>
         </div>
 
         <div class="dialog-footer">
@@ -289,7 +285,7 @@
 
         <div class="detail-card">
           <div>
-            <span>问题标题</span>
+            <span>问题名称</span>
             <strong>{{ currentReplyIssue?.issueTitle }}</strong>
           </div>
 
@@ -349,7 +345,7 @@
 
         <div class="detail-card">
           <div>
-            <span>问题标题</span>
+            <span>问题名称</span>
             <strong>{{ selectedIssue.issueTitle }}</strong>
           </div>
 
@@ -379,7 +375,7 @@
           </div>
 
           <div>
-            <span>提出人</span>
+            <span>创建者</span>
             <strong>{{ selectedIssue.creator }}</strong>
           </div>
 
@@ -407,11 +403,6 @@
             <span>关闭人</span>
             <strong>{{ selectedIssue.closeUser || '-' }}</strong>
           </div>
-        </div>
-
-        <div class="remark-card">
-          <span>问题描述</span>
-          <p>{{ selectedIssue.issueDesc || '暂无描述' }}</p>
         </div>
 
         <div class="reply-card">
@@ -447,7 +438,7 @@
           </button>
 
           <button
-            v-if="selectedIssue.closeStatus === 'open'"
+            v-if="selectedIssue.closeStatus === 'open' && canCloseIssue(selectedIssue)"
             class="red-btn"
             @click="closeIssue(selectedIssue)"
           >
@@ -455,7 +446,7 @@
           </button>
 
           <button
-            v-if="selectedIssue.closeStatus === 'closed'"
+            v-if="selectedIssue.closeStatus === 'closed' && canCloseIssue(selectedIssue)"
             class="green-btn"
             @click="reopenIssue(selectedIssue)"
           >
@@ -473,6 +464,13 @@
 
 <script setup>
 import { computed, reactive, ref } from 'vue'
+
+const currentUserName = ref(
+  localStorage.getItem('username') ||
+  localStorage.getItem('accountName') ||
+  localStorage.getItem('realName') ||
+  '寸诗睿'
+)
 
 const filters = reactive({
   keyword: '',
@@ -515,8 +513,7 @@ const issueForm = reactive({
   issueTitle: '',
   owner: '',
   creator: '',
-  planCloseTime: '',
-  issueDesc: ''
+  planCloseTime: ''
 })
 
 const replyForm = reactive({
@@ -539,7 +536,6 @@ const issueList = ref([
     realCloseTime: '',
     closeStatus: 'open',
     closeUser: '',
-    issueDesc: '内部测试时发现广播控制盒上电后偶发无声音输出，重启后恢复，需要研发分析音频初始化流程。',
     replies: [
       {
         id: 101,
@@ -563,7 +559,6 @@ const issueList = ref([
     realCloseTime: '',
     closeStatus: 'open',
     closeUser: '',
-    issueDesc: '生产烧录后发现部分乘客报警器无法注册SIP账号，需要确认配置文件和烧录流程。',
     replies: []
   },
   {
@@ -579,8 +574,7 @@ const issueList = ref([
     planCloseTime: '2026-05-22',
     realCloseTime: '2026-05-19',
     closeStatus: 'closed',
-    closeUser: '郑宇',
-    issueDesc: '调试版本日志打印过多，影响现场查看关键错误日志。',
+    closeUser: '研发人员',
     replies: [
       {
         id: 102,
@@ -604,7 +598,6 @@ const issueList = ref([
     realCloseTime: '',
     closeStatus: 'open',
     closeUser: '',
-    issueDesc: '现场反馈编码板运行一段时间后音频中断，需要排查网络、buffer和音视频同步机制。',
     replies: [
       {
         id: 103,
@@ -624,8 +617,7 @@ const filteredIssueList = computed(() => {
       item.deviceType.includes(filters.keyword) ||
       item.issueTitle.includes(filters.keyword) ||
       item.owner.includes(filters.keyword) ||
-      item.creator.includes(filters.keyword) ||
-      item.issueDesc.includes(filters.keyword)
+      item.creator.includes(filters.keyword)
 
     const projectMatch =
       !filters.projectName || item.projectName === filters.projectName
@@ -674,6 +666,10 @@ function getLevelClass(level) {
   return map[level] || 'low'
 }
 
+function canCloseIssue(item) {
+  return item.creator === currentUserName.value
+}
+
 function resetFilters() {
   filters.keyword = ''
   filters.projectName = ''
@@ -692,9 +688,8 @@ function openCreateDialog() {
   issueForm.level = '中'
   issueForm.issueTitle = ''
   issueForm.owner = ''
-  issueForm.creator = ''
+  issueForm.creator = currentUserName.value
   issueForm.planCloseTime = ''
-  issueForm.issueDesc = ''
 
   showEditDialog.value = true
 }
@@ -711,7 +706,6 @@ function openEditDialog(item) {
   issueForm.owner = item.owner
   issueForm.creator = item.creator
   issueForm.planCloseTime = item.planCloseTime
-  issueForm.issueDesc = item.issueDesc
 
   showEditDialog.value = true
 }
@@ -733,7 +727,7 @@ function saveIssue() {
   }
 
   if (!issueForm.issueTitle) {
-    alert('请输入问题标题')
+    alert('请输入问题名称')
     return
   }
 
@@ -762,7 +756,6 @@ function saveIssue() {
       realCloseTime: '',
       closeStatus: 'open',
       closeUser: '',
-      issueDesc: issueForm.issueDesc,
       replies: []
     })
   } else {
@@ -774,7 +767,6 @@ function saveIssue() {
     currentEditIssue.value.owner = issueForm.owner
     currentEditIssue.value.creator = issueForm.creator
     currentEditIssue.value.planCloseTime = issueForm.planCloseTime
-    currentEditIssue.value.issueDesc = issueForm.issueDesc
   }
 
   showEditDialog.value = false
@@ -786,7 +778,7 @@ function viewIssue(item) {
 
 function openReplyDialog(item) {
   currentReplyIssue.value = item
-  replyForm.replyUser = ''
+  replyForm.replyUser = currentUserName.value
   replyForm.content = ''
   showReplyDialog.value = true
 }
@@ -816,11 +808,16 @@ function saveReply() {
 }
 
 function closeIssue(item) {
+  if (!canCloseIssue(item)) {
+    alert('只有问题创建者可以关闭该问题')
+    return
+  }
+
   const ok = confirm(`确认关闭问题【${item.issueTitle}】吗？`)
   if (!ok) return
 
   item.closeStatus = 'closed'
-  item.closeUser = '当前用户'
+  item.closeUser = currentUserName.value
   item.realCloseTime = new Date().toISOString().slice(0, 10)
 
   selectedIssue.value = null
@@ -828,6 +825,11 @@ function closeIssue(item) {
 }
 
 function reopenIssue(item) {
+  if (!canCloseIssue(item)) {
+    alert('只有问题创建者可以重新打开该问题')
+    return
+  }
+
   const ok = confirm(`确认重新打开问题【${item.issueTitle}】吗？`)
   if (!ok) return
 
@@ -841,19 +843,18 @@ function reopenIssue(item) {
 
 function exportIssueRecords() {
   const header = [
-    '问题标题',
+    '问题名称',
     '绑定项目',
     '终端类型',
     '问题来源',
     '严重等级',
     '负责人',
-    '提出人',
+    '创建者',
     '提出时间',
     '计划关闭时间',
     '实际关闭时间',
     '关闭状态',
     '关闭人',
-    '问题描述',
     '回复记录'
   ]
 
@@ -870,7 +871,6 @@ function exportIssueRecords() {
     item.realCloseTime || '',
     getCloseStatusText(item.closeStatus),
     item.closeUser || '',
-    item.issueDesc || '',
     item.replies.map(reply => `${reply.replyTime} ${reply.replyUser}: ${reply.content}`).join('；')
   ])
 
@@ -911,12 +911,6 @@ function exportIssueRecords() {
   margin: 0;
   font-size: 26px;
   font-weight: 800;
-}
-
-.page-header p {
-  margin: 8px 0 0;
-  color: #94a3b8;
-  font-size: 14px;
 }
 
 .header-actions {
@@ -1019,8 +1013,43 @@ function exportIssueRecords() {
   overflow: hidden;
 }
 
+.table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.table-wrapper::-webkit-scrollbar {
+  height: 10px;
+}
+
+.table-wrapper::-webkit-scrollbar-track {
+  background: #020617;
+  border-radius: 999px;
+}
+
+.table-wrapper::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 999px;
+  border: 2px solid #020617;
+}
+
+.table-wrapper::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+.table-wrapper::-webkit-scrollbar-button {
+  display: none;
+}
+
+.table-wrapper {
+  scrollbar-width: thin;
+  scrollbar-color: #334155 #020617;
+}
+
 .table-card table {
   width: 100%;
+  min-width: 1450px;
   border-collapse: collapse;
   table-layout: fixed;
 }
@@ -1047,7 +1076,54 @@ function exportIssueRecords() {
   vertical-align: middle;
 }
 
+.table-card th:nth-child(1),
+.table-card td:nth-child(1) {
+  width: 240px;
+}
+
+.table-card th:nth-child(2),
+.table-card td:nth-child(2) {
+  width: 160px;
+}
+
+.table-card th:nth-child(3),
+.table-card td:nth-child(3) {
+  width: 140px;
+}
+
+.table-card th:nth-child(4),
+.table-card td:nth-child(4) {
+  width: 110px;
+}
+
+.table-card th:nth-child(5),
+.table-card td:nth-child(5) {
+  width: 110px;
+}
+
+.table-card th:nth-child(6),
+.table-card td:nth-child(6) {
+  width: 120px;
+}
+
+.table-card th:nth-child(7),
+.table-card td:nth-child(7) {
+  width: 120px;
+}
+
+.table-card th:nth-child(8),
+.table-card td:nth-child(8) {
+  width: 120px;
+}
+
+.table-card th:nth-child(9),
+.table-card td:nth-child(9) {
+  width: 120px;
+}
+
 .issue-link {
+  display: inline-block;
+  max-width: 220px;
   border: none;
   background: transparent;
   color: #60a5fa;
@@ -1056,6 +1132,10 @@ function exportIssueRecords() {
   cursor: pointer;
   padding: 0;
   text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 
 .issue-link:hover {
@@ -1063,25 +1143,21 @@ function exportIssueRecords() {
   text-decoration: underline;
 }
 
-.issue-desc {
-  margin-top: 4px;
-  color: #64748b;
-  font-size: 12px;
-  line-height: 1.5;
-  word-break: break-all;
-}
-
 .project-tag,
 .device-tag,
 .source-tag,
 .level-tag,
 .close-tag {
-  display: inline-flex;
+  display: inline-block;
+  max-width: 130px;
   padding: 4px 9px;
   border-radius: 999px;
   font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
 }
 
 .project-tag {
@@ -1287,7 +1363,6 @@ function exportIssueRecords() {
 }
 
 .detail-card div,
-.remark-card,
 .reply-card {
   background: #020617;
   border: 1px solid #1e293b;
@@ -1296,7 +1371,6 @@ function exportIssueRecords() {
 }
 
 .detail-card span,
-.remark-card span,
 .reply-card > span {
   display: block;
   color: #64748b;
@@ -1310,16 +1384,8 @@ function exportIssueRecords() {
   word-break: break-all;
 }
 
-.remark-card,
 .reply-card {
   margin: 0 20px 20px;
-}
-
-.remark-card p {
-  margin: 0;
-  color: #cbd5e1;
-  font-size: 13px;
-  line-height: 1.6;
 }
 
 .empty-reply {
@@ -1363,12 +1429,8 @@ function exportIssueRecords() {
     grid-template-columns: 1fr;
   }
 
-  .table-card {
-    overflow-x: auto;
-  }
-
   .table-card table {
-    min-width: 1300px;
+    min-width: 1450px;
   }
 
   .form-grid,

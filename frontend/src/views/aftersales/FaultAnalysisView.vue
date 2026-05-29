@@ -3,7 +3,7 @@
     <!-- 页面头部 -->
     <div class="page-header">
       <div>
-        <h1>故障分析方案管理</h1>
+        <h1>故障分析报告管理</h1>
       </div>
 
       <div class="header-actions">
@@ -17,17 +17,17 @@
     <div class="filter-card">
       <input
         v-model="filters.keyword"
-        placeholder="搜索项目 / 方案名称 / 提交人 / 文件名"
+        placeholder="搜索板卡类型 / 方案名称 / 提交人 / 文件名"
       />
 
-      <select v-model="filters.projectName">
-        <option value="">全部项目</option>
+      <select v-model="filters.boardType">
+        <option value="">全部板卡类型</option>
         <option
-          v-for="project in projectOptions"
-          :key="project"
-          :value="project"
+          v-for="type in boardTypeOptions"
+          :key="type"
+          :value="type"
         >
-          {{ project }}
+          {{ type }}
         </option>
       </select>
 
@@ -56,7 +56,7 @@
         <table class="version-table">
           <thead>
             <tr>
-              <th>绑定项目</th>
+              <th>板卡类型</th>
               <th>方案名称</th>
               <th>方案文件</th>
               <th>提交人</th>
@@ -71,11 +71,17 @@
           <tbody>
             <tr v-for="item in filteredAnalysisList" :key="item.id">
               <td>
-                <span class="project-tag">{{ item.projectName }}</span>
+                <span class="board-tag" :title="item.boardType">
+                  {{ item.boardType }}
+                </span>
               </td>
 
               <td>
-                <button class="record-link" @click="viewAnalysis(item)">
+                <button
+                  class="record-link"
+                  :title="item.analysisName"
+                  @click="viewAnalysis(item)"
+                >
                   {{ item.analysisName }}
                 </button>
               </td>
@@ -86,9 +92,15 @@
                 </span>
               </td>
 
-              <td>{{ item.submitUser }}</td>
+              <td>
+                <span class="normal-text" :title="item.submitUser">
+                  {{ item.submitUser }}
+                </span>
+              </td>
 
-              <td class="muted">{{ item.submitTime }}</td>
+              <td class="muted nowrap">
+                {{ item.submitTime }}
+              </td>
 
               <td>
                 <span class="status-tag" :class="item.auditStatus">
@@ -96,9 +108,15 @@
                 </span>
               </td>
 
-              <td>{{ item.auditor || '-' }}</td>
+              <td>
+                <span class="normal-text" :title="item.auditor || '-'">
+                  {{ item.auditor || '-' }}
+                </span>
+              </td>
 
-              <td class="muted">{{ item.auditTime || '-' }}</td>
+              <td class="muted nowrap">
+                {{ item.auditTime || '-' }}
+              </td>
 
               <td class="operation-col">
                 <div class="action-group">
@@ -154,15 +172,15 @@
 
         <div class="form-grid">
           <label>
-            绑定项目
-            <select v-model="analysisForm.projectName">
-              <option value="">请选择项目</option>
+            板卡类型
+            <select v-model="analysisForm.boardType">
+              <option value="">请选择板卡类型</option>
               <option
-                v-for="project in projectOptions"
-                :key="project"
-                :value="project"
+                v-for="type in boardTypeOptions"
+                :key="type"
+                :value="type"
               >
-                {{ project }}
+                {{ type }}
               </option>
             </select>
           </label>
@@ -171,15 +189,15 @@
             方案名称
             <input
               v-model="analysisForm.analysisName"
-              placeholder="例如：香港屯马项目广播中断故障分析方案"
+              placeholder="例如：广播控制盒无音频输出故障分析方案"
             />
           </label>
 
           <label>
             提交人
             <input
-              v-model="analysisForm.submitUser"
-              placeholder="请输入提交人"
+              v-model="currentUserName"
+              disabled
             />
           </label>
 
@@ -232,8 +250,8 @@
 
         <div class="detail-card">
           <div>
-            <span>绑定项目</span>
-            <strong>{{ selectedAnalysis.projectName }}</strong>
+            <span>板卡类型</span>
+            <strong>{{ selectedAnalysis.boardType }}</strong>
           </div>
 
           <div>
@@ -317,27 +335,35 @@
 <script setup>
 import { computed, reactive, ref } from 'vue'
 
+const currentUserName = ref(
+  localStorage.getItem('username') ||
+  localStorage.getItem('accountName') ||
+  localStorage.getItem('realName') ||
+  '当前用户'
+)
+
 const filters = reactive({
   keyword: '',
-  projectName: '',
+  boardType: '',
   auditStatus: ''
 })
 
 const showCreateDialog = ref(false)
 const selectedAnalysis = ref(null)
 
-const projectOptions = [
-  '香港屯马项目',
-  '波尔图二期项目',
-  '阿根廷有轨项目',
-  '波哥大有轨项目',
-  '迪拜项目'
+const boardTypeOptions = [
+  '广播控制盒',
+  '客室解码板',
+  '客室编码板',
+  '乘客报警器',
+  '功放板',
+  '噪声检测板',
+  '司机提醒单元'
 ]
 
 const analysisForm = reactive({
-  projectName: '',
+  boardType: '',
   analysisName: '',
-  submitUser: '',
   fileName: '',
   file: null,
   fileUrl: '',
@@ -347,9 +373,9 @@ const analysisForm = reactive({
 const analysisList = ref([
   {
     id: 1,
-    projectName: '香港屯马项目',
-    analysisName: '香港屯马广播控制盒无音频输出故障分析方案',
-    fileName: '香港屯马广播控制盒无音频输出故障分析方案.docx',
+    boardType: '广播控制盒',
+    analysisName: '广播控制盒无音频输出故障分析方案',
+    fileName: '广播控制盒无音频输出故障分析方案.docx',
     fileUrl: '',
     submitUser: '售后人员',
     submitTime: '2026-05-10',
@@ -360,9 +386,9 @@ const analysisList = ref([
   },
   {
     id: 2,
-    projectName: '波尔图二期项目',
-    analysisName: '波尔图二期解码板SIP注册失败故障分析方案',
-    fileName: '波尔图二期解码板SIP注册失败分析.pdf',
+    boardType: '客室解码板',
+    analysisName: '解码板SIP注册失败故障分析方案',
+    fileName: '解码板SIP注册失败分析.pdf',
     fileUrl: '',
     submitUser: '研发人员',
     submitTime: '2026-05-16',
@@ -373,9 +399,9 @@ const analysisList = ref([
   },
   {
     id: 3,
-    projectName: '阿根廷有轨项目',
-    analysisName: '阿根廷司机提醒单元提醒音异常分析方案',
-    fileName: '阿根廷司机提醒单元故障分析_草稿.docx',
+    boardType: '司机提醒单元',
+    analysisName: '司机提醒单元提醒音异常分析方案',
+    fileName: '司机提醒单元故障分析_草稿.docx',
     fileUrl: '',
     submitUser: '售后人员',
     submitTime: '2026-05-18',
@@ -386,9 +412,9 @@ const analysisList = ref([
   },
   {
     id: 4,
-    projectName: '迪拜项目',
-    analysisName: '迪拜编码板音频中断故障分析方案',
-    fileName: '迪拜编码板音频中断故障分析方案.xlsx',
+    boardType: '客室编码板',
+    analysisName: '编码板音频中断故障分析方案',
+    fileName: '编码板音频中断故障分析方案.xlsx',
     fileUrl: '',
     submitUser: '研发人员',
     submitTime: '2026-05-20',
@@ -401,21 +427,23 @@ const analysisList = ref([
 
 const filteredAnalysisList = computed(() => {
   return analysisList.value.filter(item => {
-    const keywordMatch =
-      !filters.keyword ||
-      item.projectName.includes(filters.keyword) ||
-      item.analysisName.includes(filters.keyword) ||
-      item.submitUser.includes(filters.keyword) ||
-      item.fileName.includes(filters.keyword) ||
-      item.remark.includes(filters.keyword)
+    const keyword = filters.keyword.trim()
 
-    const projectMatch =
-      !filters.projectName || item.projectName === filters.projectName
+    const keywordMatch =
+      !keyword ||
+      item.boardType.includes(keyword) ||
+      item.analysisName.includes(keyword) ||
+      item.submitUser.includes(keyword) ||
+      item.fileName.includes(keyword) ||
+      item.remark.includes(keyword)
+
+    const boardTypeMatch =
+      !filters.boardType || item.boardType === filters.boardType
 
     const auditStatusMatch =
       !filters.auditStatus || item.auditStatus === filters.auditStatus
 
-    return keywordMatch && projectMatch && auditStatusMatch
+    return keywordMatch && boardTypeMatch && auditStatusMatch
   })
 })
 
@@ -432,14 +460,13 @@ function getAuditStatusText(status) {
 
 function resetFilters() {
   filters.keyword = ''
-  filters.projectName = ''
+  filters.boardType = ''
   filters.auditStatus = ''
 }
 
 function openCreateDialog() {
-  analysisForm.projectName = ''
+  analysisForm.boardType = ''
   analysisForm.analysisName = ''
-  analysisForm.submitUser = ''
   analysisForm.fileName = ''
   analysisForm.file = null
   analysisForm.fileUrl = ''
@@ -458,18 +485,13 @@ function handleFileChange(event) {
 }
 
 function createAnalysis() {
-  if (!analysisForm.projectName) {
-    alert('请选择绑定项目')
+  if (!analysisForm.boardType) {
+    alert('请选择板卡类型')
     return
   }
 
   if (!analysisForm.analysisName) {
     alert('请输入方案名称')
-    return
-  }
-
-  if (!analysisForm.submitUser) {
-    alert('请输入提交人')
     return
   }
 
@@ -480,11 +502,11 @@ function createAnalysis() {
 
   analysisList.value.unshift({
     id: Date.now(),
-    projectName: analysisForm.projectName,
+    boardType: analysisForm.boardType,
     analysisName: analysisForm.analysisName,
     fileName: analysisForm.fileName,
     fileUrl: analysisForm.fileUrl,
-    submitUser: analysisForm.submitUser,
+    submitUser: currentUserName.value,
     submitTime: new Date().toISOString().slice(0, 10),
     auditStatus: 'draft',
     auditor: '',
@@ -634,7 +656,7 @@ function deleteAnalysis(item) {
   border-radius: 14px;
   padding: 16px;
   display: grid;
-  grid-template-columns: 1.4fr 220px 180px 90px 90px;
+  grid-template-columns: minmax(260px, 1.4fr) 200px 180px 90px 90px;
   gap: 12px;
   margin-bottom: 20px;
 }
@@ -644,12 +666,14 @@ function deleteAnalysis(item) {
 .form-grid input,
 .form-grid select,
 .form-grid textarea {
+  min-width: 0;
   border: 1px solid #334155;
   border-radius: 8px;
   background: #020617;
   color: #e2e8f0;
   padding: 0 12px;
   outline: none;
+  box-sizing: border-box;
 }
 
 .filter-card input,
@@ -751,13 +775,19 @@ function deleteAnalysis(item) {
 
 .version-table {
   width: 100%;
-  min-width: 1350px;
+  min-width: 1420px;
   border-collapse: collapse;
   table-layout: fixed;
 }
 
 .version-table thead {
   background: #020617;
+}
+
+.version-table th,
+.version-table td {
+  box-sizing: border-box;
+  white-space: nowrap;
 }
 
 .version-table th {
@@ -767,7 +797,6 @@ function deleteAnalysis(item) {
   font-weight: 600;
   text-align: left;
   border-bottom: 1px solid #1e293b;
-  white-space: nowrap;
 }
 
 .version-table td {
@@ -776,9 +805,57 @@ function deleteAnalysis(item) {
   color: #e2e8f0;
   border-bottom: 1px solid #1e293b;
   vertical-align: middle;
+  overflow: hidden;
+}
+
+.version-table th:nth-child(1),
+.version-table td:nth-child(1) {
+  width: 150px;
+}
+
+.version-table th:nth-child(2),
+.version-table td:nth-child(2) {
+  width: 260px;
+}
+
+.version-table th:nth-child(3),
+.version-table td:nth-child(3) {
+  width: 230px;
+}
+
+.version-table th:nth-child(4),
+.version-table td:nth-child(4) {
+  width: 120px;
+}
+
+.version-table th:nth-child(5),
+.version-table td:nth-child(5) {
+  width: 130px;
+}
+
+.version-table th:nth-child(6),
+.version-table td:nth-child(6) {
+  width: 120px;
+}
+
+.version-table th:nth-child(7),
+.version-table td:nth-child(7) {
+  width: 120px;
+}
+
+.version-table th:nth-child(8),
+.version-table td:nth-child(8) {
+  width: 130px;
+}
+
+.version-table th:nth-child(9),
+.version-table td:nth-child(9) {
+  width: 280px;
 }
 
 .record-link {
+  display: inline-block;
+  max-width: 230px;
   border: none;
   background: transparent;
   color: #60a5fa;
@@ -787,6 +864,10 @@ function deleteAnalysis(item) {
   cursor: pointer;
   padding: 0;
   text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 
 .record-link:hover {
@@ -794,21 +875,24 @@ function deleteAnalysis(item) {
   text-decoration: underline;
 }
 
-.project-tag {
-  display: inline-flex;
+.board-tag {
+  display: inline-block;
+  max-width: 120px;
   padding: 4px 9px;
   border-radius: 999px;
-  background: #1d4ed833;
-  color: #60a5fa;
+  background: #0f766e33;
+  color: #5eead4;
   font-size: 12px;
   font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
+  vertical-align: middle;
 }
 
 .file-tag {
   display: inline-block;
-  width: 170px;
-  max-width: 170px;
+  max-width: 200px;
   padding: 4px 9px;
   border-radius: 999px;
   background: #33415566;
@@ -820,8 +904,18 @@ function deleteAnalysis(item) {
   vertical-align: middle;
 }
 
+.normal-text {
+  display: inline-block;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
 .status-tag {
   display: inline-flex;
+  max-width: 100px;
   padding: 4px 9px;
   border-radius: 999px;
   font-size: 12px;
@@ -853,8 +947,11 @@ function deleteAnalysis(item) {
   color: #94a3b8 !important;
 }
 
+.nowrap {
+  white-space: nowrap !important;
+}
+
 .operation-col {
-  width: 300px;
   text-align: right !important;
 }
 
@@ -863,7 +960,8 @@ function deleteAnalysis(item) {
   justify-content: flex-end;
   align-items: center;
   gap: 12px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  white-space: nowrap;
 }
 
 .text-btn {
@@ -873,6 +971,7 @@ function deleteAnalysis(item) {
   font-size: 13px;
   cursor: pointer;
   white-space: nowrap;
+  padding: 0;
 }
 
 .text-btn:hover {
@@ -912,6 +1011,8 @@ function deleteAnalysis(item) {
 .dialog {
   width: 760px;
   max-width: 100%;
+  max-height: 92vh;
+  overflow-y: auto;
   background: #0f172a;
   border: 1px solid #334155;
   border-radius: 16px;
@@ -947,11 +1048,12 @@ function deleteAnalysis(item) {
 .form-grid {
   padding: 20px;
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
 }
 
 .form-grid label {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -974,12 +1076,13 @@ function deleteAnalysis(item) {
 .detail-card {
   padding: 20px;
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
 }
 
 .detail-card div,
 .remark-card {
+  min-width: 0;
   background: #020617;
   border: 1px solid #1e293b;
   border-radius: 10px;
@@ -995,6 +1098,7 @@ function deleteAnalysis(item) {
 }
 
 .detail-card strong {
+  display: block;
   color: #f8fafc;
   font-size: 14px;
   word-break: break-all;
@@ -1024,6 +1128,7 @@ function deleteAnalysis(item) {
   color: #cbd5e1;
   font-size: 13px;
   line-height: 1.6;
+  word-break: break-word;
 }
 
 @media (max-width: 960px) {
@@ -1032,7 +1137,7 @@ function deleteAnalysis(item) {
   }
 
   .version-table {
-    min-width: 1350px;
+    min-width: 1420px;
   }
 
   .form-grid,
