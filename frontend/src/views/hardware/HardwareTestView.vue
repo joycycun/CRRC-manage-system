@@ -194,13 +194,13 @@
             </select>
           </label>
 
-          <label>
+          <!-- <label>
             上传人
             <input
               v-model="uploadForm.uploader"
               placeholder="请输入上传人"
             />
-          </label>
+          </label> -->
 
           <label>
             文件名称
@@ -334,7 +334,12 @@
 
 <script setup>
 import { computed, reactive, ref } from 'vue'
-
+const currentUserName = ref(
+  localStorage.getItem('username') ||
+  localStorage.getItem('accountName') ||
+  localStorage.getItem('realName') ||
+  '当前用户'
+)
 const filters = reactive({
   keyword: '',
   projectName: '',
@@ -375,7 +380,6 @@ const uploadForm = reactive({
   recordName: '',
   hardwareVersion: '',
   deviceType: '',
-  uploader: '',
   fileName: '',
   file: null,
   fileUrl: '',
@@ -487,7 +491,6 @@ function openUploadDialog() {
   uploadForm.recordName = ''
   uploadForm.hardwareVersion = ''
   uploadForm.deviceType = ''
-  uploadForm.uploader = ''
   uploadForm.fileName = ''
   uploadForm.file = null
   uploadForm.fileUrl = ''
@@ -548,7 +551,7 @@ function uploadTest() {
     deviceType: uploadForm.deviceType,
     fileName: uploadForm.fileName,
     fileUrl: uploadForm.fileUrl,
-    uploader: uploadForm.uploader || '当前用户',
+    uploader: currentUserName.value,
     uploadTime: new Date().toISOString().slice(0, 10),
     auditStatus: 'draft',
     auditor: '',

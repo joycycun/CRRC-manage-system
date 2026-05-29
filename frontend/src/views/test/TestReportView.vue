@@ -159,10 +159,10 @@
           </label>
 
           <label>
-            上传人
+            当前上传人
             <input
-              v-model="uploadForm.uploader"
-              placeholder="请输入上传人"
+              :value="currentUserName"
+              disabled
             />
           </label>
 
@@ -291,6 +291,13 @@
 <script setup>
 import { computed, reactive, ref } from 'vue'
 
+const currentUserName = ref(
+  localStorage.getItem('username') ||
+  localStorage.getItem('accountName') ||
+  localStorage.getItem('realName') ||
+  '当前用户'
+)
+
 const filters = reactive({
   keyword: '',
   projectName: '',
@@ -311,7 +318,6 @@ const projectOptions = [
 const uploadForm = reactive({
   projectName: '',
   reportName: '',
-  uploader: '',
   fileName: '',
   file: null,
   fileUrl: '',
@@ -412,7 +418,6 @@ function resetFilters() {
 function openUploadDialog() {
   uploadForm.projectName = ''
   uploadForm.reportName = ''
-  uploadForm.uploader = ''
   uploadForm.fileName = ''
   uploadForm.file = null
   uploadForm.fileUrl = ''
@@ -452,7 +457,7 @@ function uploadTestReport() {
     reportName: uploadForm.reportName,
     fileName: uploadForm.fileName,
     fileUrl: uploadForm.fileUrl,
-    uploader: uploadForm.uploader || '当前用户',
+    uploader: currentUserName.value,
     uploadTime: new Date().toISOString().slice(0, 10),
     auditStatus: 'draft',
     auditor: '',

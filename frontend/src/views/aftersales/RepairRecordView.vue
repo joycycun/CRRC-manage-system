@@ -183,14 +183,6 @@
           </label>
 
           <label>
-            维修人
-            <input
-              v-model="repairForm.repairUser"
-              placeholder="请输入维修人"
-            />
-          </label>
-
-          <label>
             维修时间
             <input
               v-model="repairForm.repairTime"
@@ -327,6 +319,13 @@
 <script setup>
 import { computed, reactive, ref } from 'vue'
 
+const currentUserName = ref(
+  localStorage.getItem('username') ||
+  localStorage.getItem('accountName') ||
+  localStorage.getItem('realName') ||
+  '当前用户'
+)
+
 const filters = reactive({
   keyword: '',
   projectName: '',
@@ -361,7 +360,6 @@ const repairForm = reactive({
   sn: '',
   macAddress: '',
   faultDesc: '',
-  repairUser: '',
   repairTime: '',
   repairMethod: '返厂维修',
   repairProcess: '',
@@ -464,7 +462,6 @@ function openCreateDialog() {
   repairForm.sn = ''
   repairForm.macAddress = ''
   repairForm.faultDesc = ''
-  repairForm.repairUser = ''
   repairForm.repairTime = new Date().toISOString().slice(0, 10)
   repairForm.repairMethod = '返厂维修'
   repairForm.repairProcess = ''
@@ -482,7 +479,6 @@ function openEditDialog(item) {
   repairForm.sn = item.sn
   repairForm.macAddress = item.macAddress
   repairForm.faultDesc = item.faultDesc
-  repairForm.repairUser = item.repairUser
   repairForm.repairTime = item.repairTime
   repairForm.repairMethod = item.repairMethod
   repairForm.repairProcess = item.repairProcess
@@ -517,11 +513,6 @@ function saveRepair() {
     return
   }
 
-  if (!repairForm.repairUser) {
-    alert('请输入维修人')
-    return
-  }
-
   if (editMode.value === 'create') {
     repairList.value.unshift({
       id: Date.now(),
@@ -530,7 +521,7 @@ function saveRepair() {
       sn: repairForm.sn,
       macAddress: repairForm.macAddress,
       faultDesc: repairForm.faultDesc,
-      repairUser: repairForm.repairUser,
+      repairUser: currentUserName.value,
       repairTime: repairForm.repairTime,
       repairMethod: repairForm.repairMethod,
       repairProcess: repairForm.repairProcess,
@@ -543,12 +534,13 @@ function saveRepair() {
     currentEditRepair.value.sn = repairForm.sn
     currentEditRepair.value.macAddress = repairForm.macAddress
     currentEditRepair.value.faultDesc = repairForm.faultDesc
-    currentEditRepair.value.repairUser = repairForm.repairUser
     currentEditRepair.value.repairTime = repairForm.repairTime
     currentEditRepair.value.repairMethod = repairForm.repairMethod
     currentEditRepair.value.repairProcess = repairForm.repairProcess
     currentEditRepair.value.updateTime = new Date().toISOString().slice(0, 10)
     currentEditRepair.value.remark = repairForm.remark
+    currentEditRepair.value.repairUser =
+      currentEditRepair.value.repairUser || currentUserName.value
   }
 
   showEditDialog.value = false

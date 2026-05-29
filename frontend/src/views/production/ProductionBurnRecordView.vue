@@ -15,7 +15,7 @@
     <div class="filter-card">
       <input
         v-model="filters.keyword"
-        placeholder="搜索生产批次号 / 产品名称 / 产品型号 / 产品编码 / 序列号 / MAC地址 / 硬件版本 / 软件版本 / PCB二维码 / 备注"
+        placeholder="搜索生产批次号 / 产品名称 / 产品型号 / 产品编码 / 序列号 / MAC地址 / 硬件版本 / 软件版本 / PCB二维码 / 上传人 / 备注"
       />
 
       <select v-model="filters.batchNo">
@@ -271,10 +271,10 @@
           </label>
 
           <label>
-            上传人
+            当前上传人
             <input
-              v-model="uploadForm.uploader"
-              placeholder="请输入上传人"
+              :value="currentUserName"
+              disabled
             />
           </label>
 
@@ -471,6 +471,13 @@
 import { computed, reactive, ref } from 'vue'
 import * as XLSX from 'xlsx'
 
+const currentUserName = ref(
+  localStorage.getItem('username') ||
+  localStorage.getItem('accountName') ||
+  localStorage.getItem('realName') ||
+  '当前用户'
+)
+
 const filters = reactive({
   keyword: '',
   batchNo: ''
@@ -483,7 +490,6 @@ const expandedBatchNo = ref('')
 
 const uploadForm = reactive({
   batchNo: '',
-  uploader: '',
   fileName: '',
   file: null,
   fileUrl: '',
@@ -657,7 +663,6 @@ function toggleBatch(batchNo) {
 
 function openUploadDialog() {
   uploadForm.batchNo = ''
-  uploadForm.uploader = ''
   uploadForm.fileName = ''
   uploadForm.file = null
   uploadForm.fileUrl = ''
@@ -859,7 +864,7 @@ function saveExcelBurnRecords() {
   }
 
   const now = new Date().toISOString().slice(0, 10)
-  const uploader = uploadForm.uploader || '当前用户'
+  const uploader = currentUserName.value
 
   const records = excelPreviewList.value.flatMap((item, rowIndex) => {
     const serialNumbers =

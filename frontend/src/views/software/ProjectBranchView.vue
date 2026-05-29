@@ -80,7 +80,11 @@
                 </span>
               </td>
 
-              <td>{{ item.owner }}</td>
+              <td>
+                <span class="owner-text" :title="item.owner">
+                  {{ item.owner }}
+                </span>
+              </td>
 
               <td class="muted">
                 {{ item.createTime }}
@@ -167,18 +171,18 @@
           </label>
 
           <label>
-            软件负责人
-            <input
-              v-model="branchForm.owner"
-              placeholder="请输入软件负责人"
-            />
-          </label>
-
-          <label>
             创建时间
             <input
               v-model="branchForm.createTime"
               type="date"
+            />
+          </label>
+
+          <label class="full-row">
+            软件负责人
+            <input
+              :value="editMode === 'create' ? currentUserName : branchForm.owner"
+              disabled
             />
           </label>
 
@@ -265,6 +269,13 @@
 
 <script setup>
 import { computed, reactive, ref } from 'vue'
+
+const currentUserName = ref(
+  localStorage.getItem('username') ||
+  localStorage.getItem('accountName') ||
+  localStorage.getItem('realName') ||
+  '当前用户'
+)
 
 const filters = reactive({
   keyword: '',
@@ -375,7 +386,7 @@ function openCreateDialog() {
   branchForm.projectName = ''
   branchForm.deviceType = ''
   branchForm.branchName = ''
-  branchForm.owner = ''
+  branchForm.owner = currentUserName.value
   branchForm.createTime = new Date().toISOString().slice(0, 10)
   branchForm.cloneUrl = ''
 
@@ -412,11 +423,6 @@ function saveBranch() {
     return
   }
 
-  if (!branchForm.owner) {
-    alert('请输入软件负责人')
-    return
-  }
-
   if (!branchForm.cloneUrl) {
     alert('请输入 Clone 地址')
     return
@@ -428,7 +434,7 @@ function saveBranch() {
       projectName: branchForm.projectName,
       deviceType: branchForm.deviceType,
       branchName: branchForm.branchName,
-      owner: branchForm.owner,
+      owner: currentUserName.value,
       createTime: branchForm.createTime || new Date().toISOString().slice(0, 10),
       cloneUrl: branchForm.cloneUrl
     })
@@ -436,7 +442,6 @@ function saveBranch() {
     currentEditBranch.value.projectName = branchForm.projectName
     currentEditBranch.value.deviceType = branchForm.deviceType
     currentEditBranch.value.branchName = branchForm.branchName
-    currentEditBranch.value.owner = branchForm.owner
     currentEditBranch.value.createTime = branchForm.createTime
     currentEditBranch.value.cloneUrl = branchForm.cloneUrl
   }
@@ -549,6 +554,12 @@ async function copyCloneUrl(item) {
   padding: 0 12px;
   outline: none;
   height: 36px;
+}
+
+.form-grid input:disabled {
+  color: #94a3b8;
+  background: #0f172a;
+  cursor: not-allowed;
 }
 
 .filter-card input::placeholder,
@@ -700,6 +711,16 @@ async function copyCloneUrl(item) {
 .device-tag {
   background: #0f766e33;
   color: #5eead4;
+}
+
+.owner-text {
+  display: inline-block;
+  max-width: 100px;
+  color: #e2e8f0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 
 .clone-url {

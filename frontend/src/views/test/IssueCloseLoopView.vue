@@ -167,9 +167,7 @@
         </table>
       </div>
 
-      <div class="table-footer">
-        <!-- 共 {{ filteredIssueList.length }} 条问题记录。只有问题创建者可以关闭或重新打开问题。 -->
-      </div>
+      <div class="table-footer"></div>
     </div>
 
     <!-- 新增 / 修改问题弹窗 -->
@@ -247,20 +245,13 @@
           </label>
 
           <label>
-            提出人
-            <input
-              v-model="issueForm.creator"
-              placeholder="请输入问题提出人"
-            />
-          </label>
-
-          <label>
             计划关闭时间
             <input
               v-model="issueForm.planCloseTime"
               type="date"
             />
           </label>
+
         </div>
 
         <div class="dialog-footer">
@@ -315,10 +306,10 @@
           </label>
 
           <label>
-            回复人
+            当前回复人
             <input
               v-model="replyForm.replyUser"
-              placeholder="请输入回复人"
+              disabled
             />
           </label>
         </div>
@@ -512,7 +503,6 @@ const issueForm = reactive({
   level: '中',
   issueTitle: '',
   owner: '',
-  creator: '',
   planCloseTime: ''
 })
 
@@ -688,7 +678,6 @@ function openCreateDialog() {
   issueForm.level = '中'
   issueForm.issueTitle = ''
   issueForm.owner = ''
-  issueForm.creator = currentUserName.value
   issueForm.planCloseTime = ''
 
   showEditDialog.value = true
@@ -704,7 +693,6 @@ function openEditDialog(item) {
   issueForm.level = item.level
   issueForm.issueTitle = item.issueTitle
   issueForm.owner = item.owner
-  issueForm.creator = item.creator
   issueForm.planCloseTime = item.planCloseTime
 
   showEditDialog.value = true
@@ -736,11 +724,6 @@ function saveIssue() {
     return
   }
 
-  if (!issueForm.creator) {
-    alert('请输入问题提出人')
-    return
-  }
-
   if (editMode.value === 'create') {
     issueList.value.unshift({
       id: Date.now(),
@@ -750,7 +733,7 @@ function saveIssue() {
       level: issueForm.level,
       issueTitle: issueForm.issueTitle,
       owner: issueForm.owner,
-      creator: issueForm.creator,
+      creator: currentUserName.value,
       createTime: new Date().toISOString().slice(0, 10),
       planCloseTime: issueForm.planCloseTime,
       realCloseTime: '',
@@ -765,8 +748,8 @@ function saveIssue() {
     currentEditIssue.value.level = issueForm.level
     currentEditIssue.value.issueTitle = issueForm.issueTitle
     currentEditIssue.value.owner = issueForm.owner
-    currentEditIssue.value.creator = issueForm.creator
     currentEditIssue.value.planCloseTime = issueForm.planCloseTime
+    currentEditIssue.value.creator = currentEditIssue.value.creator || currentUserName.value
   }
 
   showEditDialog.value = false
@@ -786,11 +769,6 @@ function openReplyDialog(item) {
 function saveReply() {
   if (!currentReplyIssue.value) return
 
-  if (!replyForm.replyUser) {
-    alert('请输入回复人')
-    return
-  }
-
   if (!replyForm.content) {
     alert('请输入回复内容')
     return
@@ -798,7 +776,7 @@ function saveReply() {
 
   currentReplyIssue.value.replies.push({
     id: Date.now(),
-    replyUser: replyForm.replyUser,
+    replyUser: currentUserName.value,
     replyTime: new Date().toISOString().slice(0, 10),
     content: replyForm.content
   })

@@ -183,13 +183,13 @@
             </select>
           </label>
 
-          <label>
+          <!-- <label>
             负责人
             <input
               v-model="softwareForm.owner"
               placeholder="请输入软件负责人"
             />
-          </label>
+          </label> -->
 
           <label class="full-row">
             下载网页地址
@@ -297,6 +297,13 @@
 
 <script setup>
 import { computed, reactive, ref } from 'vue'
+
+const currentUserName = ref(
+  localStorage.getItem('username') ||
+  localStorage.getItem('accountName') ||
+  localStorage.getItem('realName') ||
+  '当前用户'
+)
 
 const filters = reactive({
   keyword: '',
@@ -505,7 +512,7 @@ function openCreateDialog() {
   softwareForm.projectName = ''
   softwareForm.deviceType = ''
   softwareForm.hardwareVersion = ''
-  softwareForm.owner = ''
+  // softwareForm.owner = ''
   softwareForm.downloadUrl = ''
   softwareForm.businessDesc = ''
   softwareForm.description = ''
@@ -521,7 +528,7 @@ function openEditDialog(item) {
   softwareForm.projectName = item.projectName
   softwareForm.deviceType = item.deviceType
   softwareForm.hardwareVersion = item.hardwareVersion
-  softwareForm.owner = item.owner
+  // softwareForm.owner = item.owner
   softwareForm.downloadUrl = item.downloadUrl
   softwareForm.businessDesc = item.businessDesc
   softwareForm.description = item.description
@@ -567,7 +574,7 @@ function saveSoftwareVersion() {
       projectName: softwareForm.projectName,
       deviceType: softwareForm.deviceType,
       hardwareVersion: softwareForm.hardwareVersion,
-      owner: softwareForm.owner || '未填写',
+      owner: currentUserName.value,
       releaseDate: new Date().toISOString().slice(0, 10),
       downloadUrl: softwareForm.downloadUrl,
       businessDesc: softwareForm.businessDesc,
@@ -578,7 +585,7 @@ function saveSoftwareVersion() {
     currentEditSoftware.value.projectName = softwareForm.projectName
     currentEditSoftware.value.deviceType = softwareForm.deviceType
     currentEditSoftware.value.hardwareVersion = softwareForm.hardwareVersion
-    currentEditSoftware.value.owner = softwareForm.owner || '未填写'
+    currentEditSoftware.value.owner = currentEditSoftware.value.owner || currentUserName.value
     currentEditSoftware.value.releaseDate = new Date().toISOString().slice(0, 10)
     currentEditSoftware.value.downloadUrl = softwareForm.downloadUrl
     currentEditSoftware.value.businessDesc = softwareForm.businessDesc

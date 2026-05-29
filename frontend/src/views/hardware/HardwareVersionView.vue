@@ -165,13 +165,13 @@
             </select>
           </label>
 
-          <label>
+          <!-- <label>
             负责人
             <input
               v-model="hardwareForm.owner"
               placeholder="请输入硬件负责人"
             />
-          </label>
+          </label> -->
 
           <label>
             版本状态
@@ -353,7 +353,12 @@
 
 <script setup>
 import { computed, reactive, ref } from 'vue'
-
+const currentUserName = ref(
+  localStorage.getItem('username') ||
+  localStorage.getItem('accountName') ||
+  localStorage.getItem('realName') ||
+  '当前用户'
+)
 const filters = reactive({
   keyword: '',
   deviceType: '',
@@ -540,7 +545,7 @@ function saveHardwareVersion() {
       deviceType: hardwareForm.deviceType,
       bindProjects: [...hardwareForm.bindProjects],
       status: hardwareForm.status,
-      owner: hardwareForm.owner || '未填写',
+      owner: currentUserName.value,
       updateTime: new Date().toISOString().slice(0, 10),
       zipFileName: '',
       zipFileUrl: '',

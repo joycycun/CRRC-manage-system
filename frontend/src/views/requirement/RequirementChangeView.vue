@@ -67,7 +67,7 @@
           <tr v-for="item in filteredChangeList" :key="item.id">
             <td>
               <div class="change-name">{{ item.changeName }}</div>
-              <div class="file-name">{{ item.fileName }}</div>
+              <!-- <div class="file-name">{{ item.fileName }}</div> -->
             </td>
 
             <td>
@@ -171,15 +171,7 @@
             需求变更名称
             <input
               v-model="uploadForm.changeName"
-              placeholder="例如：香港屯马项目需求变更"
-            />
-          </label>
 
-          <label>
-            上传人
-            <input
-              v-model="uploadForm.uploader"
-              placeholder="请输入上传人"
             />
           </label>
 
@@ -322,7 +314,12 @@
 
 <script setup>
 import { computed, reactive, ref } from 'vue'
-
+const currentUserName = ref(
+  localStorage.getItem('username') ||
+  localStorage.getItem('accountName') ||
+  localStorage.getItem('realName') ||
+  '当前用户'
+)
 const filters = reactive({
   keyword: '',
   projectName: '',
@@ -347,7 +344,6 @@ const projectOptions = [
 const uploadForm = reactive({
   projectName: '',
   changeName: '',
-  uploader: '',
   fileName: '',
   file: null,
   fileUrl: '',
@@ -359,7 +355,7 @@ const changeList = ref([
   {
     id: 1,
     projectName: '香港屯马项目',
-    changeName: '香港屯马项目需求变更',
+    changeName: '地面无线电故障报警需求变更',
     fileName: '香港屯马需求变更_V1.0.docx',
     fileUrl: '',
     uploader: '寸诗睿',
@@ -375,7 +371,7 @@ const changeList = ref([
   {
     id: 2,
     projectName: '波尔图二期项目',
-    changeName: '波尔图二期广播逻辑变更',
+    changeName: '广播逻辑变更',
     fileName: '波尔图需求变更_V0.9.docx',
     fileUrl: '',
     uploader: '寸诗睿',
@@ -391,7 +387,7 @@ const changeList = ref([
   {
     id: 3,
     projectName: '阿根廷有轨项目',
-    changeName: '阿根廷报警器需求变更',
+    changeName: '报警器需求变更',
     fileName: '阿根廷需求变更_草稿.docx',
     fileUrl: '',
     uploader: '寸诗睿',
@@ -407,7 +403,7 @@ const changeList = ref([
   {
     id: 4,
     projectName: '波哥大有轨项目',
-    changeName: '波哥大编码板需求变更',
+    changeName: '编码板需求变更',
     fileName: '波哥大需求变更_V1.1.docx',
     fileUrl: '',
     uploader: '寸诗睿',
@@ -473,7 +469,6 @@ function resetFilters() {
 function openUploadDialog() {
   uploadForm.projectName = ''
   uploadForm.changeName = ''
-  uploadForm.uploader = ''
   uploadForm.fileName = ''
   uploadForm.file = null
   uploadForm.fileUrl = ''
@@ -522,7 +517,7 @@ function uploadChange() {
     changeName: uploadForm.changeName,
     fileName: uploadForm.fileName,
     fileUrl: uploadForm.fileUrl,
-    uploader: uploadForm.uploader || '当前用户',
+    uploader: currentUserName.value,
     uploadTime: new Date().toISOString().slice(0, 10),
     auditStatus: 'draft',
     closeStatus: 'open',
