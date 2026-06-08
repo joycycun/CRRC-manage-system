@@ -76,9 +76,15 @@
               </td>
 
               <td>
-                <span class="project-tag">
-                  {{ item.projectName }}
-                </span>
+                <div class="project-list">
+                  <span
+                    v-for="project in getSoftwareProjects(item)"
+                    :key="project"
+                    class="project-tag"
+                  >
+                    {{ project }}
+                  </span>
+                </div>
               </td>
 
               <td>
@@ -142,22 +148,8 @@
           </label>
 
           <label>
-            适配项目
-            <select v-model="softwareForm.projectName" @change="onProjectChange">
-              <option value="">请选择项目</option>
-              <option
-                v-for="project in projectOptions"
-                :key="project"
-                :value="project"
-              >
-                {{ project }}
-              </option>
-            </select>
-          </label>
-
-          <label>
             适配终端
-            <select v-model="softwareForm.deviceType">
+            <select v-model="softwareForm.deviceType" @change="onDeviceTypeChange">
               <option value="">请选择终端</option>
               <option
                 v-for="type in availableDeviceTypes"
@@ -183,13 +175,32 @@
             </select>
           </label>
 
-          <!-- <label>
-            负责人
+          <label>
+            当前负责人
             <input
-              v-model="softwareForm.owner"
-              placeholder="请输入软件负责人"
+              :value="editMode === 'create' ? currentUserName : softwareForm.owner"
+              disabled
             />
-          </label> -->
+          </label>
+
+          <label class="full-row">
+            绑定项目
+            <div class="checkbox-list">
+              <label
+                v-for="project in projectOptions"
+                :key="project"
+                class="checkbox-item"
+              >
+                <input
+                  type="checkbox"
+                  :value="project"
+                  v-model="softwareForm.projectNames"
+                  @change="onProjectSelectionChange"
+                />
+                <span>{{ project }}</span>
+              </label>
+            </div>
+          </label>
 
           <label class="full-row">
             下载网页地址
@@ -244,7 +255,7 @@
 
           <div>
             <span>适配项目</span>
-            <strong>{{ selectedSoftware.projectName }}</strong>
+            <strong>{{ getSoftwareProjects(selectedSoftware).join('、') }}</strong>
           </div>
 
           <div>
@@ -382,7 +393,7 @@ const hardwareVersionList = ref([
 
 const softwareForm = reactive({
   softwareVersion: '',
-  projectName: '',
+  projectNames: [],
   deviceType: '',
   hardwareVersion: '',
   owner: '',
@@ -395,7 +406,7 @@ const softwareVersionList = ref([
   {
     id: 1,
     softwareVersion: 'SW-CRRC-ARG-DACU.V1.0.0',
-    projectName: '阿根廷有轨项目',
+    projectNames: ['阿根廷有轨项目'],
     deviceType: '广播控制盒',
     hardwareVersion: 'HD-CRRC-HKTM.01.V1.1.0',
     owner: '卢进',
@@ -407,7 +418,7 @@ const softwareVersionList = ref([
   {
     id: 2,
     softwareVersion: 'SW-CRRC-HKTM-PACU.V1.2.0',
-    projectName: '香港屯马项目',
+    projectNames: ['香港屯马项目'],
     deviceType: '广播控制盒',
     hardwareVersion: 'HD-CRRC-HKTM.01.V1.1.0',
     owner: '卢进',
@@ -419,7 +430,7 @@ const softwareVersionList = ref([
   {
     id: 3,
     softwareVersion: 'SW-CRRC-BOGT-PECU.V1.0.1',
-    projectName: '波哥大有轨项目',
+    projectNames: ['波哥大有轨项目'],
     deviceType: '乘客报警器',
     hardwareVersion: 'HD-CRRC-BOGT-03.T1.1.0',
     owner: '寸诗睿',
@@ -431,7 +442,7 @@ const softwareVersionList = ref([
   {
     id: 4,
     softwareVersion: 'SW-CRRC-DUBAI-ECU.V0.9.0',
-    projectName: '迪拜项目',
+    projectNames: ['迪拜项目'],
     deviceType: '编码板',
     hardwareVersion: 'HD-CRRC-DUBAI-05.S1.1.0',
     owner: '寸诗睿',
@@ -443,14 +454,12 @@ const softwareVersionList = ref([
 ])
 
 const availableHardwareVersions = computed(() => {
-  if (!softwareForm.projectName && !softwareForm.deviceType) {
-    return hardwareVersionList.value
-  }
-
   return hardwareVersionList.value.filter(item => {
     const projectMatch =
-      !softwareForm.projectName ||
-      item.bindProjects.includes(softwareForm.projectName)
+      softwareForm.projectNames.length === 0 ||
+      item.bindProjects.some(project =>
+        softwareForm.projectNames.includes(project)
+      )
 
     const deviceMatch =
       !softwareForm.deviceType ||
@@ -461,12 +470,16 @@ const availableHardwareVersions = computed(() => {
 })
 
 const availableDeviceTypes = computed(() => {
-  if (!softwareForm.projectName) {
+  if (softwareForm.projectNames.length === 0) {
     return deviceTypeOptions
   }
 
   const types = hardwareVersionList.value
-    .filter(item => item.bindProjects.includes(softwareForm.projectName))
+    .filter(item => {
+      return item.bindProjects.some(project =>
+        softwareForm.projectNames.includes(project)
+      )
+    })
     .map(item => item.deviceType)
 
   return [...new Set(types)]
@@ -474,17 +487,19 @@ const availableDeviceTypes = computed(() => {
 
 const filteredSoftwareList = computed(() => {
   return softwareVersionList.value.filter(item => {
+    const itemProjects = getSoftwareProjects(item)
+
     const keywordMatch =
       !filters.keyword ||
       item.softwareVersion.includes(filters.keyword) ||
-      item.projectName.includes(filters.keyword) ||
+      itemProjects.some(project => project.includes(filters.keyword)) ||
       item.deviceType.includes(filters.keyword) ||
       item.hardwareVersion.includes(filters.keyword) ||
       item.businessDesc.includes(filters.keyword) ||
       item.description.includes(filters.keyword)
 
     const projectMatch =
-      !filters.projectName || item.projectName === filters.projectName
+      !filters.projectName || itemProjects.includes(filters.projectName)
 
     const deviceTypeMatch =
       !filters.deviceType || item.deviceType === filters.deviceType
@@ -493,29 +508,67 @@ const filteredSoftwareList = computed(() => {
   })
 })
 
+function getSoftwareProjects(item) {
+  if (Array.isArray(item.projectNames) && item.projectNames.length > 0) {
+    return item.projectNames
+  }
+
+  if (item.projectName) {
+    return [item.projectName]
+  }
+
+  return []
+}
+
 function resetFilters() {
   filters.keyword = ''
   filters.projectName = ''
   filters.deviceType = ''
 }
 
-function onProjectChange() {
+function onProjectSelectionChange() {
+  const currentDeviceValid = availableDeviceTypes.value.includes(softwareForm.deviceType)
+
+  if (!currentDeviceValid) {
+    softwareForm.deviceType = ''
+    softwareForm.hardwareVersion = ''
+  } else {
+    const currentHardwareValid = availableHardwareVersions.value.some(
+      item => item.hardwareVersion === softwareForm.hardwareVersion
+    )
+
+    if (!currentHardwareValid) {
+      softwareForm.hardwareVersion = ''
+    }
+  }
+}
+
+function onDeviceTypeChange() {
+  const currentHardwareValid = availableHardwareVersions.value.some(
+    item => item.hardwareVersion === softwareForm.hardwareVersion
+  )
+
+  if (!currentHardwareValid) {
+    softwareForm.hardwareVersion = ''
+  }
+}
+
+function resetSoftwareForm() {
+  softwareForm.softwareVersion = ''
+  softwareForm.projectNames = []
   softwareForm.deviceType = ''
   softwareForm.hardwareVersion = ''
+  softwareForm.owner = ''
+  softwareForm.downloadUrl = ''
+  softwareForm.businessDesc = ''
+  softwareForm.description = ''
 }
 
 function openCreateDialog() {
   editMode.value = 'create'
   currentEditSoftware.value = null
 
-  softwareForm.softwareVersion = ''
-  softwareForm.projectName = ''
-  softwareForm.deviceType = ''
-  softwareForm.hardwareVersion = ''
-  // softwareForm.owner = ''
-  softwareForm.downloadUrl = ''
-  softwareForm.businessDesc = ''
-  softwareForm.description = ''
+  resetSoftwareForm()
 
   showEditDialog.value = true
 }
@@ -525,10 +578,10 @@ function openEditDialog(item) {
   currentEditSoftware.value = item
 
   softwareForm.softwareVersion = item.softwareVersion
-  softwareForm.projectName = item.projectName
+  softwareForm.projectNames = [...getSoftwareProjects(item)]
   softwareForm.deviceType = item.deviceType
   softwareForm.hardwareVersion = item.hardwareVersion
-  // softwareForm.owner = item.owner
+  softwareForm.owner = item.owner || currentUserName.value
   softwareForm.downloadUrl = item.downloadUrl
   softwareForm.businessDesc = item.businessDesc
   softwareForm.description = item.description
@@ -542,8 +595,8 @@ function saveSoftwareVersion() {
     return
   }
 
-  if (!softwareForm.projectName) {
-    alert('请选择适配项目')
+  if (softwareForm.projectNames.length === 0) {
+    alert('请至少选择一个绑定项目')
     return
   }
 
@@ -571,7 +624,7 @@ function saveSoftwareVersion() {
     softwareVersionList.value.unshift({
       id: Date.now(),
       softwareVersion: softwareForm.softwareVersion,
-      projectName: softwareForm.projectName,
+      projectNames: [...softwareForm.projectNames],
       deviceType: softwareForm.deviceType,
       hardwareVersion: softwareForm.hardwareVersion,
       owner: currentUserName.value,
@@ -582,7 +635,8 @@ function saveSoftwareVersion() {
     })
   } else {
     currentEditSoftware.value.softwareVersion = softwareForm.softwareVersion
-    currentEditSoftware.value.projectName = softwareForm.projectName
+    currentEditSoftware.value.projectNames = [...softwareForm.projectNames]
+    currentEditSoftware.value.projectName = ''
     currentEditSoftware.value.deviceType = softwareForm.deviceType
     currentEditSoftware.value.hardwareVersion = softwareForm.hardwareVersion
     currentEditSoftware.value.owner = currentEditSoftware.value.owner || currentUserName.value
@@ -741,24 +795,7 @@ function openDownloadPage(item) {
   scrollbar-width: thin;
   scrollbar-color: #334155 #020617;
 }
-.table-card th:nth-child(5),
-.table-card td:nth-child(5) {
-  width: 180px;
-  max-width: 180px;
-  overflow: hidden;
-}
 
-.table-card th:nth-child(6),
-.table-card td:nth-child(6) {
-  width: 100px;
-  max-width: 100px;
-}
-
-.table-card th:nth-child(7),
-.table-card td:nth-child(7) {
-  width: 120px;
-  max-width: 120px;
-}
 .table-card table {
   width: 100%;
   min-width: 1250px;
@@ -788,6 +825,41 @@ function openDownloadPage(item) {
   vertical-align: middle;
 }
 
+.table-card th:nth-child(1),
+.table-card td:nth-child(1) {
+  width: 190px;
+}
+
+.table-card th:nth-child(2),
+.table-card td:nth-child(2) {
+  width: 280px;
+}
+
+.table-card th:nth-child(3),
+.table-card td:nth-child(3) {
+  width: 180px;
+}
+
+.table-card th:nth-child(4),
+.table-card td:nth-child(4) {
+  width: 140px;
+}
+
+.table-card th:nth-child(5),
+.table-card td:nth-child(5) {
+  width: 210px;
+}
+
+.table-card th:nth-child(6),
+.table-card td:nth-child(6) {
+  width: 100px;
+}
+
+.table-card th:nth-child(7),
+.table-card td:nth-child(7) {
+  width: 110px;
+}
+
 .version-link {
   border: none;
   background: transparent;
@@ -814,6 +886,12 @@ function openDownloadPage(item) {
   white-space: nowrap;
 }
 
+.project-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .project-tag,
 .device-tag,
 .hardware-tag {
@@ -827,7 +905,6 @@ function openDownloadPage(item) {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
 
 .project-tag {
   background: #1d4ed833;
@@ -845,15 +922,9 @@ function openDownloadPage(item) {
   display: block;
   width: 100%;
   max-width: 170px;
-  padding: 4px 9px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 700;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   box-sizing: border-box;
 }
+
 .hardware-version-cell {
   overflow: hidden;
   max-width: 0;
@@ -867,6 +938,7 @@ function openDownloadPage(item) {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
 .muted {
   color: #94a3b8 !important;
 }
@@ -977,6 +1049,30 @@ function openDownloadPage(item) {
   grid-column: 1 / -1;
 }
 
+.checkbox-list {
+  background: #020617;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.checkbox-item {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 6px !important;
+  font-size: 13px;
+  color: #cbd5e1;
+}
+
+.checkbox-item input {
+  width: 14px;
+  height: 14px;
+}
+
 .dialog-footer {
   padding: 16px 20px;
   border-top: 1px solid #1e293b;
@@ -1043,50 +1139,16 @@ function openDownloadPage(item) {
     grid-template-columns: 1fr;
   }
 
-.table-card table {
-  width: 100%;
-  min-width: 1250px;
-  border-collapse: collapse;
-  table-layout: fixed;
-}
-
-.table-card th:nth-child(1),
-.table-card td:nth-child(1) {
-  width: 190px;
-}
-
-.table-card th:nth-child(2),
-.table-card td:nth-child(2) {
-  width: 280px;
-}
-
-.table-card th:nth-child(3),
-.table-card td:nth-child(3) {
-  width: 150px;
-}
-
-.table-card th:nth-child(4),
-.table-card td:nth-child(4) {
-  width: 140px;
-}
-
-.table-card th:nth-child(5),
-.table-card td:nth-child(5) {
-  width: 210px;
-}
-
-.table-card th:nth-child(6),
-.table-card td:nth-child(6) {
-  width: 100px;
-}
-
-.table-card th:nth-child(7),
-.table-card td:nth-child(7) {
-  width: 110px;
-}
+  .table-card table {
+    min-width: 1250px;
+  }
 
   .form-grid,
   .detail-card {
+    grid-template-columns: 1fr;
+  }
+
+  .checkbox-list {
     grid-template-columns: 1fr;
   }
 }

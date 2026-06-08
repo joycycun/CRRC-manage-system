@@ -11,13 +11,13 @@
       <div class="summary-card green">
         <span>本月出库数量</span>
         <strong>{{ currentMonthOutboundCount }}</strong>
-        <p>本月已进入出库记录的设备数量</p>
+        <p>本月由发货批次生成的出库设备数量</p>
       </div>
 
       <div class="summary-card blue">
         <span>发货数量</span>
         <strong>{{ shippingCount }}</strong>
-        <p>已从出库记录生成发货批次的设备数量</p>
+        <p>已关联发货批次的设备数量</p>
       </div>
     </div>
 
@@ -25,7 +25,7 @@
     <div class="filter-card">
       <input
         v-model="filters.keyword"
-        placeholder="搜索 SN / MAC / 软件版本 / 硬件版本 / 操作人"
+        placeholder="搜索 SN / MAC / 软件版本 / 硬件版本 / 操作人 / 发货批次"
       />
 
       <select v-model="filters.deviceType">
@@ -48,29 +48,14 @@
       <div class="table-card-header">
         <div>
           <h3>出库列表</h3>
-          <span>已勾选 {{ selectedOutboundIds.length }} 条，共 {{ filteredOutboundList.length }} 条</span>
+          <span>共 {{ filteredOutboundList.length }} 条出库记录</span>
         </div>
-
-        <button
-          class="ship-action-btn"
-          :disabled="selectedOutboundIds.length === 0"
-          @click="goToShippingBatch"
-        >
-          生成发货批次
-        </button>
       </div>
 
       <div class="table-wrapper">
         <table class="version-table">
           <thead>
             <tr>
-              <th class="check-col">
-                <input
-                  type="checkbox"
-                  :checked="isAllSelected"
-                  @change="toggleSelectAll"
-                />
-              </th>
               <th>终端类型</th>
               <th>SN序列号</th>
               <th>MAC地址</th>
@@ -79,6 +64,7 @@
               <th>入库时间</th>
               <th>出库时间</th>
               <th>操作人</th>
+              <th>发货批次</th>
               <th>发货状态</th>
               <th class="operation-col">操作</th>
             </tr>
@@ -86,14 +72,6 @@
 
           <tbody>
             <tr v-for="item in filteredOutboundList" :key="item.outboundId">
-              <td class="check-col">
-                <input
-                  type="checkbox"
-                  :value="item.outboundId"
-                  v-model="selectedOutboundIds"
-                />
-              </td>
-
               <td>
                 <span class="device-tag">{{ item.deviceType }}</span>
               </td>
@@ -132,6 +110,12 @@
               </td>
 
               <td>
+                <span class="batch-tag" :title="item.shippingBatchNo">
+                  {{ item.shippingBatchNo || '-' }}
+                </span>
+              </td>
+
+              <td>
                 <span
                   class="ship-status-tag"
                   :class="item.outboundStatus === 'shipping' ? 'shipping' : 'pending'"
@@ -150,10 +134,16 @@
                     返回入库
                   </button>
 
-                  <button class="text-btn red" @click="deleteOutbound(item)">
+                  <!-- <button class="text-btn red" @click="deleteOutbound(item)">
                     删除
-                  </button>
+                  </button> -->
                 </div>
+              </td>
+            </tr>
+
+            <tr v-if="filteredOutboundList.length === 0">
+              <td colspan="11" class="empty-table">
+                暂无出库记录。请在发货批次管理页面新增批次并选择库存设备。
               </td>
             </tr>
           </tbody>
@@ -161,7 +151,7 @@
       </div>
 
       <div class="table-footer">
-        勾选需要发货的出库设备，点击“生成发货批次”后会自动跳转到发货管理页面。
+        出库记录由发货批次管理页面选择库存设备后自动生成，不再需要在此页面勾选生成发货批次。
       </div>
     </div>
 
@@ -215,6 +205,16 @@
           </div>
 
           <div>
+            <span>发货批次</span>
+            <strong>{{ selectedOutbound.shippingBatchNo || '-' }}</strong>
+          </div>
+
+          <div>
+            <span>快递单号</span>
+            <strong>{{ selectedOutbound.expressNo || '-' }}</strong>
+          </div>
+
+          <div>
             <span>发货状态</span>
             <strong>{{ getOutboundStatusText(selectedOutbound.outboundStatus) }}</strong>
           </div>
@@ -241,13 +241,9 @@
 
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
-
-const router = useRouter()
 
 const STORAGE_INVENTORY_KEY = 'inventoryList'
 const STORAGE_OUTBOUND_KEY = 'outInventoryList'
-const STORAGE_PENDING_SHIPPING_KEY = 'pendingShippingDevices'
 
 const filters = reactive({
   keyword: '',
@@ -255,7 +251,6 @@ const filters = reactive({
 })
 
 const selectedOutbound = ref(null)
-const selectedOutboundIds = ref([])
 
 const deviceTypeOptions = [
   '司机室控制盒',
@@ -299,98 +294,41 @@ watch(
   { deep: true }
 )
 
+const completedOutboundList = computed(() => {
+  return outboundList.value.filter(item => {
+    return item.outboundStatus === 'shipped'
+  })
+})
+
 const filteredOutboundList = computed(() => {
   return outboundList.value.filter(item => {
-    const keywordMatch =
-      !filters.keyword ||
-      item.sn.includes(filters.keyword) ||
-      item.macAddress.includes(filters.keyword) ||
-      item.softwareVersion.includes(filters.keyword) ||
-      item.hardwareVersion.includes(filters.keyword) ||
-      item.deviceType.includes(filters.keyword) ||
-      item.operator.includes(filters.keyword)
-
-    const deviceTypeMatch =
-      !filters.deviceType || item.deviceType === filters.deviceType
-
-    return keywordMatch && deviceTypeMatch
+    return item.outboundStatus === 'shipped'
   })
 })
 
 const currentMonthOutboundCount = computed(() => {
   const currentMonth = new Date().toISOString().slice(0, 7)
 
-  return outboundList.value.filter(item => {
+  return completedOutboundList.value.filter(item => {
     return item.outboundTime && item.outboundTime.startsWith(currentMonth)
   }).length
 })
 
 const shippingCount = computed(() => {
-  return outboundList.value.filter(item => item.outboundStatus === 'shipping').length
-})
-
-const isAllSelected = computed(() => {
-  return (
-    filteredOutboundList.value.length > 0 &&
-    filteredOutboundList.value.every(item =>
-      selectedOutboundIds.value.includes(item.outboundId)
-    )
-  )
+  return completedOutboundList.value.length
 })
 
 function getOutboundStatusText(status) {
   const map = {
-    pending: '待生成发货',
-    shipping: '已生成发货'
+    shipped: '已完成发货'
   }
 
-  return map[status] || '待生成发货'
+  return map[status] || '已完成发货'
 }
 
 function resetFilters() {
   filters.keyword = ''
   filters.deviceType = ''
-}
-
-function toggleSelectAll(event) {
-  if (event.target.checked) {
-    selectedOutboundIds.value = filteredOutboundList.value.map(item => item.outboundId)
-  } else {
-    selectedOutboundIds.value = []
-  }
-}
-
-function goToShippingBatch() {
-  if (selectedOutboundIds.value.length === 0) {
-    alert('请先勾选需要生成发货批次的出库设备')
-    return
-  }
-
-  const selectedDevices = outboundList.value.filter(item =>
-    selectedOutboundIds.value.includes(item.outboundId)
-  )
-
-  localStorage.setItem(
-    STORAGE_PENDING_SHIPPING_KEY,
-    JSON.stringify(selectedDevices)
-  )
-
-  outboundList.value = outboundList.value.map(item => {
-    if (selectedOutboundIds.value.includes(item.outboundId)) {
-      return {
-        ...item,
-        outboundStatus: 'shipping'
-      }
-    }
-
-    return item
-  })
-
-  selectedOutboundIds.value = []
-
-  alert('已选择出库设备，即将跳转到发货批次管理页面')
-
-  router.push('/shipping/batch')
 }
 
 function viewOutbound(item) {
@@ -418,10 +356,6 @@ function returnToInventory(item) {
     record => record.outboundId !== item.outboundId
   )
 
-  selectedOutboundIds.value = selectedOutboundIds.value.filter(
-    id => id !== item.outboundId
-  )
-
   selectedOutbound.value = null
 
   alert('设备已返回库存')
@@ -433,10 +367,6 @@ function deleteOutbound(item) {
 
   outboundList.value = outboundList.value.filter(
     record => record.outboundId !== item.outboundId
-  )
-
-  selectedOutboundIds.value = selectedOutboundIds.value.filter(
-    id => id !== item.outboundId
   )
 
   selectedOutbound.value = null
@@ -502,33 +432,6 @@ function deleteOutbound(item) {
 
 .summary-card.blue strong {
   color: #60a5fa;
-}
-
-.check-col {
-  width: 56px;
-  text-align: center !important;
-}
-
-.ship-action-btn {
-  height: 34px;
-  padding: 0 16px;
-  border: none;
-  border-radius: 8px;
-  background: #2563eb;
-  color: #fff;
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.35);
-}
-
-.ship-action-btn:hover {
-  background: #1d4ed8;
-}
-
-.ship-action-btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
 }
 
 .primary-btn,
@@ -651,15 +554,6 @@ function deleteOutbound(item) {
   background: #475569;
 }
 
-.table-wrapper::-webkit-scrollbar-button {
-  display: none;
-}
-
-.table-wrapper {
-  scrollbar-width: thin;
-  scrollbar-color: #334155 #020617;
-}
-
 .version-table {
   width: 100%;
   min-width: 1420px;
@@ -762,7 +656,8 @@ function deleteOutbound(item) {
 }
 
 .mac-text,
-.normal-text {
+.normal-text,
+.batch-tag {
   display: inline-block;
   max-width: 160px;
   color: #cbd5e1;
@@ -771,6 +666,13 @@ function deleteOutbound(item) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.batch-tag {
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: #1d4ed833;
+  color: #60a5fa;
 }
 
 .normal-text {
@@ -824,6 +726,12 @@ function deleteOutbound(item) {
 
 .text-btn.red {
   color: #f87171;
+}
+
+.empty-table {
+  text-align: center;
+  color: #64748b !important;
+  padding: 28px 16px !important;
 }
 
 .table-footer {
@@ -927,20 +835,14 @@ function deleteOutbound(item) {
 }
 
 @media (max-width: 960px) {
-  .filter-card {
-    grid-template-columns: 1fr;
-  }
-
-  .summary-grid {
+  .filter-card,
+  .summary-grid,
+  .detail-card {
     grid-template-columns: 1fr;
   }
 
   .version-table {
     min-width: 1420px;
-  }
-
-  .detail-card {
-    grid-template-columns: 1fr;
   }
 }
 </style>

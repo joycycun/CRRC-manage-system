@@ -15,7 +15,7 @@
     <div class="filter-card">
       <input
         v-model="filters.keyword"
-        placeholder="搜索批次号 / SN序列号 / 上传人 / 发货单文件 / 快递单号"
+        placeholder="搜索批次号 / SN序列号 / MAC地址 / 上传人 / 发货单文件 / 快递单号"
       />
 
       <select v-model="filters.auditStatus">
@@ -28,18 +28,6 @@
 
       <button class="query-btn">查询</button>
       <button class="reset-btn" @click="resetFilters">重置</button>
-    </div>
-
-    <!-- 待生成发货批次提示 -->
-    <div v-if="pendingShippingDevices.length > 0" class="pending-card">
-      <div>
-        <strong>已从出库管理选择 {{ pendingShippingDevices.length }} 台设备</strong>
-        <p>点击“新增发货批次”后，系统会自动带入这些设备的 SN 序列号和设备数量。</p>
-      </div>
-
-      <button class="primary-btn" @click="openCreateDialog">
-        使用已选设备生成发货批次
-      </button>
     </div>
 
     <!-- 发货批次表格 -->
@@ -62,8 +50,8 @@
               <th>上传时间</th>
               <th>审核状态</th>
               <th>审核人</th>
-              <th class="operation-col">操作</th>
               <th>快递单号</th>
+              <th class="operation-col">操作</th>
             </tr>
           </thead>
 
@@ -77,7 +65,7 @@
 
               <td>
                 <span class="file-tag" :title="item.fileName">
-                  {{ item.fileName }}
+                  {{ item.fileName || '-' }}
                 </span>
               </td>
 
@@ -98,6 +86,12 @@
               </td>
 
               <td>{{ item.auditor || '-' }}</td>
+
+              <td>
+                <span class="express-tag" :title="item.expressNo">
+                  {{ item.expressNo || '-' }}
+                </span>
+              </td>
 
               <td class="operation-col">
                 <div class="action-group">
@@ -134,11 +128,11 @@
                   </button>
                 </div>
               </td>
+            </tr>
 
-              <td>
-                <span class="express-tag" :title="item.expressNo">
-                  {{ item.expressNo || '-' }}
-                </span>
+            <tr v-if="filteredBatchList.length === 0">
+              <td colspan="9" class="empty-table">
+                暂无发货批次记录
               </td>
             </tr>
           </tbody>
@@ -146,13 +140,13 @@
       </div>
 
       <div class="table-footer">
-        支持按发货批次号、SN序列号、上传人、发货单文件、快递单号查询。
+        新增发货批次时，可直接从当前库存中选择设备；保存后设备会自动进入出库记录页面。
       </div>
     </div>
 
     <!-- 新增发货批次弹窗 -->
     <div v-if="showCreateDialog" class="dialog-mask">
-      <div class="dialog">
+      <div class="dialog create-dialog">
         <div class="dialog-header">
           <h3>新增发货批次</h3>
           <button @click="showCreateDialog = false">×</button>
@@ -170,9 +164,8 @@
           <label>
             设备数量
             <input
-              v-model.number="batchForm.deviceCount"
+              :value="selectedInventoryDevices.length"
               type="number"
-              min="1"
               disabled
             />
           </label>
@@ -181,7 +174,7 @@
             上传人
             <input
               v-model="batchForm.uploader"
-              placeholder="请输入上传人"
+              disabled
             />
           </label>
 
@@ -194,16 +187,175 @@
           </label>
 
           <label class="full-row">
-            已选出库设备 SN
+            从库存选择设备
+            <div class="inventory-select-panel">
+              <div class="inventory-select-tools">
+                <input
+                  v-model="inventoryFilters.keyword"
+                  placeholder="按 SN / MAC / 终端类型 / 软件版本 / 硬件版本模糊筛选"
+                />
+
+                <select v-model="inventoryFilters.deviceType">
+                  <option value="">全部终端类型</option>
+                  <option
+                    v-for="type in deviceTypeOptions"
+                    :key="type"
+                    :value="type"
+                  >
+                    {{ type }}
+                  </option>
+                </select>
+              </div>
+
+              <div class="mac-tool-card">
+                <div class="mac-tool-title">
+                  <strong>按 MAC 列表选择</strong>
+                  <span>支持换行、逗号、空格分隔多个 MAC</span>
+                </div>
+
+                <textarea
+                  v-model="macSelectForm.macText"
+                  placeholder="例如：
+00:11:22:33:44:01
+00:11:22:33:44:02"
+                ></textarea>
+
+                <div class="mac-tool-actions">
+                  <button class="reset-btn small-btn" @click="selectByMacList">
+                    按列表选择
+                  </button>
+                  <button class="reset-btn small-btn" @click="clearMacText">
+                    清空列表
+                  </button>
+                </div>
+              </div>
+
+              <div class="mac-tool-card">
+                <div class="mac-tool-title">
+                  <strong>按 MAC 区间选择</strong>
+                  <span>适合同一批连续 MAC，例如 00:11:22:33:44:01 到 00:11:22:33:44:10</span>
+                </div>
+
+                <div class="range-grid">
+                  <input
+                    v-model="macSelectForm.startMac"
+                    placeholder="起始 MAC"
+                  />
+                  <input
+                    v-model="macSelectForm.endMac"
+                    placeholder="结束 MAC"
+                  />
+                  <button class="reset-btn small-btn" @click="selectByMacRange">
+                    按区间选择
+                  </button>
+                </div>
+              </div>
+
+              <div class="inventory-panel-header">
+                <div>
+                  <strong>当前库存设备</strong>
+                  <span>
+                    已选择 {{ selectedInventoryIds.length }} 台 /
+                    当前筛选 {{ filteredInventoryList.length }} 台
+                  </span>
+                </div>
+
+                <div class="inventory-header-actions">
+                  <button class="reset-btn small-btn" @click="selectAllFilteredInventory">
+                    选择当前筛选
+                  </button>
+
+                  <button class="reset-btn small-btn" @click="clearSelectedInventory">
+                    清空选择
+                  </button>
+                </div>
+              </div>
+
+              <div class="inventory-table-wrapper">
+                <table class="inventory-table">
+                  <thead>
+                    <tr>
+                      <th class="check-col">
+                        <input
+                          type="checkbox"
+                          :checked="isAllFilteredInventorySelected"
+                          @change="toggleAllFilteredInventory"
+                        />
+                      </th>
+                      <th>终端类型</th>
+                      <th>SN序列号</th>
+                      <th>MAC地址</th>
+                      <th>软件版本</th>
+                      <th>硬件版本</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    <tr
+                      v-for="device in filteredInventoryList"
+                      :key="device.id"
+                    >
+                      <td class="check-col">
+                        <input
+                          v-model="selectedInventoryIds"
+                          type="checkbox"
+                          :value="device.id"
+                        />
+                      </td>
+
+                      <td>
+                        <span class="device-tag">
+                          {{ device.deviceType }}
+                        </span>
+                      </td>
+
+                      <td>
+                        <span class="sn-tag" :title="device.sn">
+                          {{ device.sn }}
+                        </span>
+                      </td>
+
+                      <td>
+                        <span class="mac-text" :title="device.macAddress">
+                          {{ device.macAddress }}
+                        </span>
+                      </td>
+
+                      <td>
+                        <span class="software-tag" :title="device.softwareVersion">
+                          {{ device.softwareVersion }}
+                        </span>
+                      </td>
+
+                      <td>
+                        <span class="hardware-tag" :title="device.hardwareVersion">
+                          {{ device.hardwareVersion }}
+                        </span>
+                      </td>
+                    </tr>
+
+                    <tr v-if="filteredInventoryList.length === 0">
+                      <td colspan="6" class="empty-table">
+                        当前库存中暂无符合条件的设备
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </label>
+
+          <label class="full-row">
+            已选设备
             <div class="selected-device-panel">
-              <div v-if="batchForm.snList.length === 0" class="empty-device">
-                暂无已选设备，请先到出库管理页面勾选设备并跳转到发货管理。
+              <div v-if="selectedInventoryDevices.length === 0" class="empty-device">
+                暂未选择设备。请在上方库存列表中勾选设备，或通过 MAC 列表 / MAC 区间自动选择。
               </div>
 
               <div
-                v-for="device in batchForm.deviceList"
+                v-for="device in selectedInventoryDevices"
                 v-else
-                :key="device.outboundId || device.id"
+                :key="device.id"
                 class="selected-device-item"
               >
                 <span>{{ device.deviceType }}</span>
@@ -273,7 +425,7 @@
 
           <div>
             <span>发货单文件</span>
-            <strong>{{ selectedBatch.fileName }}</strong>
+            <strong>{{ selectedBatch.fileName || '-' }}</strong>
           </div>
 
           <div>
@@ -315,18 +467,20 @@
         </div>
 
         <div class="remark-card">
-          <span>SN序列号</span>
-          <div class="sn-list">
-            <span
-              v-for="sn in selectedBatch.snList"
-              :key="sn"
-              class="sn-tag"
-              :title="sn"
+          <span>发货设备</span>
+          <div class="shipping-device-list">
+            <div
+              v-for="device in selectedBatch.deviceList"
+              :key="device.sn"
+              class="shipping-device-item"
             >
-              {{ sn }}
-            </span>
-            <p v-if="!selectedBatch.snList || selectedBatch.snList.length === 0">
-              暂无 SN 序列号
+              <span>{{ device.deviceType }}</span>
+              <strong>{{ device.sn }}</strong>
+              <em>{{ device.macAddress }}</em>
+            </div>
+
+            <p v-if="!selectedBatch.deviceList || selectedBatch.deviceList.length === 0">
+              暂无设备明细
             </p>
           </div>
         </div>
@@ -367,34 +521,201 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 
-const STORAGE_PENDING_SHIPPING_KEY = 'pendingShippingDevices'
+const STORAGE_INVENTORY_KEY = 'inventoryList'
+const STORAGE_OUTBOUND_KEY = 'outInventoryList'
+const STORAGE_SHIPPING_BATCH_KEY = 'shippingBatchList'
 
 const filters = reactive({
   keyword: '',
   auditStatus: ''
 })
 
-const showCreateDialog = ref(false)
-const selectedBatch = ref(null)
-
-const pendingShippingDevices = ref(readStorageList(STORAGE_PENDING_SHIPPING_KEY, []))
-
-const batchForm = reactive({
-  batchNo: '',
-  deviceCount: 0,
-  uploader: '',
-  expressNo: '',
-  snList: [],
-  deviceList: [],
-  fileName: '',
-  file: null,
-  fileUrl: '',
-  remark: ''
+const inventoryFilters = reactive({
+  keyword: '',
+  deviceType: ''
 })
 
-const batchList = ref([
+const macSelectForm = reactive({
+  macText: '',
+  startMac: '',
+  endMac: ''
+})
+
+const showCreateDialog = ref(false)
+const selectedBatch = ref(null)
+const selectedInventoryIds = ref([])
+
+const deviceTypeOptions = [
+  '司机室控制盒',
+  '解码板',
+  '司机提醒单元',
+  '噪声检测',
+  '编码板',
+  '功放板'
+]
+
+const defaultInventoryList = [
+  {
+    id: 1,
+    deviceType: '司机室控制盒',
+    sn: 'DCCU-202605100001',
+    macAddress: '00:11:22:33:44:01',
+    softwareVersion: 'SW-DCCU.V1.2.0',
+    hardwareVersion: 'HD-DCCU.V1.1.0',
+    inventoryStatus: 'ready',
+    inTime: '2026-05-10',
+    updateTime: '2026-05-11',
+    remark: '已完成烧录和出厂测试，可发货。'
+  },
+  {
+    id: 2,
+    deviceType: '司机室控制盒',
+    sn: 'DCCU-202605100002',
+    macAddress: '00:11:22:33:44:02',
+    softwareVersion: 'SW-DCCU.V1.2.0',
+    hardwareVersion: 'HD-DCCU.V1.1.0',
+    inventoryStatus: 'ready',
+    inTime: '2026-05-10',
+    updateTime: '2026-05-11',
+    remark: '已完成烧录和出厂测试，可发货。'
+  },
+  {
+    id: 3,
+    deviceType: '司机室控制盒',
+    sn: 'DCCU-202605100003',
+    macAddress: '00:11:22:33:44:03',
+    softwareVersion: 'SW-DCCU.V1.2.0',
+    hardwareVersion: 'HD-DCCU.V1.1.0',
+    inventoryStatus: 'ready',
+    inTime: '2026-05-10',
+    updateTime: '2026-05-10'
+  },
+  {
+    id: 4,
+    deviceType: '解码板',
+    sn: 'DEC-202605110001',
+    macAddress: '00:11:22:55:66:01',
+    softwareVersion: 'SW-DECODER.V1.0.3',
+    hardwareVersion: 'HD-DECODER.V1.1.0',
+    inventoryStatus: 'ready',
+    inTime: '2026-05-11',
+    updateTime: '2026-05-12'
+  },
+  {
+    id: 5,
+    deviceType: '解码板',
+    sn: 'DEC-202605110002',
+    macAddress: '00:11:22:55:66:02',
+    softwareVersion: 'SW-DECODER.V1.0.3',
+    hardwareVersion: 'HD-DECODER.V1.1.0',
+    inventoryStatus: 'ready',
+    inTime: '2026-05-11',
+    updateTime: '2026-05-12'
+  },
+  {
+    id: 6,
+    deviceType: '解码板',
+    sn: 'DEC-202605110003',
+    macAddress: '00:11:22:55:66:03',
+    softwareVersion: 'SW-DECODER.V1.0.2',
+    hardwareVersion: 'HD-DECODER.V1.0.0',
+    inventoryStatus: 'ready',
+    inTime: '2026-05-11',
+    updateTime: '2026-05-13'
+  },
+  {
+    id: 7,
+    deviceType: '司机提醒单元',
+    sn: 'DRU-202605120001',
+    macAddress: '00:11:22:77:88:01',
+    softwareVersion: 'SW-DRU.V1.0.0',
+    hardwareVersion: 'HD-DRU.V1.0.0',
+    inventoryStatus: 'ready',
+    inTime: '2026-05-12',
+    updateTime: '2026-05-13'
+  },
+  {
+    id: 8,
+    deviceType: '司机提醒单元',
+    sn: 'DRU-202605120002',
+    macAddress: '00:11:22:77:88:02',
+    softwareVersion: 'SW-DRU.V1.0.0',
+    hardwareVersion: 'HD-DRU.V1.0.0',
+    inventoryStatus: 'ready',
+    inTime: '2026-05-12',
+    updateTime: '2026-05-13'
+  },
+  {
+    id: 9,
+    deviceType: '噪声检测',
+    sn: 'NOISE-202605130001',
+    macAddress: '00:11:22:99:AA:01',
+    softwareVersion: 'SW-NOISE.V1.1.0',
+    hardwareVersion: 'HD-NOISE.V1.0.1',
+    inventoryStatus: 'ready',
+    inTime: '2026-05-13',
+    updateTime: '2026-05-14'
+  },
+  {
+    id: 10,
+    deviceType: '噪声检测',
+    sn: 'NOISE-202605130002',
+    macAddress: '00:11:22:99:AA:02',
+    softwareVersion: 'SW-NOISE.V1.1.0',
+    hardwareVersion: 'HD-NOISE.V1.0.1',
+    inventoryStatus: 'ready',
+    inTime: '2026-05-13',
+    updateTime: '2026-05-14'
+  },
+  {
+    id: 11,
+    deviceType: '编码板',
+    sn: 'ENC-202605140001',
+    macAddress: '00:11:22:BB:CC:01',
+    softwareVersion: 'SW-ENCODER.V1.3.0',
+    hardwareVersion: 'HD-ENCODER.V1.2.0',
+    inventoryStatus: 'ready',
+    inTime: '2026-05-14',
+    updateTime: '2026-05-15'
+  },
+  {
+    id: 12,
+    deviceType: '编码板',
+    sn: 'ENC-202605140002',
+    macAddress: '00:11:22:BB:CC:02',
+    softwareVersion: 'SW-ENCODER.V1.3.0',
+    hardwareVersion: 'HD-ENCODER.V1.2.0',
+    inventoryStatus: 'ready',
+    inTime: '2026-05-14',
+    updateTime: '2026-05-15'
+  },
+  {
+    id: 13,
+    deviceType: '功放板',
+    sn: 'AMP-202605150001',
+    macAddress: '00:11:22:DD:EE:01',
+    softwareVersion: 'SW-AMP.V1.0.5',
+    hardwareVersion: 'HD-AMP.V1.0.2',
+    inventoryStatus: 'ready',
+    inTime: '2026-05-15',
+    updateTime: '2026-05-16'
+  },
+  {
+    id: 14,
+    deviceType: '功放板',
+    sn: 'AMP-202605150002',
+    macAddress: '00:11:22:DD:EE:02',
+    softwareVersion: 'SW-AMP.V1.0.5',
+    hardwareVersion: 'HD-AMP.V1.0.2',
+    inventoryStatus: 'ready',
+    inTime: '2026-05-15',
+    updateTime: '2026-05-16'
+  }
+]
+
+const defaultBatchList = [
   {
     id: 1,
     batchNo: '0000013289',
@@ -405,6 +726,7 @@ const batchList = ref([
       'DCCU-202605100002',
       'DCCU-202605100003'
     ],
+    deviceList: [],
     fileName: '5月第一批司机室控制盒发货单.xlsx',
     fileUrl: '',
     uploader: '袁晓兰',
@@ -424,6 +746,7 @@ const batchList = ref([
       'DEC-202605110002',
       'DEC-202605110003'
     ],
+    deviceList: [],
     fileName: '5月第二批解码板发货单.xlsx',
     fileUrl: '',
     uploader: '袁晓兰',
@@ -433,29 +756,16 @@ const batchList = ref([
     auditTime: '',
     remark: '待领导审核确认。'
   }
-])
+]
 
-const filteredBatchList = computed(() => {
-  return batchList.value.filter(item => {
-    const keyword = filters.keyword.trim()
-
-    const snMatch =
-      item.snList &&
-      item.snList.some(sn => sn.includes(keyword))
-
-    const keywordMatch =
-      !keyword ||
-      item.batchNo.includes(keyword) ||
-      item.uploader.includes(keyword) ||
-      item.fileName.includes(keyword) ||
-      item.expressNo.includes(keyword) ||
-      snMatch
-
-    const auditStatusMatch =
-      !filters.auditStatus || item.auditStatus === filters.auditStatus
-
-    return keywordMatch && auditStatusMatch
-  })
+const batchForm = reactive({
+  batchNo: '',
+  uploader: '',
+  expressNo: '',
+  fileName: '',
+  file: null,
+  fileUrl: '',
+  remark: ''
 })
 
 function readStorageList(key, fallback) {
@@ -471,6 +781,100 @@ function readStorageList(key, fallback) {
 function saveStorageList(key, value) {
   localStorage.setItem(key, JSON.stringify(value))
 }
+
+const inventoryList = ref(readStorageList(STORAGE_INVENTORY_KEY, defaultInventoryList))
+const outboundList = ref(readStorageList(STORAGE_OUTBOUND_KEY, []))
+const batchList = ref(readStorageList(STORAGE_SHIPPING_BATCH_KEY, defaultBatchList))
+
+watch(
+  inventoryList,
+  value => {
+    saveStorageList(STORAGE_INVENTORY_KEY, value)
+  },
+  { deep: true }
+)
+
+watch(
+  outboundList,
+  value => {
+    saveStorageList(STORAGE_OUTBOUND_KEY, value)
+  },
+  { deep: true }
+)
+
+watch(
+  batchList,
+  value => {
+    saveStorageList(STORAGE_SHIPPING_BATCH_KEY, value)
+  },
+  { deep: true }
+)
+
+const availableInventoryList = computed(() => {
+  return inventoryList.value.filter(item => item.inventoryStatus === 'ready')
+})
+
+const filteredInventoryList = computed(() => {
+  return availableInventoryList.value.filter(item => {
+    const keyword = inventoryFilters.keyword.trim()
+
+    const keywordMatch =
+      !keyword ||
+      item.sn.includes(keyword) ||
+      item.macAddress.includes(keyword) ||
+      item.deviceType.includes(keyword) ||
+      item.softwareVersion.includes(keyword) ||
+      item.hardwareVersion.includes(keyword)
+
+    const deviceTypeMatch =
+      !inventoryFilters.deviceType || item.deviceType === inventoryFilters.deviceType
+
+    return keywordMatch && deviceTypeMatch
+  })
+})
+
+const selectedInventoryDevices = computed(() => {
+  return availableInventoryList.value.filter(item =>
+    selectedInventoryIds.value.includes(item.id)
+  )
+})
+
+const isAllFilteredInventorySelected = computed(() => {
+  return (
+    filteredInventoryList.value.length > 0 &&
+    filteredInventoryList.value.every(item =>
+      selectedInventoryIds.value.includes(item.id)
+    )
+  )
+})
+
+const filteredBatchList = computed(() => {
+  return batchList.value.filter(item => {
+    const keyword = filters.keyword.trim()
+
+    const snMatch =
+      item.snList &&
+      item.snList.some(sn => sn.includes(keyword))
+
+    const macMatch =
+      item.deviceList &&
+      item.deviceList.some(device => device.macAddress && device.macAddress.includes(keyword))
+
+    const keywordMatch =
+      !keyword ||
+      item.batchNo.includes(keyword) ||
+      item.uploader.includes(keyword) ||
+      item.fileName.includes(keyword) ||
+      item.expressNo.includes(keyword) ||
+      snMatch ||
+      macMatch
+
+    const auditStatusMatch =
+      !filters.auditStatus || item.auditStatus === filters.auditStatus
+
+    return keywordMatch && auditStatusMatch
+  })
+})
 
 function getCurrentUserName() {
   return (
@@ -498,19 +902,20 @@ function resetFilters() {
 }
 
 function openCreateDialog() {
-  const pendingDevices = readStorageList(STORAGE_PENDING_SHIPPING_KEY, [])
-  pendingShippingDevices.value = pendingDevices
-
   batchForm.batchNo = ''
-  batchForm.deviceList = pendingDevices
-  batchForm.snList = pendingDevices.map(item => item.sn).filter(Boolean)
-  batchForm.deviceCount = batchForm.snList.length
   batchForm.uploader = getCurrentUserName()
   batchForm.expressNo = ''
   batchForm.fileName = ''
   batchForm.file = null
   batchForm.fileUrl = ''
   batchForm.remark = ''
+
+  inventoryFilters.keyword = ''
+  inventoryFilters.deviceType = ''
+  macSelectForm.macText = ''
+  macSelectForm.startMac = ''
+  macSelectForm.endMac = ''
+  selectedInventoryIds.value = []
 
   showCreateDialog.value = true
 }
@@ -524,14 +929,136 @@ function handleFileChange(event) {
   batchForm.fileUrl = URL.createObjectURL(file)
 }
 
+function normalizeMac(mac) {
+  return String(mac || '')
+    .trim()
+    .replace(/-/g, ':')
+    .toUpperCase()
+}
+
+function parseMacText(text) {
+  return String(text || '')
+    .split(/[\n\r,，;；\s]+/)
+    .map(item => normalizeMac(item))
+    .filter(Boolean)
+}
+
+function macToNumber(mac) {
+  const normalized = normalizeMac(mac)
+  const hex = normalized.replace(/:/g, '')
+
+  if (!/^[0-9A-F]{12}$/.test(hex)) {
+    return null
+  }
+
+  return parseInt(hex, 16)
+}
+
+function selectByMacList() {
+  const macList = parseMacText(macSelectForm.macText)
+
+  if (macList.length === 0) {
+    alert('请先填写 MAC 地址')
+    return
+  }
+
+  const matchedIds = availableInventoryList.value
+    .filter(item => macList.includes(normalizeMac(item.macAddress)))
+    .map(item => item.id)
+
+  if (matchedIds.length === 0) {
+    alert('库存中没有匹配到这些 MAC 地址')
+    return
+  }
+
+  selectedInventoryIds.value = [
+    ...new Set([
+      ...selectedInventoryIds.value,
+      ...matchedIds
+    ])
+  ]
+
+  alert(`已按 MAC 列表选择 ${matchedIds.length} 台库存设备`)
+}
+
+function selectByMacRange() {
+  const start = macToNumber(macSelectForm.startMac)
+  const end = macToNumber(macSelectForm.endMac)
+
+  if (start === null || end === null) {
+    alert('请填写正确的起始 MAC 和结束 MAC')
+    return
+  }
+
+  const min = Math.min(start, end)
+  const max = Math.max(start, end)
+
+  const matchedIds = availableInventoryList.value
+    .filter(item => {
+      const value = macToNumber(item.macAddress)
+      return value !== null && value >= min && value <= max
+    })
+    .map(item => item.id)
+
+  if (matchedIds.length === 0) {
+    alert('库存中没有匹配到该 MAC 区间内的设备')
+    return
+  }
+
+  selectedInventoryIds.value = [
+    ...new Set([
+      ...selectedInventoryIds.value,
+      ...matchedIds
+    ])
+  ]
+
+  alert(`已按 MAC 区间选择 ${matchedIds.length} 台库存设备`)
+}
+
+function clearMacText() {
+  macSelectForm.macText = ''
+}
+
+function selectAllFilteredInventory() {
+  const ids = filteredInventoryList.value.map(item => item.id)
+
+  selectedInventoryIds.value = [
+    ...new Set([
+      ...selectedInventoryIds.value,
+      ...ids
+    ])
+  ]
+}
+
+function toggleAllFilteredInventory(event) {
+  const ids = filteredInventoryList.value.map(item => item.id)
+
+  if (event.target.checked) {
+    selectedInventoryIds.value = [
+      ...new Set([
+        ...selectedInventoryIds.value,
+        ...ids
+      ])
+    ]
+  } else {
+    selectedInventoryIds.value = selectedInventoryIds.value.filter(
+      id => !ids.includes(id)
+    )
+  }
+}
+
+function clearSelectedInventory() {
+  selectedInventoryIds.value = []
+}
+
 function createBatch() {
   if (!batchForm.batchNo) {
     alert('请输入发货批次号')
     return
   }
 
-  if (!batchForm.deviceCount || batchForm.deviceCount <= 0) {
-    alert('暂无已选设备，请先到出库管理页面勾选设备')
+  if (selectedInventoryDevices.value.length === 0) {
+    alert('请先选择需要发货的库存设备')
     return
   }
 
@@ -545,28 +1072,55 @@ function createBatch() {
     return
   }
 
+  const today = new Date().toISOString().slice(0, 10)
+
+  // 这里保存的就是你在新增批次弹窗里选中的 MAC / SN
+  const devices = selectedInventoryDevices.value.map(item => {
+    return {
+      id: item.id,
+      deviceType: item.deviceType,
+      sn: item.sn,
+      macAddress: item.macAddress,
+      softwareVersion: item.softwareVersion,
+      hardwareVersion: item.hardwareVersion,
+      inventoryStatus: item.inventoryStatus,
+      inTime: item.inTime,
+      updateTime: item.updateTime,
+      remark: item.remark || ''
+    }
+  })
+
   batchList.value.unshift({
     id: Date.now(),
     batchNo: batchForm.batchNo,
-    deviceCount: batchForm.deviceCount,
+    deviceCount: devices.length,
     expressNo: batchForm.expressNo,
-    snList: [...batchForm.snList],
-    deviceList: [...batchForm.deviceList],
+    snList: devices.map(item => item.sn),
+    macList: devices.map(item => item.macAddress),
+
+    // 重点：选中的 MAC / SN 都存在这里
+    deviceList: devices,
+
     fileName: batchForm.fileName,
     fileUrl: batchForm.fileUrl,
     uploader: batchForm.uploader,
-    uploadTime: new Date().toISOString().slice(0, 10),
+    uploadTime: today,
+
     auditStatus: 'draft',
     auditor: '',
     auditTime: '',
+
+    // 还没有审核通过，所以还不是出库
+    shippingStatus: 'not_shipped',
+    shippingTime: '',
+
     remark: batchForm.remark
   })
 
-  localStorage.removeItem(STORAGE_PENDING_SHIPPING_KEY)
-  pendingShippingDevices.value = []
+  selectedInventoryIds.value = []
   showCreateDialog.value = false
 
-  alert('发货批次已生成，SN 已从出库管理页面自动带入')
+  alert('发货批次已生成，审核通过后才会进入出库管理')
 }
 
 function viewBatch(item) {
@@ -585,11 +1139,77 @@ function submitBatch(item) {
 }
 
 function approveBatch(item) {
+  const ok = confirm(
+    `确认发货批次【${item.batchNo}】审核通过吗？审核通过后，该批次选择的 MAC / SN 会自动进入出库管理。`
+  )
+
+  if (!ok) return
+
+  const today = new Date().toISOString().slice(0, 10)
+
   item.auditStatus = 'approved'
   item.auditor = '领导'
-  item.auditTime = new Date().toISOString().slice(0, 10)
+  item.auditTime = today
+  item.shippingStatus = 'shipped'
+  item.shippingTime = today
+
+  const devices = item.deviceList || []
+
+  if (devices.length === 0) {
+    alert('当前发货批次没有选择任何 MAC / SN，无法生成出库记录')
+    return
+  }
+
+  const existingOutboundMacSet = new Set(
+    outboundList.value.map(record => record.macAddress)
+  )
+
+  const outboundItems = devices
+    .filter(device => !existingOutboundMacSet.has(device.macAddress))
+    .map((device, index) => {
+      return {
+        outboundId: Date.now() + index,
+
+        // 这些就是新增批次时选择的 MAC / SN
+        deviceType: device.deviceType,
+        sn: device.sn,
+        macAddress: device.macAddress,
+        softwareVersion: device.softwareVersion,
+        hardwareVersion: device.hardwareVersion,
+        inTime: device.inTime,
+
+        outboundTime: today,
+        operator: item.uploader,
+        outboundStatus: 'shipped',
+
+        shippingBatchNo: item.batchNo,
+        expressNo: item.expressNo,
+
+        remark: `由发货批次【${item.batchNo}】审核通过后自动生成出库记录。`
+      }
+    })
+
+  if (outboundItems.length === 0) {
+    alert('该批次中的设备已经存在于出库管理中，不再重复生成')
+    selectedBatch.value = null
+    return
+  }
+
+  // 重点：写入出库管理页面读取的 outInventoryList
+  outboundList.value.unshift(...outboundItems)
+
+  // 审核通过后，从库存中移除这些设备
+  const outboundIds = devices.map(device => device.id)
+
+  inventoryList.value = inventoryList.value.filter(
+    inventory => !outboundIds.includes(inventory.id)
+  )
+
   selectedBatch.value = null
-  alert(`发货批次【${item.batchNo}】审核通过`)
+
+  alert(
+    `发货批次【${item.batchNo}】审核通过，${outboundItems.length} 台设备已进入出库管理`
+  )
 }
 
 function rejectBatch(item) {
@@ -664,6 +1284,12 @@ function deleteBatch(item) {
   cursor: pointer;
 }
 
+.small-btn {
+  height: 30px;
+  padding: 0 12px;
+  font-size: 12px;
+}
+
 .primary-btn,
 .query-btn {
   border: none;
@@ -709,7 +1335,11 @@ function deleteBatch(item) {
 .filter-card select,
 .form-grid input,
 .form-grid select,
-.form-grid textarea {
+.form-grid textarea,
+.inventory-select-tools input,
+.inventory-select-tools select,
+.range-grid input,
+.mac-tool-card textarea {
   border: 1px solid #334155;
   border-radius: 8px;
   background: #020617;
@@ -721,11 +1351,15 @@ function deleteBatch(item) {
 .filter-card input,
 .filter-card select,
 .form-grid input,
-.form-grid select {
+.form-grid select,
+.inventory-select-tools input,
+.inventory-select-tools select,
+.range-grid input {
   height: 36px;
 }
 
-.form-grid textarea {
+.form-grid textarea,
+.mac-tool-card textarea {
   min-height: 90px;
   padding: 10px 12px;
   resize: vertical;
@@ -733,7 +1367,10 @@ function deleteBatch(item) {
 
 .filter-card input::placeholder,
 .form-grid input::placeholder,
-.form-grid textarea::placeholder {
+.form-grid textarea::placeholder,
+.mac-tool-card textarea::placeholder,
+.range-grid input::placeholder,
+.inventory-select-tools input::placeholder {
   color: #64748b;
 }
 
@@ -752,29 +1389,6 @@ function deleteBatch(item) {
   background: #1e293b;
   color: #cbd5e1;
   cursor: pointer;
-}
-
-.pending-card {
-  background: #0f172a;
-  border: 1px solid #1d4ed8;
-  border-radius: 14px;
-  padding: 16px;
-  margin-bottom: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.pending-card strong {
-  color: #f8fafc;
-  font-size: 15px;
-}
-
-.pending-card p {
-  margin: 6px 0 0;
-  color: #94a3b8;
-  font-size: 12px;
 }
 
 .table-card {
@@ -804,38 +1418,39 @@ function deleteBatch(item) {
   font-size: 12px;
 }
 
-.table-wrapper {
+.table-wrapper,
+.inventory-table-wrapper {
   width: 100%;
   overflow-x: auto;
   overflow-y: hidden;
 }
 
-.table-wrapper::-webkit-scrollbar {
+.table-wrapper::-webkit-scrollbar,
+.inventory-table-wrapper::-webkit-scrollbar,
+.selected-device-panel::-webkit-scrollbar {
   height: 10px;
+  width: 8px;
 }
 
-.table-wrapper::-webkit-scrollbar-track {
+.table-wrapper::-webkit-scrollbar-track,
+.inventory-table-wrapper::-webkit-scrollbar-track,
+.selected-device-panel::-webkit-scrollbar-track {
   background: #020617;
   border-radius: 999px;
 }
 
-.table-wrapper::-webkit-scrollbar-thumb {
+.table-wrapper::-webkit-scrollbar-thumb,
+.inventory-table-wrapper::-webkit-scrollbar-thumb,
+.selected-device-panel::-webkit-scrollbar-thumb {
   background: #334155;
   border-radius: 999px;
   border: 2px solid #020617;
 }
 
-.table-wrapper::-webkit-scrollbar-thumb:hover {
+.table-wrapper::-webkit-scrollbar-thumb:hover,
+.inventory-table-wrapper::-webkit-scrollbar-thumb:hover,
+.selected-device-panel::-webkit-scrollbar-thumb:hover {
   background: #475569;
-}
-
-.table-wrapper::-webkit-scrollbar-button {
-  display: none;
-}
-
-.table-wrapper {
-  scrollbar-width: thin;
-  scrollbar-color: #334155 #020617;
 }
 
 .version-table {
@@ -1006,6 +1621,12 @@ function deleteBatch(item) {
   font-size: 12px;
 }
 
+.empty-table {
+  text-align: center;
+  color: #64748b !important;
+  padding: 28px 16px !important;
+}
+
 .dialog-mask {
   position: fixed;
   inset: 0;
@@ -1027,6 +1648,10 @@ function deleteBatch(item) {
   border-radius: 16px;
   color: #f8fafc;
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.45);
+}
+
+.create-dialog {
+  width: 980px;
 }
 
 .large-dialog {
@@ -1073,9 +1698,117 @@ function deleteBatch(item) {
   grid-column: 1 / -1;
 }
 
+.inventory-select-panel {
+  background: #020617;
+  border: 1px solid #334155;
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.inventory-select-tools {
+  display: grid;
+  grid-template-columns: 1fr 180px;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.mac-tool-card {
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.mac-tool-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.mac-tool-title strong {
+  color: #f8fafc;
+  font-size: 13px;
+}
+
+.mac-tool-title span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.mac-tool-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.range-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 120px;
+  gap: 10px;
+}
+
+.inventory-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0;
+}
+
+.inventory-panel-header strong {
+  color: #f8fafc;
+  font-size: 13px;
+  margin-right: 10px;
+}
+
+.inventory-panel-header span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.inventory-header-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.inventory-table {
+  width: 100%;
+  min-width: 900px;
+  border-collapse: collapse;
+  table-layout: fixed;
+  border: 1px solid #1e293b;
+}
+
+.inventory-table thead {
+  background: #0f172a;
+}
+
+.inventory-table th,
+.inventory-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid #1e293b;
+  color: #e2e8f0;
+  font-size: 12px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.inventory-table th {
+  color: #94a3b8;
+}
+
+.check-col {
+  width: 48px;
+  text-align: center !important;
+}
+
 .selected-device-panel {
-  min-height: 120px;
-  max-height: 240px;
+  min-height: 100px;
+  max-height: 220px;
   overflow-y: auto;
   border: 1px solid #334155;
   border-radius: 10px;
@@ -1083,7 +1816,8 @@ function deleteBatch(item) {
   padding: 10px;
 }
 
-.selected-device-item {
+.selected-device-item,
+.shipping-device-item {
   display: grid;
   grid-template-columns: 140px 1fr 180px;
   align-items: center;
@@ -1092,17 +1826,21 @@ function deleteBatch(item) {
   border-bottom: 1px solid #1e293b;
 }
 
-.selected-device-item:last-child {
+.selected-device-item:last-child,
+.shipping-device-item:last-child {
   border-bottom: none;
 }
 
-.selected-device-item span {
+.selected-device-item span,
+.shipping-device-item span {
   color: #5eead4;
   font-size: 12px;
 }
 
 .selected-device-item strong,
-.selected-device-item em {
+.selected-device-item em,
+.shipping-device-item strong,
+.shipping-device-item em {
   color: #cbd5e1;
   font-size: 12px;
   font-family: Consolas, Monaco, monospace;
@@ -1113,6 +1851,69 @@ function deleteBatch(item) {
   color: #64748b;
   font-size: 13px;
   padding: 10px 0;
+}
+
+.device-tag {
+  display: inline-block;
+  max-width: 130px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: #0f766e33;
+  color: #5eead4;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.software-tag,
+.hardware-tag {
+  display: inline-block;
+  max-width: 170px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+
+.software-tag {
+  background: #16a34a33;
+  color: #4ade80;
+}
+
+.hardware-tag {
+  background: #9333ea33;
+  color: #c084fc;
+}
+
+.sn-tag {
+  display: inline-block;
+  max-width: 180px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: #33415566;
+  color: #cbd5e1;
+  font-size: 12px;
+  font-family: Consolas, Monaco, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mac-text {
+  display: inline-block;
+  max-width: 160px;
+  color: #cbd5e1;
+  font-size: 12px;
+  font-family: Consolas, Monaco, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dialog-footer {
@@ -1178,28 +1979,17 @@ function deleteBatch(item) {
   line-height: 1.6;
 }
 
-.sn-list {
+.shipping-device-list {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.sn-tag {
-  display: inline-block;
-  max-width: 180px;
-  padding: 4px 9px;
-  border-radius: 999px;
-  background: #33415566;
-  color: #cbd5e1;
-  font-size: 12px;
-  font-family: Consolas, Monaco, monospace;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  flex-direction: column;
 }
 
 @media (max-width: 960px) {
-  .filter-card {
+  .filter-card,
+  .form-grid,
+  .inventory-select-tools,
+  .range-grid,
+  .detail-card {
     grid-template-columns: 1fr;
   }
 
@@ -1207,13 +1997,14 @@ function deleteBatch(item) {
     min-width: 1320px;
   }
 
-  .form-grid,
-  .detail-card {
+  .selected-device-item,
+  .shipping-device-item {
     grid-template-columns: 1fr;
   }
 
-  .selected-device-item {
-    grid-template-columns: 1fr;
+  .inventory-panel-header {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 </style>

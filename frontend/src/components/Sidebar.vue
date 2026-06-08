@@ -151,13 +151,13 @@
             测试用例
           </router-link>
 
-          <router-link
+          <!-- <router-link
             to="/test/report"
             class="submenu-item"
             :class="{ active: isActive('/test/report') }"
           >
             测试报告
-          </router-link>
+          </router-link> -->
 
           <router-link
             to="/test/issue"

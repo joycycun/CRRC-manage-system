@@ -12,7 +12,7 @@
       <div class="summary-card">
         <span>当前库存总数</span>
         <strong>{{ totalCount }}</strong>
-        <p>当前仍在库存中的设备</p>
+        <p>仅统计已完成烧录、出厂测试且当前仍在库存中的设备</p>
       </div>
 
       <div class="summary-card green">
@@ -48,7 +48,7 @@
     <div class="type-card">
       <div class="section-title">
         <h3>终端类型库存</h3>
-        <span>按终端类型统计当前库存数量</span>
+        <span>按终端类型统计已完成烧录、出厂测试后的当前库存数量</span>
       </div>
 
       <div class="type-grid">
@@ -68,29 +68,30 @@
       <div class="table-card-header">
         <div>
           <h3>当前库存列表</h3>
-          <span>已勾选 {{ selectedIds.length }} 条</span>
+          <span>
+            共 {{ filteredInventoryList.length }} 条，当前第 {{ currentPage }} / {{ totalPage }} 页
+          </span>
         </div>
 
-        <button
-          class="ship-action-btn"
-          :disabled="selectedIds.length === 0"
-          @click="moveSelectedToOutbound"
-        >
-          勾选出库
-        </button>
+        <div class="page-size-control">
+          <span>每页</span>
+          <select v-model.number="pageSize">
+            <option
+              v-for="size in pageSizeOptions"
+              :key="size"
+              :value="size"
+            >
+              {{ size }}
+            </option>
+          </select>
+          <span>条</span>
+        </div>
       </div>
 
       <div class="table-wrapper">
         <table class="version-table">
           <thead>
             <tr>
-              <th class="check-col">
-                <input
-                  type="checkbox"
-                  :checked="isAllSelected"
-                  @change="toggleSelectAll"
-                />
-              </th>
               <th>终端类型</th>
               <th>SN序列号</th>
               <th>MAC地址</th>
@@ -102,15 +103,7 @@
           </thead>
 
           <tbody>
-            <tr v-for="item in filteredInventoryList" :key="item.id">
-              <td class="check-col">
-                <input
-                  type="checkbox"
-                  :value="item.id"
-                  v-model="selectedIds"
-                />
-              </td>
-
+            <tr v-for="item in paginatedInventoryList" :key="item.id">
               <td>
                 <span class="device-tag">{{ item.deviceType }}</span>
               </td>
@@ -147,12 +140,63 @@
                 </button>
               </td>
             </tr>
+
+            <tr v-if="paginatedInventoryList.length === 0">
+              <td colspan="7" class="empty-table">
+                暂无符合条件的库存设备
+              </td>
+            </tr>
           </tbody>
         </table>
       </div>
 
+      <div class="pagination-bar">
+        <div class="pagination-info">
+          当前显示第 {{ pageStartIndex }} - {{ pageEndIndex }} 条，
+          共 {{ filteredInventoryList.length }} 条库存设备记录
+        </div>
+
+        <div class="pagination-actions">
+          <button
+            class="page-btn"
+            :disabled="currentPage === 1"
+            @click="goFirstPage"
+          >
+            首页
+          </button>
+
+          <button
+            class="page-btn"
+            :disabled="currentPage === 1"
+            @click="goPrevPage"
+          >
+            上一页
+          </button>
+
+          <span class="page-number">
+            {{ currentPage }} / {{ totalPage }}
+          </span>
+
+          <button
+            class="page-btn"
+            :disabled="currentPage === totalPage"
+            @click="goNextPage"
+          >
+            下一页
+          </button>
+
+          <button
+            class="page-btn"
+            :disabled="currentPage === totalPage"
+            @click="goLastPage"
+          >
+            末页
+          </button>
+        </div>
+      </div>
+
       <div class="table-footer">
-        共 {{ filteredInventoryList.length }} 条库存设备记录。勾选设备后点击“勾选出库”，设备会自动进入 OutInventoryView.vue。
+        库存页面仅展示已完成烧录、出厂测试并处于可发货库存状态的设备。出库操作请在出库记录页面中处理。
       </div>
     </div>
 
@@ -223,21 +267,21 @@
 
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
 
 const STORAGE_INVENTORY_KEY = 'inventoryList'
 const STORAGE_OUTBOUND_KEY = 'outInventoryList'
 
-const router = useRouter()
-
 const filters = reactive({
   keyword: '',
-  deviceType: '',
-  inventoryStatus: ''
+  deviceType: ''
 })
 
 const selectedInventory = ref(null)
-const selectedIds = ref([])
+
+const currentPage = ref(1)
+const pageSize = ref(10)
+
+const pageSizeOptions = [10, 20, 50, 100]
 
 const deviceTypeOptions = [
   '司机室控制盒',
@@ -337,7 +381,8 @@ const defaultInventoryList = [
     hardwareVersion: 'HD-DRU.V1.0.0',
     inventoryStatus: 'waiting_burn',
     inTime: '2026-05-12',
-    updateTime: '2026-05-12'
+    updateTime: '2026-05-12',
+    remark: '未完成烧录，不在库存页面展示。'
   },
   {
     id: 9,
@@ -359,7 +404,8 @@ const defaultInventoryList = [
     hardwareVersion: 'HD-NOISE.V1.0.1',
     inventoryStatus: 'repair',
     inTime: '2026-05-13',
-    updateTime: '2026-05-15'
+    updateTime: '2026-05-15',
+    remark: '返修库存，不在当前库存页面展示。'
   },
   {
     id: 11,
@@ -381,7 +427,8 @@ const defaultInventoryList = [
     hardwareVersion: 'HD-ENCODER.V1.2.0',
     inventoryStatus: 'repair',
     inTime: '2026-05-14',
-    updateTime: '2026-05-14'
+    updateTime: '2026-05-14',
+    remark: '返修库存，不在当前库存页面展示。'
   },
   {
     id: 13,
@@ -432,35 +479,32 @@ watch(
   { deep: true }
 )
 
-watch(
-  outboundList,
-  value => {
-    saveStorageList(STORAGE_OUTBOUND_KEY, value)
-  },
-  { deep: true }
-)
+const completedInventoryList = computed(() => {
+  return inventoryList.value.filter(item => {
+    return item.inventoryStatus === 'ready'
+  })
+})
 
 const filteredInventoryList = computed(() => {
-  return inventoryList.value.filter(item => {
+  return completedInventoryList.value.filter(item => {
+    const keyword = filters.keyword.trim()
+
     const keywordMatch =
-      !filters.keyword ||
-      item.sn.includes(filters.keyword) ||
-      item.macAddress.includes(filters.keyword) ||
-      item.softwareVersion.includes(filters.keyword) ||
-      item.hardwareVersion.includes(filters.keyword) ||
-      item.deviceType.includes(filters.keyword)
+      !keyword ||
+      item.sn.includes(keyword) ||
+      item.macAddress.includes(keyword) ||
+      item.softwareVersion.includes(keyword) ||
+      item.hardwareVersion.includes(keyword) ||
+      item.deviceType.includes(keyword)
 
     const deviceTypeMatch =
       !filters.deviceType || item.deviceType === filters.deviceType
 
-    const inventoryStatusMatch =
-      !filters.inventoryStatus || item.inventoryStatus === filters.inventoryStatus
-
-    return keywordMatch && deviceTypeMatch && inventoryStatusMatch
+    return keywordMatch && deviceTypeMatch
   })
 })
 
-const totalCount = computed(() => inventoryList.value.length)
+const totalCount = computed(() => completedInventoryList.value.length)
 
 const currentMonthOutboundCount = computed(() => {
   const currentMonth = new Date().toISOString().slice(0, 7)
@@ -474,30 +518,54 @@ const deviceTypeSummary = computed(() => {
   return deviceTypeOptions.map(type => {
     return {
       deviceType: type,
-      count: inventoryList.value.filter(item => item.deviceType === type).length
+      count: completedInventoryList.value.filter(item => item.deviceType === type).length
     }
   })
 })
 
-const isAllSelected = computed(() => {
-  return (
-    filteredInventoryList.value.length > 0 &&
-    filteredInventoryList.value.every(item => selectedIds.value.includes(item.id))
-  )
+const totalPage = computed(() => {
+  return Math.max(1, Math.ceil(filteredInventoryList.value.length / pageSize.value))
 })
 
-function getCurrentUserName() {
-  return (
-    localStorage.getItem('username') ||
-    localStorage.getItem('accountName') ||
-    localStorage.getItem('realName') ||
-    '当前用户'
-  )
-}
+const paginatedInventoryList = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  const end = start + pageSize.value
+
+  return filteredInventoryList.value.slice(start, end)
+})
+
+const pageStartIndex = computed(() => {
+  if (filteredInventoryList.value.length === 0) {
+    return 0
+  }
+
+  return (currentPage.value - 1) * pageSize.value + 1
+})
+
+const pageEndIndex = computed(() => {
+  return Math.min(currentPage.value * pageSize.value, filteredInventoryList.value.length)
+})
+
+watch(
+  () => [filters.keyword, filters.deviceType],
+  () => {
+    currentPage.value = 1
+  }
+)
+
+watch(pageSize, () => {
+  currentPage.value = 1
+})
+
+watch(totalPage, value => {
+  if (currentPage.value > value) {
+    currentPage.value = value
+  }
+})
 
 function getInventoryStatusText(status) {
   const map = {
-    ready: '可发货',
+    ready: '已完成烧录和出厂测试',
     waiting_burn: '待烧录',
     repair: '返修库存',
     testing: '出厂测试中'
@@ -509,59 +577,31 @@ function getInventoryStatusText(status) {
 function resetFilters() {
   filters.keyword = ''
   filters.deviceType = ''
-  filters.inventoryStatus = ''
+  currentPage.value = 1
 }
 
 function viewInventory(item) {
   selectedInventory.value = item
 }
 
-function toggleSelectAll(event) {
-  if (event.target.checked) {
-    selectedIds.value = filteredInventoryList.value.map(item => item.id)
-  } else {
-    selectedIds.value = []
+function goFirstPage() {
+  currentPage.value = 1
+}
+
+function goPrevPage() {
+  if (currentPage.value > 1) {
+    currentPage.value -= 1
   }
 }
 
-function moveSelectedToOutbound() {
-  if (selectedIds.value.length === 0) {
-    alert('请先勾选需要出库的设备')
-    return
+function goNextPage() {
+  if (currentPage.value < totalPage.value) {
+    currentPage.value += 1
   }
+}
 
-  const ok = confirm(`确认将已选 ${selectedIds.value.length} 台设备加入出库列表吗？`)
-  if (!ok) return
-
-  const today = new Date().toISOString().slice(0, 10)
-  const operator = getCurrentUserName()
-
-  const selectedItems = inventoryList.value.filter(item =>
-    selectedIds.value.includes(item.id)
-  )
-
-  const outboundItems = selectedItems.map((item, index) => {
-    return {
-      ...item,
-      outboundId: Date.now() + index,
-      outboundTime: today,
-      operator,
-      outboundStatus: 'pending'
-    }
-  })
-
-  outboundList.value.unshift(...outboundItems)
-
-  inventoryList.value = inventoryList.value.filter(
-    item => !selectedIds.value.includes(item.id)
-  )
-
-  selectedIds.value = []
-  selectedInventory.value = null
-
-  alert('已加入出库列表，即将跳转到出库管理界面')
-
-  router.push('/inventory/out')
+function goLastPage() {
+  currentPage.value = totalPage.value
 }
 </script>
 
@@ -677,7 +717,8 @@ function moveSelectedToOutbound() {
 .query-btn,
 .reset-btn,
 .green-btn,
-.red-btn {
+.red-btn,
+.page-btn {
   height: 36px;
   padding: 0 16px;
   border-radius: 8px;
@@ -698,10 +739,21 @@ function moveSelectedToOutbound() {
   background: #1d4ed8;
 }
 
-.reset-btn {
+.reset-btn,
+.page-btn {
   border: 1px solid #334155;
   background: #1e293b;
   color: #cbd5e1;
+}
+
+.page-btn:hover:not(:disabled) {
+  background: #334155;
+  color: #fff;
+}
+
+.page-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .filter-card {
@@ -716,7 +768,8 @@ function moveSelectedToOutbound() {
 }
 
 .filter-card input,
-.filter-card select {
+.filter-card select,
+.page-size-control select {
   border: 1px solid #334155;
   border-radius: 8px;
   background: #020617;
@@ -756,6 +809,21 @@ function moveSelectedToOutbound() {
   font-size: 12px;
 }
 
+.page-size-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.page-size-control span {
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.page-size-control select {
+  width: 90px;
+}
+
 .table-wrapper {
   width: 100%;
   overflow-x: auto;
@@ -792,7 +860,7 @@ function moveSelectedToOutbound() {
 
 .version-table {
   width: 100%;
-  min-width: 1120px;
+  min-width: 1060px;
   border-collapse: collapse;
   table-layout: fixed;
 }
@@ -823,11 +891,6 @@ function moveSelectedToOutbound() {
   border-bottom: 1px solid #1e293b;
   vertical-align: middle;
   overflow: hidden;
-}
-
-.check-col {
-  width: 56px;
-  text-align: center !important;
 }
 
 .operation-col {
@@ -923,32 +986,44 @@ function moveSelectedToOutbound() {
   color: #60a5fa;
 }
 
-.table-footer {
-  padding: 12px 16px;
+.empty-table {
+  text-align: center;
+  color: #64748b !important;
+  padding: 28px 16px !important;
+}
+
+.pagination-bar {
+  padding: 14px 16px;
+  border-top: 1px solid #1e293b;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.pagination-info {
   color: #64748b;
   font-size: 12px;
 }
 
-.ship-action-btn {
-  height: 34px;
-  padding: 0 16px;
-  border: none;
-  border-radius: 8px;
-  background: #2563eb;
-  color: #fff;
+.pagination-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.page-number {
+  min-width: 70px;
+  text-align: center;
+  color: #cbd5e1;
   font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.35);
 }
 
-.ship-action-btn:hover {
-  background: #1d4ed8;
-}
-
-.ship-action-btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
+.table-footer {
+  padding: 12px 16px;
+  color: #64748b;
+  font-size: 12px;
+  border-top: 1px solid #1e293b;
 }
 
 .dialog-mask {
@@ -1062,7 +1137,17 @@ function moveSelectedToOutbound() {
   }
 
   .version-table {
-    min-width: 1120px;
+    min-width: 1060px;
+  }
+
+  .table-card-header,
+  .pagination-bar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .pagination-actions {
+    flex-wrap: wrap;
   }
 
   .detail-card {

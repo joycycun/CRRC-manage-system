@@ -17,7 +17,7 @@ import ProjectBranchView from "@/views/software/ProjectBranchView.vue";
 // import ProjectConfigFileView from "@/views/software/ProjectConfigFileView.vue";
 
 import TestCaseView from "@/views/test/TestCaseView.vue";
-import TestReportView from "@/views/test/TestReportView.vue";
+// import TestReportView from "@/views/test/TestReportView.vue";
 import IssueCloseLoopView from "@/views/test/IssueCloseLoopView.vue";
 
 import ProductionBurnRecordView from "@/views/production/ProductionBurnRecordView.vue";
@@ -63,7 +63,7 @@ const routes = [
   // { path: "/software/project-config", component: ProjectConfigFileView },
 
   { path: "/test/case", component: TestCaseView },
-  { path: "/test/report", component: TestReportView },
+  // { path: "/test/report", component: TestReportView },
   { path: "/test/issue", component: IssueCloseLoopView },
 
   { path: "/production/burn", component: ProductionBurnRecordView },

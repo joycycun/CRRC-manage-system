@@ -42,98 +42,108 @@
     </div>
 
     <!-- 数据表格 -->
-<div class="table-card">
-  <div class="table-wrapper">
-    <table>
-      <thead>
-        <tr>
-          <th>终端类型</th>
-          <th>测试记录名称</th>
-          <th>绑定项目</th>
-          <th>硬件版本</th>
-          <th>上传人</th>
-          <th>上传时间</th>
-          <th>审核状态</th>
-          <th>审核人</th>
-          <th class="operation-col">操作</th>
-        </tr>
-      </thead>
+    <div class="table-card">
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>终端类型</th>
+              <th>测试记录名称</th>
+              <th>绑定项目</th>
+              <th>硬件版本</th>
+              <th>上传人</th>
+              <th>上传时间</th>
+              <th>审核状态</th>
+              <th>审核人</th>
+              <th class="operation-col">操作</th>
+            </tr>
+          </thead>
 
-      <tbody>
-        <tr v-for="item in filteredTestList" :key="item.id">
-          <td>
-            <span class="device-tag">{{ item.deviceType }}</span>
-          </td>
+          <tbody>
+            <tr v-for="item in filteredTestList" :key="item.id">
+              <td>
+                <span class="device-tag">{{ item.deviceType }}</span>
+              </td>
 
-          <td>
-            <div class="record-name">{{ item.recordName }}</div>
-            <div class="file-name">{{ item.fileName }}</div>
-          </td>
+              <td>
+                <div class="record-name">{{ item.recordName }}</div>
+                <div class="file-name">{{ item.fileName }}</div>
+              </td>
 
-          <td>
-            <span class="project-tag">{{ item.projectName }}</span>
-          </td>
+              <td>
+                <span class="project-tag">{{ item.projectName }}</span>
+              </td>
 
-          <td>
-            <span class="version-tag">{{ item.hardwareVersion }}</span>
-          </td>
+              <td>
+                <span class="version-tag">{{ item.hardwareVersion }}</span>
+              </td>
 
-          <td>{{ item.uploader }}</td>
+              <td>{{ item.uploader }}</td>
 
-          <td class="muted">{{ item.uploadTime }}</td>
+              <td class="muted">{{ item.uploadTime }}</td>
 
-          <td>
-            <span class="status-tag" :class="item.auditStatus">
-              {{ getAuditStatusText(item.auditStatus) }}
-            </span>
-          </td>
+              <td>
+                <div class="audit-cell">
+                  <span class="status-tag" :class="item.auditStatus">
+                    {{ getAuditStatusText(item.auditStatus) }}
+                  </span>
 
-          <td>{{ item.auditor || '-' }}</td>
+                  <button
+                    v-if="item.auditStatus === 'rejected'"
+                    class="reason-btn"
+                    @click="viewRejectReason(item)"
+                  >
+                    原因
+                  </button>
+                </div>
+              </td>
 
-          <td class="operation-col">
-            <div class="action-group">
-              <button class="text-btn" @click="viewTest(item)">
-                查看
-              </button>
+              <td>{{ item.auditor || '-' }}</td>
 
-              <button class="text-btn blue" @click="downloadTest(item)">
-                下载
-              </button>
+              <td class="operation-col">
+                <div class="action-group">
+                  <button class="text-btn" @click="viewTest(item)">
+                    查看
+                  </button>
 
-              <button
-                v-if="item.auditStatus === 'draft' || item.auditStatus === 'rejected'"
-                class="text-btn blue"
-                @click="submitTest(item)"
-              >
-                提交
-              </button>
+                  <button class="text-btn blue" @click="downloadTest(item)">
+                    下载
+                  </button>
 
-              <button
-                v-if="item.auditStatus === 'submitted'"
-                class="text-btn green"
-                @click="auditTest(item)"
-              >
-                审核
-              </button>
+                  <button
+                    v-if="item.auditStatus === 'draft' || item.auditStatus === 'rejected'"
+                    class="text-btn blue"
+                    @click="submitTest(item)"
+                  >
+                    提交
+                  </button>
 
-              <button
-                v-if="item.auditStatus === 'draft' || item.auditStatus === 'rejected'"
-                class="text-btn red"
-                @click="deleteTest(item)"
-              >
-                删除
-              </button>
-            </div>
-          </td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
+                  <button
+                    v-if="item.auditStatus === 'submitted'"
+                    class="text-btn green"
+                    @click="auditTest(item)"
+                  >
+                    审核
+                  </button>
 
-  <div class="table-footer">
-    共 {{ filteredTestList.length }} 条硬件测试记录
-  </div>
-</div>
+                  <button
+                    v-if="item.auditStatus === 'draft' || item.auditStatus === 'rejected'"
+                    class="text-btn red"
+                    @click="deleteTest(item)"
+                  >
+                    删除
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="table-footer">
+        共 {{ filteredTestList.length }} 条硬件测试记录
+      </div>
+    </div>
 
     <!-- 上传硬件测试记录弹窗 -->
     <div v-if="showUploadDialog" class="dialog-mask">
@@ -193,14 +203,6 @@
               </option>
             </select>
           </label>
-
-          <!-- <label>
-            上传人
-            <input
-              v-model="uploadForm.uploader"
-              placeholder="请输入上传人"
-            />
-          </label> -->
 
           <label>
             文件名称
@@ -299,6 +301,13 @@
             <span>审核时间</span>
             <strong>{{ selectedTest.auditTime || '-' }}</strong>
           </div>
+
+          <div v-if="selectedTest.auditStatus === 'rejected'">
+            <span>驳回原因</span>
+            <button class="inline-link" @click="viewRejectReason(selectedTest)">
+              查看驳回原因
+            </button>
+          </div>
         </div>
 
         <div class="remark-card">
@@ -318,7 +327,7 @@
           <button
             v-if="selectedTest.auditStatus === 'submitted'"
             class="red-btn"
-            @click="rejectTest(selectedTest)"
+            @click="openRejectDialog(selectedTest)"
           >
             审核驳回
           </button>
@@ -329,17 +338,92 @@
         </div>
       </div>
     </div>
+
+    <!-- 审核驳回原因填写弹窗 -->
+    <div v-if="showRejectDialog" class="dialog-mask">
+      <div class="dialog">
+        <div class="dialog-header">
+          <h3>填写驳回原因</h3>
+          <button @click="showRejectDialog = false">×</button>
+        </div>
+
+        <div class="detail-card">
+          <div>
+            <span>测试记录名称</span>
+            <strong>{{ currentRejectTest?.recordName }}</strong>
+          </div>
+
+          <div>
+            <span>绑定项目</span>
+            <strong>{{ currentRejectTest?.projectName }}</strong>
+          </div>
+
+          <div>
+            <span>终端类型</span>
+            <strong>{{ currentRejectTest?.deviceType }}</strong>
+          </div>
+
+          <div>
+            <span>硬件版本</span>
+            <strong>{{ currentRejectTest?.hardwareVersion }}</strong>
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <label class="full-row">
+            驳回原因
+            <textarea
+              v-model="rejectForm.reason"
+              placeholder="请填写驳回原因，例如：测试结论不完整、缺少测试数据、文件版本错误、测试项未覆盖等"
+            ></textarea>
+          </label>
+        </div>
+
+        <div class="dialog-footer">
+          <button class="reset-btn" @click="showRejectDialog = false">
+            取消
+          </button>
+
+          <button class="red-btn" @click="confirmRejectTest">
+            确认驳回
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 查看驳回原因弹窗 -->
+    <div v-if="selectedRejectReason" class="dialog-mask">
+      <div class="dialog">
+        <div class="dialog-header">
+          <h3>驳回原因</h3>
+          <button @click="selectedRejectReason = null">×</button>
+        </div>
+
+        <div class="remark-card reject-reason-card">
+          <span>详细原因</span>
+          <p>{{ selectedRejectReason }}</p>
+        </div>
+
+        <div class="dialog-footer">
+          <button class="primary-btn" @click="selectedRejectReason = null">
+            关闭
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { computed, reactive, ref } from 'vue'
+
 const currentUserName = ref(
   localStorage.getItem('username') ||
   localStorage.getItem('accountName') ||
   localStorage.getItem('realName') ||
   '当前用户'
 )
+
 const filters = reactive({
   keyword: '',
   projectName: '',
@@ -347,7 +431,11 @@ const filters = reactive({
 })
 
 const showUploadDialog = ref(false)
+const showRejectDialog = ref(false)
+
 const selectedTest = ref(null)
+const currentRejectTest = ref(null)
+const selectedRejectReason = ref(null)
 
 const projectOptions = [
   '香港屯马项目',
@@ -386,6 +474,10 @@ const uploadForm = reactive({
   remark: ''
 })
 
+const rejectForm = reactive({
+  reason: ''
+})
+
 const hardwareTestList = ref([
   {
     id: 1,
@@ -400,6 +492,7 @@ const hardwareTestList = ref([
     auditStatus: 'approved',
     auditor: '领导',
     auditTime: '2026-05-11',
+    rejectReason: '',
     remark: '硬件功能测试通过，音频输入输出、按键、网络通信测试正常'
   },
   {
@@ -415,6 +508,7 @@ const hardwareTestList = ref([
     auditStatus: 'submitted',
     auditor: '',
     auditTime: '',
+    rejectReason: '',
     remark: '待领导审核确认'
   },
   {
@@ -430,6 +524,7 @@ const hardwareTestList = ref([
     auditStatus: 'draft',
     auditor: '',
     auditTime: '',
+    rejectReason: '',
     remark: '草稿，尚未提交审核'
   },
   {
@@ -445,6 +540,7 @@ const hardwareTestList = ref([
     auditStatus: 'rejected',
     auditor: '领导',
     auditTime: '2026-05-21',
+    rejectReason: '测试结论不完整，需要补充接口测试结果、测试截图和最终结论。',
     remark: '测试结论不完整，需要补充接口测试结果'
   }
 ])
@@ -457,7 +553,8 @@ const filteredTestList = computed(() => {
       item.recordName.includes(filters.keyword) ||
       item.uploader.includes(filters.keyword) ||
       item.hardwareVersion.includes(filters.keyword) ||
-      item.deviceType.includes(filters.keyword)
+      item.deviceType.includes(filters.keyword) ||
+      (item.rejectReason && item.rejectReason.includes(filters.keyword))
 
     const projectMatch =
       !filters.projectName || item.projectName === filters.projectName
@@ -556,6 +653,7 @@ function uploadTest() {
     auditStatus: 'draft',
     auditor: '',
     auditTime: '',
+    rejectReason: '',
     remark: uploadForm.remark
   })
 
@@ -584,6 +682,7 @@ function submitTest(item) {
   item.auditStatus = 'submitted'
   item.auditor = ''
   item.auditTime = ''
+  item.rejectReason = ''
   alert(`硬件测试记录【${item.recordName}】已提交领导审核`)
 }
 
@@ -595,16 +694,38 @@ function approveTest(item) {
   item.auditStatus = 'approved'
   item.auditor = '领导'
   item.auditTime = new Date().toISOString().slice(0, 10)
+  item.rejectReason = ''
   selectedTest.value = null
   alert(`硬件测试记录【${item.recordName}】审核通过`)
 }
 
-function rejectTest(item) {
-  item.auditStatus = 'rejected'
-  item.auditor = '领导'
-  item.auditTime = new Date().toISOString().slice(0, 10)
+function openRejectDialog(item) {
+  currentRejectTest.value = item
+  rejectForm.reason = item.rejectReason || ''
+  showRejectDialog.value = true
+}
+
+function confirmRejectTest() {
+  if (!currentRejectTest.value) return
+
+  if (!rejectForm.reason) {
+    alert('请填写驳回原因')
+    return
+  }
+
+  currentRejectTest.value.auditStatus = 'rejected'
+  currentRejectTest.value.auditor = '领导'
+  currentRejectTest.value.auditTime = new Date().toISOString().slice(0, 10)
+  currentRejectTest.value.rejectReason = rejectForm.reason
+
+  showRejectDialog.value = false
   selectedTest.value = null
-  alert(`硬件测试记录【${item.recordName}】已驳回`)
+
+  alert(`硬件测试记录【${currentRejectTest.value.recordName}】已驳回`)
+}
+
+function viewRejectReason(item) {
+  selectedRejectReason.value = item.rejectReason || '暂无驳回原因'
 }
 
 function deleteTest(item) {
@@ -789,9 +910,14 @@ function deleteTest(item) {
 
 .table-card table {
   width: 100%;
-  min-width: 1200px;
+  min-width: 1280px;
   border-collapse: collapse;
   table-layout: fixed;
+}
+
+.table-card th:nth-child(7),
+.table-card td:nth-child(7) {
+  width: 150px;
 }
 
 .table-card thead {
@@ -880,6 +1006,55 @@ function deleteTest(item) {
 .status-tag.rejected {
   background: #dc262633;
   color: #f87171;
+}
+
+.audit-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 120px;
+  white-space: nowrap;
+}
+
+.reason-btn {
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid #7f1d1d;
+  border-radius: 999px;
+  background: #450a0a;
+  color: #fca5a5;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.reason-btn:hover {
+  background: #7f1d1d;
+  color: #fee2e2;
+}
+
+.inline-link {
+  border: none;
+  background: transparent;
+  color: #60a5fa;
+  cursor: pointer;
+  padding: 0;
+  font-size: 14px;
+  text-align: left;
+}
+
+.inline-link:hover {
+  color: #93c5fd;
+  text-decoration: underline;
+}
+
+.reject-reason-card {
+  margin-top: 20px;
+}
+
+.reject-reason-card p {
+  white-space: pre-wrap;
 }
 
 .muted {

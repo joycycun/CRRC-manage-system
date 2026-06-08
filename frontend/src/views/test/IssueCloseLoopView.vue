@@ -238,10 +238,16 @@
 
           <label>
             负责人
-            <input
-              v-model="issueForm.owner"
-              placeholder="请输入问题负责人"
-            />
+            <select v-model="issueForm.owner">
+              <option value="">请选择负责人</option>
+              <option
+                v-for="owner in ownerOptions"
+                :key="owner"
+                :value="owner"
+              >
+                {{ owner }}
+              </option>
+            </select>
           </label>
 
           <label>
@@ -496,6 +502,17 @@ const deviceTypeOptions = [
   '功放模块'
 ]
 
+const ownerOptions = [
+  '卢进',
+  '王宇',
+  '郑宇',
+  '寸诗睿',
+  '研发人员',
+  '测试人员',
+  '生产人员',
+  '售后人员'
+]
+
 const issueForm = reactive({
   projectName: '',
   deviceType: '',
@@ -720,7 +737,7 @@ function saveIssue() {
   }
 
   if (!issueForm.owner) {
-    alert('请输入问题负责人')
+    alert('请选择问题负责人')
     return
   }
 

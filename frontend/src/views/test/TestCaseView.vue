@@ -15,7 +15,7 @@
     <div class="filter-card">
       <input
         v-model="filters.keyword"
-        placeholder="搜索项目名称 / 测试用例名称 / 上传人"
+        placeholder="搜索项目名称 / 上传人 / 测试用例文件 / 测试报告文件"
       />
 
       <select v-model="filters.projectName">
@@ -47,12 +47,12 @@
         <table>
           <thead>
             <tr>
-              <th>测试用例</th>
               <th>绑定项目</th>
               <th>上传人</th>
               <th>上传时间</th>
               <th>审核状态</th>
               <th>审核人</th>
+              <th class="report-operation-col">报告上传/下载</th>
               <th class="operation-col">操作</th>
             </tr>
           </thead>
@@ -60,13 +60,7 @@
           <tbody>
             <tr v-for="item in filteredTestCaseList" :key="item.id">
               <td>
-                <button class="case-link" @click="viewTestCase(item)">
-                  {{ item.caseName }}
-                </button>
-              </td>
-
-              <td>
-                <span class="project-tag">
+                <span class="project-tag" :title="item.projectName">
                   {{ item.projectName }}
                 </span>
               </td>
@@ -83,6 +77,29 @@
 
               <td>{{ item.auditor || '-' }}</td>
 
+              <td class="report-operation-col">
+                <div class="report-action-group">
+                  <button
+                    class="text-btn green"
+                    @click="openReportUploadDialog(item)"
+                  >
+                    {{ item.reportFileName ? '更新报告' : '上传报告' }}
+                  </button>
+
+                  <button
+                    v-if="item.reportFileName"
+                    class="text-btn blue"
+                    @click="downloadTestReport(item)"
+                  >
+                    下载报告
+                  </button>
+
+                  <span v-else class="empty-report-text">
+                    未上传
+                  </span>
+                </div>
+              </td>
+
               <td class="operation-col">
                 <div class="action-group">
                   <button class="text-btn" @click="viewTestCase(item)">
@@ -90,7 +107,7 @@
                   </button>
 
                   <button class="text-btn blue" @click="downloadTestCase(item)">
-                    下载
+                    下载用例
                   </button>
 
                   <button
@@ -197,6 +214,73 @@
       </div>
     </div>
 
+    <!-- 上传测试报告弹窗 -->
+    <div v-if="showReportUploadDialog" class="dialog-mask">
+      <div class="dialog">
+        <div class="dialog-header">
+          <h3>上传对应测试报告</h3>
+          <button @click="showReportUploadDialog = false">×</button>
+        </div>
+
+        <div class="detail-tip">
+          <div>
+            <span>绑定项目</span>
+            <strong>{{ currentReportCase?.projectName }}</strong>
+          </div>
+
+          <div>
+            <span>测试用例文件</span>
+            <strong>{{ currentReportCase?.fileName || '-' }}</strong>
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <label>
+            测试报告名称
+            <input
+              v-model="reportForm.reportName"
+              placeholder="例如：香港屯马项目系统测试报告"
+            />
+          </label>
+
+          <label>
+            当前上传人
+            <input
+              :value="currentUserName"
+              disabled
+            />
+          </label>
+
+          <label class="full-row">
+            测试报告文件
+            <input
+              type="file"
+              accept=".doc,.docx,.xls,.xlsx,.pdf,.zip"
+              @change="handleReportFileChange"
+            />
+          </label>
+
+          <label class="full-row">
+            测试报告说明
+            <textarea
+              v-model="reportForm.reportRemark"
+              placeholder="例如：根据该测试用例执行测试，广播、报警、SIP注册、音频播放等功能测试通过"
+            ></textarea>
+          </label>
+        </div>
+
+        <div class="dialog-footer">
+          <button class="reset-btn" @click="showReportUploadDialog = false">
+            取消
+          </button>
+
+          <button class="primary-btn" @click="uploadTestReport">
+            保存测试报告
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- 查看详情 / 审核弹窗 -->
     <div v-if="selectedTestCase" class="dialog-mask">
       <div class="dialog large-dialog">
@@ -207,17 +291,12 @@
 
         <div class="detail-card">
           <div>
-            <span>测试用例名称</span>
-            <strong>{{ selectedTestCase.caseName }}</strong>
-          </div>
-
-          <div>
             <span>绑定项目</span>
             <strong>{{ selectedTestCase.projectName }}</strong>
           </div>
 
           <div>
-            <span>文件名称</span>
+            <span>测试用例文件</span>
             <strong>{{ selectedTestCase.fileName || '-' }}</strong>
           </div>
 
@@ -247,9 +326,9 @@
           </div>
 
           <div>
-            <span>文件查看</span>
+            <span>用例文件查看</span>
             <button class="inline-link" @click="openTestCaseFile(selectedTestCase)">
-              点开查看文件
+              点开查看测试用例
             </button>
           </div>
         </div>
@@ -257,6 +336,57 @@
         <div class="remark-card">
           <span>测试用例说明</span>
           <p>{{ selectedTestCase.remark || '暂无说明' }}</p>
+        </div>
+
+        <div class="report-detail-card">
+          <div class="report-detail-header">
+            <div>
+              <span>对应测试报告</span>
+              <strong>
+                {{ selectedTestCase.reportFileName ? '已上传' : '未上传' }}
+              </strong>
+            </div>
+
+            <button
+              class="primary-btn small-btn"
+              @click="openReportUploadDialog(selectedTestCase)"
+            >
+              {{ selectedTestCase.reportFileName ? '更新报告' : '上传报告' }}
+            </button>
+          </div>
+
+          <div v-if="selectedTestCase.reportFileName" class="report-info-grid">
+            <div>
+              <span>测试报告文件</span>
+              <strong>{{ selectedTestCase.reportFileName || '-' }}</strong>
+            </div>
+
+            <div>
+              <span>报告上传人</span>
+              <strong>{{ selectedTestCase.reportUploader || '-' }}</strong>
+            </div>
+
+            <div>
+              <span>报告上传时间</span>
+              <strong>{{ selectedTestCase.reportUploadTime || '-' }}</strong>
+            </div>
+
+            <div>
+              <span>报告文件查看</span>
+              <button class="inline-link" @click="openTestReportFile(selectedTestCase)">
+                点开查看测试报告
+              </button>
+            </div>
+
+            <div class="full-row">
+              <span>报告说明</span>
+              <p>{{ selectedTestCase.reportRemark || '暂无说明' }}</p>
+            </div>
+          </div>
+
+          <div v-else class="empty-report-detail">
+            当前测试用例暂未上传测试报告。
+          </div>
         </div>
 
         <div class="dialog-footer">
@@ -277,7 +407,15 @@
           </button>
 
           <button class="reset-btn" @click="downloadTestCase(selectedTestCase)">
-            下载文件
+            下载用例
+          </button>
+
+          <button
+            v-if="selectedTestCase.reportFileName"
+            class="reset-btn"
+            @click="downloadTestReport(selectedTestCase)"
+          >
+            下载报告
           </button>
 
           <button class="primary-btn" @click="selectedTestCase = null">
@@ -306,7 +444,10 @@ const filters = reactive({
 })
 
 const showUploadDialog = ref(false)
+const showReportUploadDialog = ref(false)
+
 const selectedTestCase = ref(null)
+const currentReportCase = ref(null)
 
 const projectOptions = [
   '香港屯马项目',
@@ -325,6 +466,14 @@ const uploadForm = reactive({
   remark: ''
 })
 
+const reportForm = reactive({
+  reportName: '',
+  reportFileName: '',
+  reportFile: null,
+  reportFileUrl: '',
+  reportRemark: ''
+})
+
 const testCaseList = ref([
   {
     id: 1,
@@ -337,7 +486,13 @@ const testCaseList = ref([
     auditStatus: 'approved',
     auditor: '领导',
     auditTime: '2026-05-11',
-    remark: '覆盖人工广播、乘客报警、客室广播、SIP注册、网络通信等测试项'
+    remark: '覆盖人工广播、乘客报警、客室广播、SIP注册、网络通信等测试项',
+    reportName: '香港屯马项目系统测试报告',
+    reportFileName: '香港屯马项目系统测试报告_V1.0.docx',
+    reportFileUrl: '',
+    reportUploader: '寸诗睿',
+    reportUploadTime: '2026-05-12',
+    reportRemark: '根据系统测试用例执行测试，主要功能测试通过。'
   },
   {
     id: 2,
@@ -350,7 +505,13 @@ const testCaseList = ref([
     auditStatus: 'submitted',
     auditor: '',
     auditTime: '',
-    remark: '待领导审核确认'
+    remark: '待领导审核确认',
+    reportName: '',
+    reportFileName: '',
+    reportFileUrl: '',
+    reportUploader: '',
+    reportUploadTime: '',
+    reportRemark: ''
   },
   {
     id: 3,
@@ -363,7 +524,13 @@ const testCaseList = ref([
     auditStatus: 'draft',
     auditor: '',
     auditTime: '',
-    remark: '草稿，尚未提交审核'
+    remark: '草稿，尚未提交审核',
+    reportName: '',
+    reportFileName: '',
+    reportFileUrl: '',
+    reportUploader: '',
+    reportUploadTime: '',
+    reportRemark: ''
   },
   {
     id: 4,
@@ -376,18 +543,29 @@ const testCaseList = ref([
     auditStatus: 'rejected',
     auditor: '领导',
     auditTime: '2026-05-21',
-    remark: '测试项不完整，需要补充异常断网、SIP重注册、报警恢复测试'
+    remark: '测试项不完整，需要补充异常断网、SIP重注册、报警恢复测试',
+    reportName: '波哥大乘客报警器测试报告',
+    reportFileName: '波哥大乘客报警器测试报告_V1.1.pdf',
+    reportFileUrl: '',
+    reportUploader: '寸诗睿',
+    reportUploadTime: '2026-05-22',
+    reportRemark: '报告已上传，但测试项不完整，需要补充后重新提交测试用例。'
   }
 ])
 
 const filteredTestCaseList = computed(() => {
   return testCaseList.value.filter(item => {
+    const keyword = filters.keyword.trim()
+
     const keywordMatch =
-      !filters.keyword ||
-      item.projectName.includes(filters.keyword) ||
-      item.caseName.includes(filters.keyword) ||
-      item.uploader.includes(filters.keyword) ||
-      item.fileName.includes(filters.keyword)
+      !keyword ||
+      item.projectName.includes(keyword) ||
+      item.caseName.includes(keyword) ||
+      item.uploader.includes(keyword) ||
+      item.fileName.includes(keyword) ||
+      (item.reportName && item.reportName.includes(keyword)) ||
+      (item.reportFileName && item.reportFileName.includes(keyword)) ||
+      (item.reportUploader && item.reportUploader.includes(keyword))
 
     const projectMatch =
       !filters.projectName || item.projectName === filters.projectName
@@ -434,6 +612,10 @@ function handleFileChange(event) {
   uploadForm.file = file
   uploadForm.fileName = file.name
   uploadForm.fileUrl = URL.createObjectURL(file)
+
+  if (!uploadForm.caseName) {
+    uploadForm.caseName = file.name.replace(/\.[^/.]+$/, '')
+  }
 }
 
 function uploadTestCase() {
@@ -463,7 +645,13 @@ function uploadTestCase() {
     auditStatus: 'draft',
     auditor: '',
     auditTime: '',
-    remark: uploadForm.remark
+    remark: uploadForm.remark,
+    reportName: '',
+    reportFileName: '',
+    reportFileUrl: '',
+    reportUploader: '',
+    reportUploadTime: '',
+    reportRemark: ''
   })
 
   showUploadDialog.value = false
@@ -475,7 +663,7 @@ function viewTestCase(item) {
 
 function openTestCaseFile(item) {
   if (!item.fileUrl) {
-    alert('当前是模拟数据，暂无可直接打开的原始文件')
+    alert('当前是模拟数据，暂无可直接打开的原始测试用例文件')
     return
   }
 
@@ -484,7 +672,7 @@ function openTestCaseFile(item) {
 
 function downloadTestCase(item) {
   if (!item.fileUrl) {
-    alert('当前是模拟数据，暂无可下载的原始文件')
+    alert('当前是模拟数据，暂无可下载的原始测试用例文件')
     return
   }
 
@@ -496,11 +684,88 @@ function downloadTestCase(item) {
   document.body.removeChild(link)
 }
 
+function openReportUploadDialog(item) {
+  currentReportCase.value = item
+
+  reportForm.reportName = item.reportName || `${item.projectName}测试报告`
+  reportForm.reportFileName = ''
+  reportForm.reportFile = null
+  reportForm.reportFileUrl = ''
+  reportForm.reportRemark = item.reportRemark || ''
+
+  showReportUploadDialog.value = true
+}
+
+function handleReportFileChange(event) {
+  const file = event.target.files[0]
+  if (!file) return
+
+  reportForm.reportFile = file
+  reportForm.reportFileName = file.name
+  reportForm.reportFileUrl = URL.createObjectURL(file)
+
+  if (!reportForm.reportName) {
+    reportForm.reportName = file.name.replace(/\.[^/.]+$/, '')
+  }
+}
+
+function uploadTestReport() {
+  if (!currentReportCase.value) return
+
+  if (!reportForm.reportName) {
+    alert('请输入测试报告名称')
+    return
+  }
+
+  if (!reportForm.reportFile) {
+    alert('请上传测试报告文件')
+    return
+  }
+
+  currentReportCase.value.reportName = reportForm.reportName
+  currentReportCase.value.reportFileName = reportForm.reportFileName
+  currentReportCase.value.reportFileUrl = reportForm.reportFileUrl
+  currentReportCase.value.reportUploader = currentUserName.value
+  currentReportCase.value.reportUploadTime = new Date().toISOString().slice(0, 10)
+  currentReportCase.value.reportRemark = reportForm.reportRemark
+
+  showReportUploadDialog.value = false
+  alert(`项目【${currentReportCase.value.projectName}】对应测试报告已上传`)
+}
+
+function openTestReportFile(item) {
+  if (!item.reportFileUrl) {
+    alert('当前是模拟数据，暂无可直接打开的原始测试报告文件')
+    return
+  }
+
+  window.open(item.reportFileUrl, '_blank')
+}
+
+function downloadTestReport(item) {
+  if (!item.reportFileName) {
+    alert('当前测试用例还没有上传测试报告')
+    return
+  }
+
+  if (!item.reportFileUrl) {
+    alert('当前是模拟数据，暂无可下载的原始测试报告文件')
+    return
+  }
+
+  const link = document.createElement('a')
+  link.href = item.reportFileUrl
+  link.download = item.reportFileName || '测试报告文件'
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+}
+
 function submitTestCase(item) {
   item.auditStatus = 'submitted'
   item.auditor = ''
   item.auditTime = ''
-  alert(`测试用例【${item.caseName}】已提交领导审核`)
+  alert(`测试用例【${item.fileName || item.caseName}】已提交领导审核`)
 }
 
 function auditTestCase(item) {
@@ -512,7 +777,7 @@ function approveTestCase(item) {
   item.auditor = '领导'
   item.auditTime = new Date().toISOString().slice(0, 10)
   selectedTestCase.value = null
-  alert(`测试用例【${item.caseName}】审核通过`)
+  alert(`测试用例【${item.fileName || item.caseName}】审核通过`)
 }
 
 function rejectTestCase(item) {
@@ -520,11 +785,11 @@ function rejectTestCase(item) {
   item.auditor = '领导'
   item.auditTime = new Date().toISOString().slice(0, 10)
   selectedTestCase.value = null
-  alert(`测试用例【${item.caseName}】已驳回`)
+  alert(`测试用例【${item.fileName || item.caseName}】已驳回`)
 }
 
 function deleteTestCase(item) {
-  const ok = confirm(`确认删除测试用例【${item.caseName}】吗？`)
+  const ok = confirm(`确认删除测试用例【${item.fileName || item.caseName}】吗？`)
   if (!ok) return
 
   testCaseList.value = testCaseList.value.filter(
@@ -594,6 +859,12 @@ function deleteTestCase(item) {
   border: 1px solid #7f1d1d;
   background: #450a0a;
   color: #fca5a5;
+}
+
+.small-btn {
+  height: 30px;
+  padding: 0 12px;
+  font-size: 12px;
 }
 
 .filter-card {
@@ -699,7 +970,7 @@ function deleteTestCase(item) {
 
 .table-card table {
   width: 100%;
-  min-width: 1100px;
+  min-width: 1120px;
   border-collapse: collapse;
   table-layout: fixed;
 }
@@ -728,12 +999,12 @@ function deleteTestCase(item) {
 
 .table-card th:nth-child(1),
 .table-card td:nth-child(1) {
-  width: 220px;
+  width: 190px;
 }
 
 .table-card th:nth-child(2),
 .table-card td:nth-child(2) {
-  width: 180px;
+  width: 110px;
 }
 
 .table-card th:nth-child(3),
@@ -743,44 +1014,17 @@ function deleteTestCase(item) {
 
 .table-card th:nth-child(4),
 .table-card td:nth-child(4) {
-  width: 130px;
+  width: 120px;
 }
 
 .table-card th:nth-child(5),
 .table-card td:nth-child(5) {
-  width: 130px;
-}
-
-.table-card th:nth-child(6),
-.table-card td:nth-child(6) {
-  width: 120px;
-}
-
-.case-link {
-  display: inline-block;
-  max-width: 200px;
-  border: none;
-  background: transparent;
-  color: #60a5fa;
-  font-size: 13px;
-  font-weight: 800;
-  cursor: pointer;
-  padding: 0;
-  text-align: left;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  vertical-align: middle;
-}
-
-.case-link:hover {
-  color: #93c5fd;
-  text-decoration: underline;
+  width: 100px;
 }
 
 .project-tag {
   display: inline-block;
-  max-width: 150px;
+  max-width: 160px;
   padding: 4px 9px;
   border-radius: 999px;
   background: #1d4ed833;
@@ -821,18 +1065,37 @@ function deleteTestCase(item) {
   color: #f87171;
 }
 
+.empty-report-text {
+  color: #64748b;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .muted {
   color: #94a3b8 !important;
 }
 
+.report-operation-col {
+  width: 220px;
+  text-align: left !important;
+}
+
 .operation-col {
-  width: 280px;
+  width: 310px;
   text-align: right !important;
 }
 
 .action-group {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.report-action-group {
+  display: flex;
+  justify-content: flex-start;
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
@@ -892,7 +1155,7 @@ function deleteTestCase(item) {
 }
 
 .large-dialog {
-  width: 860px;
+  width: 900px;
 }
 
 .dialog-header {
@@ -941,6 +1204,7 @@ function deleteTestCase(item) {
   display: flex;
   justify-content: flex-end;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .detail-card {
@@ -951,7 +1215,9 @@ function deleteTestCase(item) {
 }
 
 .detail-card div,
-.remark-card {
+.remark-card,
+.report-detail-card,
+.detail-tip {
   background: #020617;
   border: 1px solid #1e293b;
   border-radius: 10px;
@@ -959,14 +1225,17 @@ function deleteTestCase(item) {
 }
 
 .detail-card span,
-.remark-card span {
+.remark-card span,
+.report-detail-card span,
+.detail-tip span {
   display: block;
   color: #64748b;
   font-size: 12px;
   margin-bottom: 6px;
 }
 
-.detail-card strong {
+.detail-card strong,
+.detail-tip strong {
   color: #f8fafc;
   font-size: 14px;
   word-break: break-all;
@@ -998,18 +1267,87 @@ function deleteTestCase(item) {
   line-height: 1.6;
 }
 
+.detail-tip {
+  margin: 20px 20px 0;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.report-detail-card {
+  margin: 0 20px 20px;
+}
+
+.report-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.report-detail-header strong {
+  color: #5eead4;
+  font-size: 15px;
+}
+
+.report-info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.report-info-grid div {
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.report-info-grid strong {
+  color: #f8fafc;
+  font-size: 14px;
+  word-break: break-all;
+}
+
+.report-info-grid p {
+  margin: 0;
+  color: #cbd5e1;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.empty-report-detail {
+  padding: 12px;
+  color: #64748b;
+  font-size: 13px;
+  background: #0f172a;
+  border: 1px dashed #334155;
+  border-radius: 10px;
+}
+
 @media (max-width: 960px) {
   .filter-card {
     grid-template-columns: 1fr;
   }
 
   .table-card table {
-    min-width: 1100px;
+    min-width: 1120px;
   }
 
   .form-grid,
-  .detail-card {
+  .detail-card,
+  .detail-tip,
+  .report-info-grid {
     grid-template-columns: 1fr;
+  }
+
+  .report-operation-col {
+    width: 220px;
+  }
+
+  .operation-col {
+    width: 310px;
   }
 }
 </style>

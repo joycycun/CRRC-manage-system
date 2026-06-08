@@ -15,7 +15,7 @@
     <div class="filter-card">
       <input
         v-model="filters.keyword"
-        placeholder="搜索项目名称 / 资料名称 / 上传人 / 文件名"
+        placeholder="搜索项目名称 /  上传人 / 文件名"
       />
 
       <select v-model="filters.projectName">

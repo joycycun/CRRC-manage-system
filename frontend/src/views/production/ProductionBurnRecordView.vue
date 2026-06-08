@@ -99,6 +99,13 @@
                     </button>
 
                     <button
+                      class="text-btn green"
+                      @click="downloadBatchFile(batch)"
+                    >
+                      下载源文件
+                    </button>
+
+                    <button
                       class="text-btn red"
                       @click="deleteBatch(batch)"
                     >
@@ -127,9 +134,6 @@
                           <th>软件版本</th>
                           <th>PCB二维码</th>
                           <th>备注</th>
-                          <th>来源文件</th>
-                          <th>上传人</th>
-                          <th>上传时间</th>
                           <th class="child-operation-col">操作</th>
                         </tr>
                       </thead>
@@ -193,31 +197,11 @@
                             </span>
                           </td>
 
-                          <td>
-                            <span class="file-text" :title="item.fileName">
-                              {{ item.fileName }}
-                            </span>
-                          </td>
-
-                          <td>
-                            <span class="normal-text" :title="item.uploader">
-                              {{ item.uploader }}
-                            </span>
-                          </td>
-
-                          <td class="muted nowrap">
-                            {{ item.uploadTime }}
-                          </td>
-
                           <td class="child-operation-col">
                             <div class="action-group">
-                              <button class="text-btn" @click="viewBurnRecord(item)">
+                              <!-- <button class="text-btn" @click="viewBurnRecord(item)">
                                 查看
-                              </button>
-
-                              <button class="text-btn blue" @click="downloadBurnRecord(item)">
-                                下载
-                              </button>
+                              </button> -->
 
                               <button class="text-btn red" @click="deleteBurnRecord(item)">
                                 删除
@@ -620,10 +604,15 @@ const filteredBatchGroupList = computed(() => {
       ...new Set(sortedProducts.map(item => item.uploadTime).filter(Boolean))
     ]
 
+    const fileUrls = [
+      ...new Set(sortedProducts.map(item => item.fileUrl).filter(Boolean))
+    ]
+
     return {
       batchNo: batch.batchNo,
       products: sortedProducts,
       fileName: fileNames.length > 1 ? `${fileNames.length} 个来源文件` : fileNames[0] || '-',
+      fileUrl: fileUrls[0] || '',
       uploader: uploaders.length > 1 ? `${uploaders.length} 个上传人` : uploaders[0] || '-',
       uploadTime: uploadTimes.length > 1 ? `${uploadTimes.length} 个上传时间` : uploadTimes[0] || '-'
     }
@@ -931,6 +920,20 @@ function downloadBurnRecord(item) {
   document.body.removeChild(link)
 }
 
+function downloadBatchFile(batch) {
+  if (!batch.fileUrl) {
+    alert('当前批次暂无可下载的原始文件')
+    return
+  }
+
+  const link = document.createElement('a')
+  link.href = batch.fileUrl
+  link.download = batch.fileName || `${batch.batchNo}_烧录记录.xlsx`
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+}
+
 function deleteBurnRecord(item) {
   const ok = confirm(`确认删除序列号【${item.serialNumber}】的烧录记录吗？`)
   if (!ok) return
@@ -1182,7 +1185,7 @@ function deleteBatch(batch) {
 
 .batch-table th:nth-child(6),
 .batch-table td:nth-child(6) {
-  width: 230px;
+  width: 280px;
 }
 
 .batch-row {
@@ -1244,7 +1247,7 @@ function deleteBatch(batch) {
 
 .child-table {
   width: 100%;
-  min-width: 2050px;
+  min-width: 1450px;
   border-collapse: collapse;
   table-layout: fixed;
   border: 1px solid #1e293b;
@@ -1330,22 +1333,7 @@ function deleteBatch(batch) {
 
 .child-table th:nth-child(10),
 .child-table td:nth-child(10) {
-  width: 220px;
-}
-
-.child-table th:nth-child(11),
-.child-table td:nth-child(11) {
-  width: 110px;
-}
-
-.child-table th:nth-child(12),
-.child-table td:nth-child(12) {
-  width: 130px;
-}
-
-.child-table th:nth-child(13),
-.child-table td:nth-child(13) {
-  width: 210px;
+  width: 150px;
 }
 
 .product-tag,
@@ -1451,6 +1439,10 @@ function deleteBatch(batch) {
 
 .text-btn.blue {
   color: #60a5fa;
+}
+
+.text-btn.green {
+  color: #4ade80;
 }
 
 .text-btn.red {
@@ -1671,7 +1663,7 @@ function deleteBatch(batch) {
   }
 
   .child-table {
-    min-width: 2050px;
+    min-width: 1450px;
   }
 
   .preview-wrapper table {

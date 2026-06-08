@@ -65,7 +65,7 @@
         <tbody>
           <tr v-for="item in filteredHardwareList" :key="item.id">
             <td>
-              <button class="version-link" @click="openZipUploadDialog(item)">
+              <button class="version-link" @click="viewHardware(item)">
                 {{ item.hardwareVersion }}
               </button>
               <div class="version-desc">{{ item.description }}</div>
@@ -165,14 +165,6 @@
             </select>
           </label>
 
-          <!-- <label>
-            负责人
-            <input
-              v-model="hardwareForm.owner"
-              placeholder="请输入硬件负责人"
-            />
-          </label> -->
-
           <label>
             版本状态
             <select v-model="hardwareForm.status">
@@ -180,6 +172,14 @@
               <option value="batch">批量</option>
               <option value="sample">样品</option>
             </select>
+          </label>
+
+          <label>
+            当前负责人
+            <input
+              :value="editMode === 'create' ? currentUserName : hardwareForm.owner"
+              disabled
+            />
           </label>
 
           <label class="full-row">
@@ -198,6 +198,23 @@
                 <span>{{ project }}</span>
               </label>
             </div>
+          </label>
+
+          <label class="full-row">
+            硬件文件 ZIP
+            <input
+              type="file"
+              accept=".zip,application/zip,application/x-zip-compressed"
+              @change="handleHardwareFileChange"
+            />
+
+            <span v-if="hardwareForm.zipFileName" class="selected-file">
+              已选择：{{ hardwareForm.zipFileName }}
+            </span>
+
+            <span v-else class="file-tip">
+              可在新增硬件版本时直接上传硬件原理图、PCB资料、BOM清单、生产资料等 ZIP 压缩包。
+            </span>
           </label>
 
           <label class="full-row">
@@ -221,7 +238,7 @@
       </div>
     </div>
 
-    <!-- 上传 ZIP 弹窗 -->
+    <!-- 单独上传 ZIP 弹窗 -->
     <div v-if="showZipDialog" class="dialog-mask">
       <div class="dialog">
         <div class="dialog-header">
@@ -342,6 +359,10 @@
         </div>
 
         <div class="dialog-footer">
+          <button class="reset-btn" @click="downloadZip(selectedHardware)">
+            下载 ZIP
+          </button>
+
           <button class="primary-btn" @click="selectedHardware = null">
             关闭
           </button>
@@ -353,12 +374,14 @@
 
 <script setup>
 import { computed, reactive, ref } from 'vue'
+
 const currentUserName = ref(
   localStorage.getItem('username') ||
   localStorage.getItem('accountName') ||
   localStorage.getItem('realName') ||
   '当前用户'
 )
+
 const filters = reactive({
   keyword: '',
   deviceType: '',
@@ -398,7 +421,10 @@ const hardwareForm = reactive({
   owner: '',
   status: 'trial',
   bindProjects: [],
-  description: ''
+  description: '',
+  zipFile: null,
+  zipFileName: '',
+  zipFileUrl: ''
 })
 
 const zipForm = reactive({
@@ -466,7 +492,8 @@ const filteredHardwareList = computed(() => {
       item.hardwareVersion.includes(filters.keyword) ||
       item.deviceType.includes(filters.keyword) ||
       item.owner.includes(filters.keyword) ||
-      item.bindProjects.some(project => project.includes(filters.keyword))
+      item.bindProjects.some(project => project.includes(filters.keyword)) ||
+      (item.zipFileName && item.zipFileName.includes(filters.keyword))
 
     const deviceTypeMatch =
       !filters.deviceType || item.deviceType === filters.deviceType
@@ -494,16 +521,23 @@ function resetFilters() {
   filters.status = ''
 }
 
-function openCreateDialog() {
-  editMode.value = 'create'
-  currentEditHardware.value = null
-
+function resetHardwareForm() {
   hardwareForm.hardwareVersion = ''
   hardwareForm.deviceType = ''
   hardwareForm.owner = ''
   hardwareForm.status = 'trial'
   hardwareForm.bindProjects = []
   hardwareForm.description = ''
+  hardwareForm.zipFile = null
+  hardwareForm.zipFileName = ''
+  hardwareForm.zipFileUrl = ''
+}
+
+function openCreateDialog() {
+  editMode.value = 'create'
+  currentEditHardware.value = null
+
+  resetHardwareForm()
 
   showEditDialog.value = true
 }
@@ -518,8 +552,28 @@ function openEditDialog(item) {
   hardwareForm.status = item.status
   hardwareForm.bindProjects = [...item.bindProjects]
   hardwareForm.description = item.description
+  hardwareForm.zipFile = null
+  hardwareForm.zipFileName = item.zipFileName || ''
+  hardwareForm.zipFileUrl = item.zipFileUrl || ''
 
   showEditDialog.value = true
+}
+
+function handleHardwareFileChange(event) {
+  const file = event.target.files[0]
+  if (!file) return
+
+  const isZip = file.name.toLowerCase().endsWith('.zip')
+
+  if (!isZip) {
+    alert('只能上传 ZIP 压缩包文件')
+    event.target.value = ''
+    return
+  }
+
+  hardwareForm.zipFile = file
+  hardwareForm.zipFileName = file.name
+  hardwareForm.zipFileUrl = URL.createObjectURL(file)
 }
 
 function saveHardwareVersion() {
@@ -547,18 +601,23 @@ function saveHardwareVersion() {
       status: hardwareForm.status,
       owner: currentUserName.value,
       updateTime: new Date().toISOString().slice(0, 10),
-      zipFileName: '',
-      zipFileUrl: '',
+      zipFileName: hardwareForm.zipFileName,
+      zipFileUrl: hardwareForm.zipFileUrl,
       description: hardwareForm.description
     })
   } else {
     currentEditHardware.value.hardwareVersion = hardwareForm.hardwareVersion
     currentEditHardware.value.deviceType = hardwareForm.deviceType
-    currentEditHardware.value.owner = hardwareForm.owner || '未填写'
+    currentEditHardware.value.owner = hardwareForm.owner || currentUserName.value
     currentEditHardware.value.status = hardwareForm.status
     currentEditHardware.value.bindProjects = [...hardwareForm.bindProjects]
     currentEditHardware.value.description = hardwareForm.description
     currentEditHardware.value.updateTime = new Date().toISOString().slice(0, 10)
+
+    if (hardwareForm.zipFileName && hardwareForm.zipFileUrl) {
+      currentEditHardware.value.zipFileName = hardwareForm.zipFileName
+      currentEditHardware.value.zipFileUrl = hardwareForm.zipFileUrl
+    }
   }
 
   showEditDialog.value = false
@@ -793,6 +852,19 @@ function exportHardwareVersions() {
   cursor: pointer;
 }
 
+.selected-file {
+  margin-top: 6px;
+  color: #5eead4;
+  font-size: 12px;
+}
+
+.file-tip {
+  margin-top: 6px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
 .table-card {
   background: #0f172a;
   border: 1px solid #1e293b;
@@ -899,6 +971,8 @@ function exportHardwareVersions() {
 }
 
 .file-name {
+  display: inline-block;
+  max-width: 150px;
   color: #cbd5e1;
   font-size: 12px;
   word-break: break-all;

@@ -70,6 +70,7 @@
               <th>故障现象</th>
               <th>维修人</th>
               <th>维修时间</th>
+              <th>返修完成时间</th>
               <th class="operation-col">操作</th>
             </tr>
           </thead>
@@ -105,6 +106,8 @@
               <td>{{ item.repairUser }}</td>
 
               <td class="muted">{{ item.repairTime }}</td>
+
+              <td class="muted">{{ item.returnCompleteTime || '-' }}</td>
 
               <td class="operation-col">
                 <div class="action-group">
@@ -191,6 +194,14 @@
           </label>
 
           <label>
+            返修完成时间
+            <input
+              v-model="repairForm.returnCompleteTime"
+              type="date"
+            />
+          </label>
+
+          <label>
             维修方式
             <select v-model="repairForm.repairMethod">
               <option value="现场维修">现场维修</option>
@@ -198,6 +209,14 @@
               <option value="远程指导维修">远程指导维修</option>
               <option value="更换板卡">更换板卡</option>
             </select>
+          </label>
+
+          <label>
+            当前维修人
+            <input
+              :value="editMode === 'create' ? currentUserName : currentEditRepair?.repairUser"
+              disabled
+            />
           </label>
 
           <label class="full-row">
@@ -282,6 +301,11 @@
           </div>
 
           <div>
+            <span>返修完成时间</span>
+            <strong>{{ selectedRepair.returnCompleteTime || '-' }}</strong>
+          </div>
+
+          <div>
             <span>最后修改时间</span>
             <strong>{{ selectedRepair.updateTime || '-' }}</strong>
           </div>
@@ -361,6 +385,7 @@ const repairForm = reactive({
   macAddress: '',
   faultDesc: '',
   repairTime: '',
+  returnCompleteTime: '',
   repairMethod: '返厂维修',
   repairProcess: '',
   remark: ''
@@ -376,6 +401,7 @@ const repairList = ref([
     faultDesc: '设备上电后无音频输出',
     repairUser: '售后人员',
     repairTime: '2026-05-10',
+    returnCompleteTime: '2026-05-12',
     repairMethod: '返厂维修',
     repairProcess: '检查音频功放输出，重新烧录软件后复测正常。',
     updateTime: '2026-05-10',
@@ -390,6 +416,7 @@ const repairList = ref([
     faultDesc: '客室广播偶发解码失败',
     repairUser: '维修人员',
     repairTime: '2026-05-16',
+    returnCompleteTime: '',
     repairMethod: '现场维修',
     repairProcess: '正在检查网络模块和音频解码流程。',
     updateTime: '2026-05-16',
@@ -404,6 +431,7 @@ const repairList = ref([
     faultDesc: '提醒音播放异常',
     repairUser: '售后人员',
     repairTime: '2026-05-18',
+    returnCompleteTime: '',
     repairMethod: '远程指导维修',
     repairProcess: '等待现场提供日志和设备状态。',
     updateTime: '2026-05-18',
@@ -418,6 +446,7 @@ const repairList = ref([
     faultDesc: '远程维修失败，设备无法连接',
     repairUser: '售后人员',
     repairTime: '2026-05-20',
+    returnCompleteTime: '',
     repairMethod: '远程指导维修',
     repairProcess: '远程连接失败，设备无响应。',
     updateTime: '2026-05-20',
@@ -435,7 +464,8 @@ const filteredRepairList = computed(() => {
       item.macAddress.includes(filters.keyword) ||
       item.faultDesc.includes(filters.keyword) ||
       item.repairUser.includes(filters.keyword) ||
-      item.repairProcess.includes(filters.keyword)
+      item.repairProcess.includes(filters.keyword) ||
+      String(item.returnCompleteTime || '').includes(filters.keyword)
 
     const projectMatch =
       !filters.projectName || item.projectName === filters.projectName
@@ -463,6 +493,7 @@ function openCreateDialog() {
   repairForm.macAddress = ''
   repairForm.faultDesc = ''
   repairForm.repairTime = new Date().toISOString().slice(0, 10)
+  repairForm.returnCompleteTime = ''
   repairForm.repairMethod = '返厂维修'
   repairForm.repairProcess = ''
   repairForm.remark = ''
@@ -480,6 +511,7 @@ function openEditDialog(item) {
   repairForm.macAddress = item.macAddress
   repairForm.faultDesc = item.faultDesc
   repairForm.repairTime = item.repairTime
+  repairForm.returnCompleteTime = item.returnCompleteTime || ''
   repairForm.repairMethod = item.repairMethod
   repairForm.repairProcess = item.repairProcess
   repairForm.remark = item.remark
@@ -523,6 +555,7 @@ function saveRepair() {
       faultDesc: repairForm.faultDesc,
       repairUser: currentUserName.value,
       repairTime: repairForm.repairTime,
+      returnCompleteTime: repairForm.returnCompleteTime,
       repairMethod: repairForm.repairMethod,
       repairProcess: repairForm.repairProcess,
       updateTime: new Date().toISOString().slice(0, 10),
@@ -535,6 +568,7 @@ function saveRepair() {
     currentEditRepair.value.macAddress = repairForm.macAddress
     currentEditRepair.value.faultDesc = repairForm.faultDesc
     currentEditRepair.value.repairTime = repairForm.repairTime
+    currentEditRepair.value.returnCompleteTime = repairForm.returnCompleteTime
     currentEditRepair.value.repairMethod = repairForm.repairMethod
     currentEditRepair.value.repairProcess = repairForm.repairProcess
     currentEditRepair.value.updateTime = new Date().toISOString().slice(0, 10)
@@ -567,6 +601,7 @@ function exportRepairRecords() {
     '维修方式',
     '维修人',
     '维修时间',
+    '返修完成时间',
     '最后修改时间',
     '维修过程',
     '维修结果备注'
@@ -581,6 +616,7 @@ function exportRepairRecords() {
     item.repairMethod,
     item.repairUser,
     item.repairTime,
+    item.returnCompleteTime || '',
     item.updateTime || '',
     item.repairProcess || '',
     item.remark || ''
@@ -779,13 +815,19 @@ function exportRepairRecords() {
 
 .version-table {
   width: 100%;
-  min-width: 1280px;
+  min-width: 1420px;
   border-collapse: collapse;
   table-layout: fixed;
 }
 
 .version-table thead {
   background: #020617;
+}
+
+.version-table th,
+.version-table td {
+  box-sizing: border-box;
+  white-space: nowrap;
 }
 
 .version-table th {
@@ -795,7 +837,6 @@ function exportRepairRecords() {
   font-weight: 600;
   text-align: left;
   border-bottom: 1px solid #1e293b;
-  white-space: nowrap;
 }
 
 .version-table td {
@@ -804,16 +845,20 @@ function exportRepairRecords() {
   color: #e2e8f0;
   border-bottom: 1px solid #1e293b;
   vertical-align: middle;
+  overflow: hidden;
 }
 
 .project-tag,
 .device-tag {
   display: inline-flex;
+  max-width: 130px;
   padding: 4px 9px;
   border-radius: 999px;
   font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .project-tag {
@@ -1027,7 +1072,7 @@ function exportRepairRecords() {
   }
 
   .version-table {
-    min-width: 1280px;
+    min-width: 1420px;
   }
 
   .form-grid,
