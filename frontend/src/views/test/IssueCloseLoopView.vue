@@ -60,7 +60,7 @@
         <option value="closed">已关闭</option>
       </select>
 
-      <button class="query-btn">查询</button>
+      <button class="query-btn" @click="loadIssues">查询</button>
       <button class="reset-btn" @click="resetFilters">重置</button>
     </div>
 
@@ -460,13 +460,24 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+
+import { getProjects } from '@/api/project'
+
+import {
+  getIssues,
+  createIssue,
+  updateIssue,
+  replyIssue,
+  closeIssueApi,
+  reopenIssueApi
+} from '@/api/issue'
 
 const currentUserName = ref(
   localStorage.getItem('username') ||
   localStorage.getItem('accountName') ||
   localStorage.getItem('realName') ||
-  '寸诗睿'
+  '当前用户'
 )
 
 const filters = reactive({
@@ -485,13 +496,8 @@ const currentEditIssue = ref(null)
 const currentReplyIssue = ref(null)
 const editMode = ref('create')
 
-const projectOptions = [
-  '香港屯马项目',
-  '波尔图二期项目',
-  '阿根廷有轨项目',
-  '波哥大有轨项目',
-  '迪拜项目'
-]
+const projectOptions = ref([])
+const projectMap = ref({})
 
 const deviceTypeOptions = [
   '广播控制盒',
@@ -499,7 +505,12 @@ const deviceTypeOptions = [
   '编码板',
   '乘客报警器',
   '司机室话筒',
-  '功放模块'
+  '功放模块',
+  '司机广播控制盒',
+  '司机室广播控制盒',
+  '解码板',
+  '功放板',
+  '噪声检测器'
 ]
 
 const ownerOptions = [
@@ -528,103 +539,165 @@ const replyForm = reactive({
   content: ''
 })
 
-const issueList = ref([
-  {
-    id: 1,
-    projectName: '香港屯马项目',
-    deviceType: '广播控制盒',
-    issueSource: '测试',
-    level: '高',
-    issueTitle: '广播控制盒上电后偶发无声音输出',
-    owner: '卢进',
-    creator: '寸诗睿',
-    createTime: '2026-05-10',
-    planCloseTime: '2026-05-15',
-    realCloseTime: '',
-    closeStatus: 'open',
-    closeUser: '',
-    replies: [
-      {
-        id: 101,
-        replyUser: '卢进',
-        replyTime: '2026-05-11',
-        content: '已初步定位为音频服务启动时序问题，后续增加初始化完成检测。'
-      }
-    ]
-  },
-  {
-    id: 2,
-    projectName: '波尔图二期项目',
-    deviceType: '乘客报警器',
-    issueSource: '生产',
-    level: '中',
-    issueTitle: '生产烧录后部分终端无法注册SIP',
-    owner: '王宇',
-    creator: '生产人员',
-    createTime: '2026-05-16',
-    planCloseTime: '2026-05-20',
-    realCloseTime: '',
-    closeStatus: 'open',
-    closeUser: '',
-    replies: []
-  },
-  {
-    id: 3,
-    projectName: '阿根廷有轨项目',
-    deviceType: '客室解码板',
-    issueSource: '研发',
-    level: '低',
-    issueTitle: '客室解码板日志打印过多',
-    owner: '郑宇',
-    creator: '研发人员',
-    createTime: '2026-05-18',
-    planCloseTime: '2026-05-22',
-    realCloseTime: '2026-05-19',
-    closeStatus: 'closed',
-    closeUser: '研发人员',
-    replies: [
-      {
-        id: 102,
-        replyUser: '郑宇',
-        replyTime: '2026-05-19',
-        content: '已降低日志等级，保留关键错误日志。'
-      }
-    ]
-  },
-  {
-    id: 4,
-    projectName: '波哥大有轨项目',
-    deviceType: '编码板',
-    issueSource: '售后',
-    level: '紧急',
-    issueTitle: '现场反馈编码板音频中断',
-    owner: '卢进',
-    creator: '售后人员',
-    createTime: '2026-05-20',
-    planCloseTime: '2026-05-21',
-    realCloseTime: '',
-    closeStatus: 'open',
-    closeUser: '',
-    replies: [
-      {
-        id: 103,
-        replyUser: '卢进',
-        replyTime: '2026-05-20',
-        content: '需要现场提供码流、日志、RTP时间戳和中断时刻抓包。'
-      }
-    ]
+const issueList = ref([])
+
+onMounted(async () => {
+  await loadProjects()
+  await loadIssues()
+})
+
+function getResponseData(res) {
+  if (res && res.data) return res.data
+  return res
+}
+
+function formatDate(value) {
+  if (!value) return ''
+
+  if (typeof value === 'string') {
+    return value.slice(0, 10)
   }
-])
+
+  if (value.Time) {
+    return String(value.Time).slice(0, 10)
+  }
+
+  return value
+}
+
+function backendCloseStatusToFrontend(status) {
+  const map = {
+    打开: 'open',
+    未关闭: 'open',
+    待处理: 'open',
+    处理中: 'open',
+
+    关闭: 'closed',
+    已关闭: 'closed',
+    已闭环: 'closed',
+
+    open: 'open',
+    closed: 'closed'
+  }
+
+  return map[status] || 'open'
+}
+
+function frontendCloseStatusToBackend(status) {
+  const map = {
+    open: '打开',
+    closed: '已关闭'
+  }
+
+  return map[status] || '打开'
+}
+
+function findProjectName(projectId) {
+  const found = Object.entries(projectMap.value).find(([, id]) => Number(id) === Number(projectId))
+  return found ? found[0] : `项目ID-${projectId}`
+}
+
+async function loadProjects() {
+  try {
+    const res = await getProjects()
+    const result = getResponseData(res)
+
+    if (result.code !== 200) {
+      alert(result.msg || '加载项目失败')
+      return
+    }
+
+    const list = result.data || []
+
+    projectOptions.value = list.map(item => item.projectName)
+
+    const map = {}
+    list.forEach(item => {
+      map[item.projectName] = item.id
+    })
+
+    projectMap.value = map
+  } catch (err) {
+    console.error('加载项目失败：', err)
+    alert('加载项目失败')
+  }
+}
+
+async function loadIssues() {
+  try {
+    const res = await getIssues()
+    const result = getResponseData(res)
+
+    console.log('问题闭环列表返回：', result)
+
+    if (result.code !== 200) {
+      alert(result.msg || '加载问题闭环失败')
+      return
+    }
+
+    issueList.value = (result.data || []).map(item => normalizeIssue(item))
+  } catch (err) {
+    console.error('加载问题闭环失败：', err)
+    alert('加载问题闭环失败，请检查后端接口')
+  }
+}
+
+function normalizeIssue(item) {
+  return {
+    id: item.id,
+    projectId: item.projectId || 0,
+    projectName: item.projectName || findProjectName(item.projectId),
+    deviceType: item.deviceType || '',
+    issueSource: item.issueSource || item.source || '',
+    level: item.level || item.severity || '中',
+    issueTitle: item.issueTitle || item.title || '',
+    ownerId: item.ownerId || 0,
+    owner: item.owner || item.ownerName || item.responsibleUser || '',
+    creatorId: item.creatorId || item.createUserId || 0,
+    creator:
+      item.creator ||
+      item.creatorName ||
+      item.createUserName ||
+      item.submitUserName ||
+      currentUserName.value,
+    createTime: formatDate(item.createTime || item.createdAt),
+    planCloseTime: formatDate(item.planCloseTime),
+    realCloseTime: formatDate(
+      item.realCloseTime || item.real_close_time || item.closeTime || item.close_time
+    ),
+    closeStatus: backendCloseStatusToFrontend(
+      item.closeStatus || item.close_status || item.status
+    ),
+    closeStatus: backendCloseStatusToFrontend(
+      item.closeStatus || item.close_status || item.status
+    ),
+    replies: Array.isArray(item.replies)
+      ? item.replies.map(reply => normalizeReply(reply))
+      : []
+  }
+}
+
+function normalizeReply(reply) {
+  return {
+    id: reply.id,
+    replyUserId: reply.replyUserId || 0,
+    replyUser: reply.replyUser || reply.replyUserName || reply.userName || '',
+    replyTime: formatDate(reply.replyTime || reply.createdAt),
+    content: reply.content || reply.replyContent || ''
+  }
+}
 
 const filteredIssueList = computed(() => {
   return issueList.value.filter(item => {
+    const keyword = filters.keyword.trim()
+
     const keywordMatch =
-      !filters.keyword ||
-      item.projectName.includes(filters.keyword) ||
-      item.deviceType.includes(filters.keyword) ||
-      item.issueTitle.includes(filters.keyword) ||
-      item.owner.includes(filters.keyword) ||
-      item.creator.includes(filters.keyword)
+      !keyword ||
+      item.projectName.includes(keyword) ||
+      item.deviceType.includes(keyword) ||
+      item.issueTitle.includes(keyword) ||
+      item.owner.includes(keyword) ||
+      item.creator.includes(keyword)
 
     const projectMatch =
       !filters.projectName || item.projectName === filters.projectName
@@ -715,7 +788,7 @@ function openEditDialog(item) {
   showEditDialog.value = true
 }
 
-function saveIssue() {
+async function saveIssue() {
   if (!issueForm.projectName) {
     alert('请选择问题绑定项目')
     return
@@ -741,35 +814,60 @@ function saveIssue() {
     return
   }
 
-  if (editMode.value === 'create') {
-    issueList.value.unshift({
-      id: Date.now(),
-      projectName: issueForm.projectName,
-      deviceType: issueForm.deviceType,
-      issueSource: issueForm.issueSource,
-      level: issueForm.level,
-      issueTitle: issueForm.issueTitle,
-      owner: issueForm.owner,
-      creator: currentUserName.value,
-      createTime: new Date().toISOString().slice(0, 10),
-      planCloseTime: issueForm.planCloseTime,
-      realCloseTime: '',
-      closeStatus: 'open',
-      closeUser: '',
-      replies: []
-    })
-  } else {
-    currentEditIssue.value.projectName = issueForm.projectName
-    currentEditIssue.value.deviceType = issueForm.deviceType
-    currentEditIssue.value.issueSource = issueForm.issueSource
-    currentEditIssue.value.level = issueForm.level
-    currentEditIssue.value.issueTitle = issueForm.issueTitle
-    currentEditIssue.value.owner = issueForm.owner
-    currentEditIssue.value.planCloseTime = issueForm.planCloseTime
-    currentEditIssue.value.creator = currentEditIssue.value.creator || currentUserName.value
+  const projectId = projectMap.value[issueForm.projectName]
+
+  if (!projectId) {
+    alert('没有找到项目ID，请重新选择项目')
+    return
   }
 
-  showEditDialog.value = false
+  const payload = {
+    projectId,
+    projectName: issueForm.projectName,
+    deviceType: issueForm.deviceType,
+    issueSource: issueForm.issueSource,
+    source: issueForm.issueSource,
+    level: issueForm.level,
+    severity: issueForm.level,
+    issueTitle: issueForm.issueTitle,
+    title: issueForm.issueTitle,
+    ownerId: 1,
+    owner: issueForm.owner,
+    ownerName: issueForm.owner,
+    creatorId: 1,
+    creator: currentUserName.value,
+    creatorName: currentUserName.value,
+    createUserId: 1,
+    createUserName: currentUserName.value,
+    planCloseTime: issueForm.planCloseTime || '',
+    closeStatus: frontendCloseStatusToBackend('open'),
+    status: frontendCloseStatusToBackend('open')
+  }
+
+  try {
+    let res
+
+    if (editMode.value === 'create') {
+      res = await createIssue(payload)
+    } else {
+      res = await updateIssue(currentEditIssue.value.id, payload)
+    }
+
+    const result = getResponseData(res)
+
+    console.log('保存问题返回：', result)
+
+    if (result.code === 200) {
+      alert(editMode.value === 'create' ? '新增问题成功' : '修改问题成功')
+      showEditDialog.value = false
+      await loadIssues()
+    } else {
+      alert(result.msg || '保存问题失败')
+    }
+  } catch (err) {
+    console.error('保存问题失败：', err)
+    alert('保存问题失败，请检查后端接口')
+  }
 }
 
 function viewIssue(item) {
@@ -783,7 +881,7 @@ function openReplyDialog(item) {
   showReplyDialog.value = true
 }
 
-function saveReply() {
+async function saveReply() {
   if (!currentReplyIssue.value) return
 
   if (!replyForm.content) {
@@ -791,18 +889,35 @@ function saveReply() {
     return
   }
 
-  currentReplyIssue.value.replies.push({
-    id: Date.now(),
+  const payload = {
+    replyUserId: 1,
     replyUser: currentUserName.value,
-    replyTime: new Date().toISOString().slice(0, 10),
-    content: replyForm.content
-  })
+    replyUserName: currentUserName.value,
+    content: replyForm.content,
+    replyContent: replyForm.content
+  }
 
-  showReplyDialog.value = false
-  alert('问题回复已保存')
+  try {
+    const res = await replyIssue(currentReplyIssue.value.id, payload)
+    const result = getResponseData(res)
+
+    console.log('保存问题回复返回：', result)
+
+    if (result.code === 200) {
+      alert('问题回复已保存')
+      showReplyDialog.value = false
+      selectedIssue.value = null
+      await loadIssues()
+    } else {
+      alert(result.msg || '保存回复失败')
+    }
+  } catch (err) {
+    console.error('保存问题回复失败：', err)
+    alert('保存回复失败，请检查后端接口')
+  }
 }
 
-function closeIssue(item) {
+async function closeIssue(item) {
   if (!canCloseIssue(item)) {
     alert('只有问题创建者可以关闭该问题')
     return
@@ -811,15 +926,34 @@ function closeIssue(item) {
   const ok = confirm(`确认关闭问题【${item.issueTitle}】吗？`)
   if (!ok) return
 
-  item.closeStatus = 'closed'
-  item.closeUser = currentUserName.value
-  item.realCloseTime = new Date().toISOString().slice(0, 10)
+  const payload = {
+    closeUserId: 1,
+    closeUser: currentUserName.value,
+    closeUserName: currentUserName.value,
+    closeStatus: frontendCloseStatusToBackend('closed'),
+    status: frontendCloseStatusToBackend('closed')
+  }
 
-  selectedIssue.value = null
-  alert(`问题【${item.issueTitle}】已关闭`)
+  try {
+    const res = await closeIssueApi(item.id, payload)
+    const result = getResponseData(res)
+
+    console.log('关闭问题返回：', result)
+
+    if (result.code === 200) {
+      alert(`问题【${item.issueTitle}】已关闭`)
+      selectedIssue.value = null
+      await loadIssues()
+    } else {
+      alert(result.msg || '关闭问题失败')
+    }
+  } catch (err) {
+    console.error('关闭问题失败：', err)
+    alert('关闭问题失败，请检查后端接口')
+  }
 }
 
-function reopenIssue(item) {
+async function reopenIssue(item) {
   if (!canCloseIssue(item)) {
     alert('只有问题创建者可以重新打开该问题')
     return
@@ -828,12 +962,31 @@ function reopenIssue(item) {
   const ok = confirm(`确认重新打开问题【${item.issueTitle}】吗？`)
   if (!ok) return
 
-  item.closeStatus = 'open'
-  item.closeUser = ''
-  item.realCloseTime = ''
+  const payload = {
+    closeUserId: 0,
+    closeUser: '',
+    closeUserName: '',
+    closeStatus: frontendCloseStatusToBackend('open'),
+    status: frontendCloseStatusToBackend('open')
+  }
 
-  selectedIssue.value = null
-  alert(`问题【${item.issueTitle}】已重新打开`)
+  try {
+    const res = await reopenIssueApi(item.id, payload)
+    const result = getResponseData(res)
+
+    console.log('重新打开问题返回：', result)
+
+    if (result.code === 200) {
+      alert(`问题【${item.issueTitle}】已重新打开`)
+      selectedIssue.value = null
+      await loadIssues()
+    } else {
+      alert(result.msg || '重新打开失败')
+    }
+  } catch (err) {
+    console.error('重新打开问题失败：', err)
+    alert('重新打开失败，请检查后端接口')
+  }
 }
 
 function exportIssueRecords() {

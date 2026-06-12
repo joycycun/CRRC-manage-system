@@ -12,7 +12,7 @@ export default defineConfig({                //外部可引用defineConfig这个
   server: {                                   //服务器的配置
     proxy: {                                  //定义代理规则
       '/api': {                               //若请求路径为api开头
-        target: 'http://127.0.0.1:8000',      //则转发路径目标为target所写（Go后端地址）
+        target: 'http://localhost:8080',      //则转发路径目标为target所写（Go后端地址）
         changeOrigin: true                    //转发过去后 把host地址改成后端的地址 能够避免后端不处理  
       }
     }

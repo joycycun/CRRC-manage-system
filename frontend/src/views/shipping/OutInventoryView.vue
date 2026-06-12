@@ -6,26 +6,24 @@
       </div>
     </div>
 
-    <!-- 统计卡片 -->
     <div class="summary-grid two-col">
-      <div class="summary-card green">
-        <span>本月出库数量</span>
-        <strong>{{ currentMonthOutboundCount }}</strong>
-        <p>本月由发货批次生成的出库设备数量</p>
+      <div class="summary-card">
+        <span>累计出库数量</span>
+        <strong>{{ outboundCount }}</strong>
+        <p>发货批次审核通过后自动生成的出库设备数量</p>
       </div>
 
-      <div class="summary-card blue">
-        <span>发货数量</span>
-        <strong>{{ shippingCount }}</strong>
-        <p>已关联发货批次的设备数量</p>
+      <div class="summary-card green">
+        <span>当月出库数量</span>
+        <strong>{{ currentMonthOutboundCount }}</strong>
+        <p>本月已确认出库的设备数量</p>
       </div>
     </div>
 
-    <!-- 查询条件 -->
     <div class="filter-card">
       <input
         v-model="filters.keyword"
-        placeholder="搜索 SN / MAC / 软件版本 / 硬件版本 / 操作人 / 发货批次"
+        placeholder="搜索批次号 / 快递单号 / SN / MAC / 软件版本 / 硬件版本 / 出库人"
       />
 
       <select v-model="filters.deviceType">
@@ -39,16 +37,49 @@
         </option>
       </select>
 
-      <button class="query-btn">查询</button>
+      <button class="query-btn" @click="loadOutboundRecords">查询</button>
       <button class="reset-btn" @click="resetFilters">重置</button>
     </div>
 
-    <!-- 出库表格 -->
+    <div class="type-card">
+      <div class="section-title">
+        <h3>终端类型出库统计</h3>
+        <span>按终端类型统计已出库设备数量</span>
+      </div>
+
+      <div class="type-grid">
+        <div
+          v-for="item in deviceTypeSummary"
+          :key="item.deviceType"
+          class="type-item"
+        >
+          <span>{{ item.deviceType }}</span>
+          <strong>{{ item.count }}</strong>
+        </div>
+      </div>
+    </div>
+
     <div class="table-card">
       <div class="table-card-header">
         <div>
-          <h3>出库列表</h3>
-          <span>共 {{ filteredOutboundList.length }} 条出库记录</span>
+          <h3>出库记录列表</h3>
+          <span>
+            共 {{ filteredOutboundList.length }} 条，当前第 {{ currentPage }} / {{ totalPage }} 页
+          </span>
+        </div>
+
+        <div class="page-size-control">
+          <span>每页</span>
+          <select v-model.number="pageSize">
+            <option
+              v-for="size in pageSizeOptions"
+              :key="size"
+              :value="size"
+            >
+              {{ size }}
+            </option>
+          </select>
+          <span>条</span>
         </div>
       </div>
 
@@ -56,24 +87,30 @@
         <table class="version-table">
           <thead>
             <tr>
+              <th>发货批次</th>
               <th>终端类型</th>
               <th>SN序列号</th>
               <th>MAC地址</th>
               <th>软件版本</th>
               <th>硬件版本</th>
-              <th>入库时间</th>
               <th>出库时间</th>
-              <th>操作人</th>
-              <th>发货批次</th>
-              <th>发货状态</th>
+              <th>出库人</th>
+              <th>快递单号</th>
+              <th>状态</th>
               <th class="operation-col">操作</th>
             </tr>
           </thead>
 
           <tbody>
-            <tr v-for="item in filteredOutboundList" :key="item.outboundId">
+            <tr v-for="item in paginatedOutboundList" :key="item.outboundId">
               <td>
-                <span class="device-tag">{{ item.deviceType }}</span>
+                <span class="batch-tag" :title="item.shippingBatchNo">
+                  {{ item.shippingBatchNo || '-' }}
+                </span>
+              </td>
+
+              <td>
+                <span class="device-tag">{{ item.deviceType || '-' }}</span>
               </td>
 
               <td>
@@ -100,110 +137,96 @@
                 </span>
               </td>
 
-              <td class="muted">{{ item.inTime }}</td>
-              <td class="muted">{{ item.outboundTime }}</td>
+              <td class="muted">{{ item.outboundTime || '-' }}</td>
+
+              <td>{{ item.operator || '-' }}</td>
 
               <td>
-                <span class="normal-text" :title="item.operator">
-                  {{ item.operator }}
+                <span class="normal-text" :title="item.expressNo">
+                  {{ item.expressNo || '-' }}
                 </span>
               </td>
 
               <td>
-                <span class="batch-tag" :title="item.shippingBatchNo">
-                  {{ item.shippingBatchNo || '-' }}
-                </span>
-              </td>
-
-              <td>
-                <span
-                  class="ship-status-tag"
-                  :class="item.outboundStatus === 'shipping' ? 'shipping' : 'pending'"
-                >
+                <span class="status-tag" :class="getOutboundStatusClass(item.outboundStatus)">
                   {{ getOutboundStatusText(item.outboundStatus) }}
                 </span>
               </td>
 
               <td class="operation-col">
-                <div class="action-group">
-                  <button class="text-btn" @click="viewOutbound(item)">
-                    查看
-                  </button>
-
-                  <button class="text-btn green" @click="returnToInventory(item)">
-                    返回入库
-                  </button>
-
-                  <!-- <button class="text-btn red" @click="deleteOutbound(item)">
-                    删除
-                  </button> -->
-                </div>
+                <button class="text-btn blue" @click="viewOutbound(item)">
+                  查看
+                </button>
               </td>
             </tr>
 
-            <tr v-if="filteredOutboundList.length === 0">
+            <tr v-if="paginatedOutboundList.length === 0">
               <td colspan="11" class="empty-table">
-                暂无出库记录。请在发货批次管理页面新增批次并选择库存设备。
+                暂无符合条件的出库记录
               </td>
             </tr>
           </tbody>
         </table>
       </div>
 
+      <div class="pagination-bar">
+        <div class="pagination-info">
+          当前显示第 {{ pageStartIndex }} - {{ pageEndIndex }} 条，
+          共 {{ filteredOutboundList.length }} 条出库记录
+        </div>
+
+        <div class="pagination-actions">
+          <button
+            class="page-btn"
+            :disabled="currentPage === 1"
+            @click="goFirstPage"
+          >
+            首页
+          </button>
+
+          <button
+            class="page-btn"
+            :disabled="currentPage === 1"
+            @click="goPrevPage"
+          >
+            上一页
+          </button>
+
+          <span class="page-number">
+            {{ currentPage }} / {{ totalPage }}
+          </span>
+
+          <button
+            class="page-btn"
+            :disabled="currentPage === totalPage"
+            @click="goNextPage"
+          >
+            下一页
+          </button>
+
+          <button
+            class="page-btn"
+            :disabled="currentPage === totalPage"
+            @click="goLastPage"
+          >
+            末页
+          </button>
+        </div>
+      </div>
+
       <div class="table-footer">
-        出库记录由发货批次管理页面选择库存设备后自动生成，不再需要在此页面勾选生成发货批次。
+        出库记录由发货批次审核通过后自动生成，不支持在此页面直接新增或删除。
       </div>
     </div>
 
-    <!-- 查看详情弹窗 -->
     <div v-if="selectedOutbound" class="dialog-mask">
       <div class="dialog large-dialog">
         <div class="dialog-header">
-          <h3>出库设备详情</h3>
+          <h3>出库记录详情</h3>
           <button @click="selectedOutbound = null">×</button>
         </div>
 
         <div class="detail-card">
-          <div>
-            <span>终端类型</span>
-            <strong>{{ selectedOutbound.deviceType }}</strong>
-          </div>
-
-          <div>
-            <span>SN序列号</span>
-            <strong>{{ selectedOutbound.sn }}</strong>
-          </div>
-
-          <div>
-            <span>MAC地址</span>
-            <strong>{{ selectedOutbound.macAddress }}</strong>
-          </div>
-
-          <div>
-            <span>软件版本</span>
-            <strong>{{ selectedOutbound.softwareVersion }}</strong>
-          </div>
-
-          <div>
-            <span>硬件版本</span>
-            <strong>{{ selectedOutbound.hardwareVersion }}</strong>
-          </div>
-
-          <div>
-            <span>入库时间</span>
-            <strong>{{ selectedOutbound.inTime }}</strong>
-          </div>
-
-          <div>
-            <span>出库时间</span>
-            <strong>{{ selectedOutbound.outboundTime }}</strong>
-          </div>
-
-          <div>
-            <span>操作人</span>
-            <strong>{{ selectedOutbound.operator }}</strong>
-          </div>
-
           <div>
             <span>发货批次</span>
             <strong>{{ selectedOutbound.shippingBatchNo || '-' }}</strong>
@@ -215,7 +238,47 @@
           </div>
 
           <div>
-            <span>发货状态</span>
+            <span>终端类型</span>
+            <strong>{{ selectedOutbound.deviceType || '-' }}</strong>
+          </div>
+
+          <div>
+            <span>SN序列号</span>
+            <strong>{{ selectedOutbound.sn || '-' }}</strong>
+          </div>
+
+          <div>
+            <span>MAC地址</span>
+            <strong>{{ selectedOutbound.macAddress || '-' }}</strong>
+          </div>
+
+          <div>
+            <span>软件版本</span>
+            <strong>{{ selectedOutbound.softwareVersion || '-' }}</strong>
+          </div>
+
+          <div>
+            <span>硬件版本</span>
+            <strong>{{ selectedOutbound.hardwareVersion || '-' }}</strong>
+          </div>
+
+          <div>
+            <span>入库时间</span>
+            <strong>{{ selectedOutbound.inTime || '-' }}</strong>
+          </div>
+
+          <div>
+            <span>出库时间</span>
+            <strong>{{ selectedOutbound.outboundTime || '-' }}</strong>
+          </div>
+
+          <div>
+            <span>出库人</span>
+            <strong>{{ selectedOutbound.operator || '-' }}</strong>
+          </div>
+
+          <div>
+            <span>出库状态</span>
             <strong>{{ getOutboundStatusText(selectedOutbound.outboundStatus) }}</strong>
           </div>
         </div>
@@ -226,10 +289,6 @@
         </div>
 
         <div class="dialog-footer">
-          <button class="green-btn" @click="returnToInventory(selectedOutbound)">
-            返回入库
-          </button>
-
           <button class="primary-btn" @click="selectedOutbound = null">
             关闭
           </button>
@@ -240,136 +299,171 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { getOutboundRecords } from '@/api/outbound'
 
-const STORAGE_INVENTORY_KEY = 'inventoryList'
-const STORAGE_OUTBOUND_KEY = 'outInventoryList'
+const filters = reactive({ keyword: '', deviceType: '' })
+const selectedOutbound = ref(null)
+const outboundList = ref([])
+const currentPage = ref(1)
+const pageSize = ref(10)
+const pageSizeOptions = [10, 20, 50, 100]
 
-const filters = reactive({
-  keyword: '',
-  deviceType: ''
+onMounted(async () => {
+  await loadOutboundRecords()
 })
 
-const selectedOutbound = ref(null)
+function getResponseData(res) {
+  return res && res.data ? res.data : res
+}
 
-const deviceTypeOptions = [
-  '司机室控制盒',
-  '解码板',
-  '司机提醒单元',
-  '噪声检测',
-  '编码板',
-  '功放板'
-]
+function formatDateTime(value) {
+  if (!value) return ''
+  if (typeof value === 'string') return value.slice(0, 19).replace('T', ' ')
+  if (value.Time) return String(value.Time).slice(0, 19).replace('T', ' ')
+  return String(value)
+}
 
-function readStorageList(key, fallback) {
-  try {
-    const raw = localStorage.getItem(key)
-    if (!raw) return fallback
-    return JSON.parse(raw)
-  } catch (error) {
-    return fallback
+function normalizeOutbound(item) {
+  const status = item.outboundStatus || item.outbound_status || item.status || '已出库'
+
+  return {
+    outboundId: item.outboundId || item.outbound_id || item.detailId || item.detail_id || item.id,
+    detailId: item.detailId || item.detail_id || item.id || item.outboundId || item.outbound_id,
+    batchId: item.batchId || item.batch_id || 0,
+    inventoryDeviceId: item.inventoryDeviceId || item.inventory_device_id || 0,
+    deviceType: item.deviceType || item.device_type || '',
+    sn: item.sn || '',
+    macAddress: item.macAddress || item.mac_address || '',
+    softwareVersion: item.softwareVersion || item.software_version || '',
+    hardwareVersion: item.hardwareVersion || item.hardware_version || '',
+    inTime: formatDateTime(item.inTime || item.in_time),
+    outboundTime: formatDateTime(item.outboundTime || item.outbound_time),
+    operator: item.operator || item.outboundUserName || item.outbound_user_name || item.uploaderName || item.uploader_name || '',
+    shippingBatchNo: item.shippingBatchNo || item.shipping_batch_no || item.batchNo || item.batch_no || '',
+    expressNo: item.expressNo || item.express_no || '',
+    outboundStatus: normalizeOutboundStatus(status),
+    remark: item.remark || ''
   }
 }
 
-function saveStorageList(key, value) {
-  localStorage.setItem(key, JSON.stringify(value))
+function normalizeOutboundStatus(status) {
+  const map = {
+    shipped: '已出库',
+    shipping: '已出库',
+    pending: '待出库',
+    outbound: '已出库',
+    returned: '已退回',
+    已出库: '已出库',
+    待出库: '待出库',
+    已退回: '已退回'
+  }
+  return map[status] || status || '已出库'
 }
 
-const inventoryList = ref(readStorageList(STORAGE_INVENTORY_KEY, []))
-const outboundList = ref(readStorageList(STORAGE_OUTBOUND_KEY, []))
+async function loadOutboundRecords() {
+  try {
+    const res = await getOutboundRecords()
+    const result = getResponseData(res)
+    console.log('出库记录返回：', result)
 
-watch(
-  inventoryList,
-  value => {
-    saveStorageList(STORAGE_INVENTORY_KEY, value)
-  },
-  { deep: true }
-)
+    if (result.code !== 200) {
+      alert(result.msg || '加载出库记录失败')
+      return
+    }
 
-watch(
-  outboundList,
-  value => {
-    saveStorageList(STORAGE_OUTBOUND_KEY, value)
-  },
-  { deep: true }
-)
+    outboundList.value = (result.data || []).map(normalizeOutbound)
+  } catch (err) {
+    console.error('加载出库记录失败：', err)
+    alert(err.response?.data || '加载出库记录失败，请检查 /api/outbound-records 接口')
+  }
+}
 
 const completedOutboundList = computed(() => {
-  return outboundList.value.filter(item => {
-    return item.outboundStatus === 'shipped'
-  })
+  return outboundList.value.filter(item => item.outboundStatus !== '已退回')
+})
+
+const deviceTypeOptions = computed(() => {
+  return [...new Set(completedOutboundList.value.map(item => item.deviceType).filter(Boolean))]
 })
 
 const filteredOutboundList = computed(() => {
-  return outboundList.value.filter(item => {
-    return item.outboundStatus === 'shipped'
+  return completedOutboundList.value.filter(item => {
+    const keyword = filters.keyword.trim().toLowerCase()
+    const keywordMatch =
+      !keyword ||
+      String(item.sn || '').toLowerCase().includes(keyword) ||
+      String(item.macAddress || '').toLowerCase().includes(keyword) ||
+      String(item.softwareVersion || '').toLowerCase().includes(keyword) ||
+      String(item.hardwareVersion || '').toLowerCase().includes(keyword) ||
+      String(item.operator || '').toLowerCase().includes(keyword) ||
+      String(item.shippingBatchNo || '').toLowerCase().includes(keyword) ||
+      String(item.expressNo || '').toLowerCase().includes(keyword)
+
+    const deviceTypeMatch = !filters.deviceType || item.deviceType === filters.deviceType
+    return keywordMatch && deviceTypeMatch
   })
 })
 
+const outboundCount = computed(() => completedOutboundList.value.length)
+
 const currentMonthOutboundCount = computed(() => {
   const currentMonth = new Date().toISOString().slice(0, 7)
-
-  return completedOutboundList.value.filter(item => {
-    return item.outboundTime && item.outboundTime.startsWith(currentMonth)
-  }).length
+  return completedOutboundList.value.filter(item => item.outboundTime && item.outboundTime.startsWith(currentMonth)).length
 })
 
-const shippingCount = computed(() => {
-  return completedOutboundList.value.length
+const deviceTypeSummary = computed(() => {
+  const map = new Map()
+  completedOutboundList.value.forEach(item => {
+    const type = item.deviceType || '未填写'
+    map.set(type, (map.get(type) || 0) + 1)
+  })
+  return [...map.entries()].map(([deviceType, count]) => ({ deviceType, count }))
 })
+
+const totalPage = computed(() => Math.max(1, Math.ceil(filteredOutboundList.value.length / pageSize.value)))
+const paginatedOutboundList = computed(() => {
+  if (currentPage.value > totalPage.value) currentPage.value = totalPage.value
+  const start = (currentPage.value - 1) * pageSize.value
+  return filteredOutboundList.value.slice(start, start + pageSize.value)
+})
+const pageStartIndex = computed(() => filteredOutboundList.value.length === 0 ? 0 : (currentPage.value - 1) * pageSize.value + 1)
+const pageEndIndex = computed(() => Math.min(currentPage.value * pageSize.value, filteredOutboundList.value.length))
 
 function getOutboundStatusText(status) {
-  const map = {
-    shipped: '已完成发货'
-  }
+  const map = { 已出库: '已出库', 待出库: '待出库', 已退回: '已退回' }
+  return map[status] || status || '已出库'
+}
 
-  return map[status] || '已完成发货'
+function getOutboundStatusClass(status) {
+  const map = { 已出库: 'shipped', 待出库: 'pending', 已退回: 'returned' }
+  return map[status] || 'shipped'
 }
 
 function resetFilters() {
   filters.keyword = ''
   filters.deviceType = ''
+  currentPage.value = 1
 }
 
 function viewOutbound(item) {
   selectedOutbound.value = item
 }
 
-function returnToInventory(item) {
-  const ok = confirm(`确认将设备【${item.sn}】返回库存吗？`)
-  if (!ok) return
-
-  inventoryList.value.unshift({
-    id: Date.now(),
-    deviceType: item.deviceType,
-    sn: item.sn,
-    macAddress: item.macAddress,
-    softwareVersion: item.softwareVersion,
-    hardwareVersion: item.hardwareVersion,
-    inventoryStatus: 'ready',
-    inTime: item.inTime,
-    updateTime: new Date().toISOString().slice(0, 10),
-    remark: '该设备由出库记录返回库存。'
-  })
-
-  outboundList.value = outboundList.value.filter(
-    record => record.outboundId !== item.outboundId
-  )
-
-  selectedOutbound.value = null
-
-  alert('设备已返回库存')
+function goFirstPage() {
+  currentPage.value = 1
 }
 
-function deleteOutbound(item) {
-  const ok = confirm(`确认删除出库记录【${item.sn}】吗？删除后不会返回库存。`)
-  if (!ok) return
+function goPrevPage() {
+  if (currentPage.value > 1) currentPage.value -= 1
+}
 
-  outboundList.value = outboundList.value.filter(
-    record => record.outboundId !== item.outboundId
-  )
+function goNextPage() {
+  if (currentPage.value < totalPage.value) currentPage.value += 1
+}
 
-  selectedOutbound.value = null
+function goLastPage() {
+  currentPage.value = totalPage.value
 }
 </script>
 
@@ -430,15 +524,63 @@ function deleteOutbound(item) {
   color: #4ade80;
 }
 
-.summary-card.blue strong {
-  color: #60a5fa;
+.type-card {
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 14px;
+  padding: 18px;
+  margin-bottom: 20px;
+}
+
+.section-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.section-title h3 {
+  margin: 0;
+  font-size: 16px;
+  color: #f8fafc;
+}
+
+.section-title span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.type-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 12px;
+}
+
+.type-item {
+  background: #020617;
+  border: 1px solid #1e293b;
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.type-item span {
+  display: block;
+  color: #94a3b8;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.type-item strong {
+  color: #f8fafc;
+  font-size: 22px;
 }
 
 .primary-btn,
 .query-btn,
 .reset-btn,
 .green-btn,
-.red-btn {
+.red-btn,
+.page-btn {
   height: 36px;
   padding: 0 16px;
   border-radius: 8px;
@@ -459,22 +601,21 @@ function deleteOutbound(item) {
   background: #1d4ed8;
 }
 
-.reset-btn {
+.reset-btn,
+.page-btn {
   border: 1px solid #334155;
   background: #1e293b;
   color: #cbd5e1;
 }
 
-.green-btn {
-  border: 1px solid #166534;
-  background: #052e16;
-  color: #86efac;
+.page-btn:hover:not(:disabled) {
+  background: #334155;
+  color: #fff;
 }
 
-.red-btn {
-  border: 1px solid #7f1d1d;
-  background: #450a0a;
-  color: #fca5a5;
+.page-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .filter-card {
@@ -489,7 +630,8 @@ function deleteOutbound(item) {
 }
 
 .filter-card input,
-.filter-card select {
+.filter-card select,
+.page-size-control select {
   border: 1px solid #334155;
   border-radius: 8px;
   background: #020617;
@@ -529,6 +671,21 @@ function deleteOutbound(item) {
   font-size: 12px;
 }
 
+.page-size-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.page-size-control span {
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.page-size-control select {
+  width: 90px;
+}
+
 .table-wrapper {
   width: 100%;
   overflow-x: auto;
@@ -554,9 +711,18 @@ function deleteOutbound(item) {
   background: #475569;
 }
 
+.table-wrapper::-webkit-scrollbar-button {
+  display: none;
+}
+
+.table-wrapper {
+  scrollbar-width: thin;
+  scrollbar-color: #334155 #020617;
+}
+
 .version-table {
   width: 100%;
-  min-width: 1420px;
+  min-width: 1060px;
   border-collapse: collapse;
   table-layout: fixed;
 }
@@ -590,17 +756,8 @@ function deleteOutbound(item) {
 }
 
 .operation-col {
-  width: 250px;
+  width: 120px;
   text-align: right !important;
-}
-
-.action-group {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: nowrap;
-  white-space: nowrap;
 }
 
 .device-tag {
@@ -655,9 +812,7 @@ function deleteOutbound(item) {
   white-space: nowrap;
 }
 
-.mac-text,
-.normal-text,
-.batch-tag {
+.mac-text {
   display: inline-block;
   max-width: 160px;
   color: #cbd5e1;
@@ -668,16 +823,26 @@ function deleteOutbound(item) {
   white-space: nowrap;
 }
 
+.batch-tag,
+.normal-text {
+  display: inline-block;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .batch-tag {
-  padding: 4px 9px;
+  padding: 3px 8px;
   border-radius: 999px;
   background: #1d4ed833;
-  color: #60a5fa;
+  color: #93c5fd;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .normal-text {
-  font-family: inherit;
-  font-size: 13px;
+  color: #cbd5e1;
 }
 
 .version-cell {
@@ -686,25 +851,6 @@ function deleteOutbound(item) {
 
 .muted {
   color: #94a3b8 !important;
-}
-
-.ship-status-tag {
-  display: inline-block;
-  padding: 4px 9px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.ship-status-tag.pending {
-  background: #47556933;
-  color: #94a3b8;
-}
-
-.ship-status-tag.shipping {
-  background: #1d4ed833;
-  color: #60a5fa;
 }
 
 .text-btn {
@@ -720,12 +866,35 @@ function deleteOutbound(item) {
   color: #fff;
 }
 
-.text-btn.green {
+.text-btn.blue {
+  color: #60a5fa;
+}
+
+.status-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 64px;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.status-tag.shipped {
+  background: #16a34a33;
   color: #4ade80;
 }
 
-.text-btn.red {
-  color: #f87171;
+.status-tag.pending {
+  background: #f59e0b33;
+  color: #fbbf24;
+}
+
+.status-tag.returned {
+  background: #64748b33;
+  color: #cbd5e1;
 }
 
 .empty-table {
@@ -734,10 +903,38 @@ function deleteOutbound(item) {
   padding: 28px 16px !important;
 }
 
+.pagination-bar {
+  padding: 14px 16px;
+  border-top: 1px solid #1e293b;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.pagination-info {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.pagination-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.page-number {
+  min-width: 70px;
+  text-align: center;
+  color: #cbd5e1;
+  font-size: 13px;
+}
+
 .table-footer {
   padding: 12px 16px;
   color: #64748b;
   font-size: 12px;
+  border-top: 1px solid #1e293b;
 }
 
 .dialog-mask {
@@ -834,15 +1031,38 @@ function deleteOutbound(item) {
   gap: 12px;
 }
 
+@media (max-width: 1200px) {
+  .type-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
 @media (max-width: 960px) {
-  .filter-card,
+  .filter-card {
+    grid-template-columns: 1fr;
+  }
+
   .summary-grid,
-  .detail-card {
+  .type-grid {
     grid-template-columns: 1fr;
   }
 
   .version-table {
-    min-width: 1420px;
+    min-width: 1060px;
+  }
+
+  .table-card-header,
+  .pagination-bar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .pagination-actions {
+    flex-wrap: wrap;
+  }
+
+  .detail-card {
+    grid-template-columns: 1fr;
   }
 }
 </style>

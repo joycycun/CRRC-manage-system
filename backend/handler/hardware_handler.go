@@ -166,6 +166,8 @@ func CreateHardwareVersionHandler(w http.ResponseWriter, r *http.Request) {
 			status,
 			owner_id,
 			owner_name,
+			uploader_id,
+			uploader_name,
 			zip_file_id,
 			description,
 			created_at,
@@ -369,6 +371,10 @@ func HardwareTestActionHandler(w http.ResponseWriter, r *http.Request) {
 		AuditHardwareTestHandler(w, r, id)
 		return
 	}
+	if len(parts) == 2 && r.Method == http.MethodPost && parts[1] == "submit" {
+		SubmitHardwareTestHandler(w, r, id)
+		return
+	}
 
 	http.Error(w, "接口不存在", http.StatusNotFound)
 }
@@ -379,26 +385,31 @@ func HardwareTestActionHandler(w http.ResponseWriter, r *http.Request) {
 
 func GetHardwareTestsHandler(w http.ResponseWriter, r *http.Request) {
 	rows, err := config.DB.Query(`
-		SELECT
-			id,
-			project_id,
-			hardware_id,
-			IFNULL(record_name, ''),
-			IFNULL(device_type, ''),
-			file_id,
-			IFNULL(audit_status, ''),
-			IFNULL(auditor_id, 0),
-			IFNULL(auditor_name, ''),
-			audit_time,
-			IFNULL(reject_reason, ''),
-			IFNULL(remark, ''),
-			created_at,
-			updated_at,
-			is_deleted
-		FROM hardware_tests
-		WHERE is_deleted = 0
-		ORDER BY id DESC
-	`)
+	SELECT
+		ht.id,
+		ht.project_id,
+		IFNULL(p.project_name, ''),
+		ht.hardware_id,
+		IFNULL(hv.hardware_version, ''),
+		ht.record_name,
+		ht.device_type,
+		IFNULL(ht.file_id, 0),
+		IFNULL(ht.uploader_id, 0),
+		IFNULL(ht.uploader_name, ''),
+		IFNULL(ht.audit_status, ''),
+		IFNULL(ht.auditor_id, 0),
+		IFNULL(ht.auditor_name, ''),
+		ht.audit_time,
+		IFNULL(ht.reject_reason, ''),
+		IFNULL(ht.remark, ''),
+		ht.created_at,
+		IFNULL(ht.is_deleted, 0)
+	FROM hardware_tests ht
+	LEFT JOIN projects p ON ht.project_id = p.id
+	LEFT JOIN hardware_versions hv ON ht.hardware_id = hv.id
+	WHERE ht.is_deleted = 0
+	ORDER BY ht.id DESC
+`)
 	if err != nil {
 		http.Error(w, "查询失败: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -413,10 +424,14 @@ func GetHardwareTestsHandler(w http.ResponseWriter, r *http.Request) {
 		err := rows.Scan(
 			&item.ID,
 			&item.ProjectID,
+			&item.ProjectName,
 			&item.HardwareID,
+			&item.HardwareVersion,
 			&item.RecordName,
 			&item.DeviceType,
 			&item.FileID,
+			&item.UploaderID,
+			&item.UploaderName,
 			&item.AuditStatus,
 			&item.AuditorID,
 			&item.AuditorName,
@@ -424,7 +439,6 @@ func GetHardwareTestsHandler(w http.ResponseWriter, r *http.Request) {
 			&item.RejectReason,
 			&item.Remark,
 			&item.CreatedAt,
-			&item.UpdatedAt,
 			&item.IsDeleted,
 		)
 		if err != nil {
@@ -494,7 +508,10 @@ func CreateHardwareTestHandler(w http.ResponseWriter, r *http.Request) {
 			remark,
 			created_at,
 			updated_at,
-			is_deleted
+			is_deleted,
+			uploader_id,
+			uploader_name,
+			upload_time
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
 	`,
 		item.ProjectID,
@@ -617,5 +634,33 @@ func DeleteHardwareTestHandler(w http.ResponseWriter, r *http.Request, id int64)
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"code": 200,
 		"msg":  "删除成功",
+	})
+}
+func SubmitHardwareTestHandler(w http.ResponseWriter, r *http.Request, id int64) {
+	w.Header().Set("Content-Type", "application/json")
+
+	result, err := config.DB.Exec(`
+		UPDATE hardware_tests
+		SET
+			audit_status = '待审核',
+			reject_reason = '',
+			updated_at = NOW()
+		WHERE id = ? AND is_deleted = 0
+	`, id)
+
+	if err != nil {
+		http.Error(w, "提交失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	affected, _ := result.RowsAffected()
+	if affected == 0 {
+		http.Error(w, "硬件测试记录不存在或已删除", http.StatusNotFound)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"code": 200,
+		"msg":  "提交成功",
 	})
 }

@@ -37,7 +37,7 @@
         <option value="rejected">审核驳回</option>
       </select>
 
-      <button class="query-btn">查询</button>
+      <button class="query-btn" @click="loadHardwareTests">查询</button>
       <button class="reset-btn" @click="resetFilters">重置</button>
     </div>
 
@@ -415,7 +415,18 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+
+import { getProjects } from '@/api/project'
+
+import {
+  getHardwareVersions,
+  getHardwareTests,
+  createHardwareTest,
+  submitHardwareTest,
+  auditHardwareTest,
+  deleteHardwareTest
+} from '@/api/hardware'
 
 const currentUserName = ref(
   localStorage.getItem('username') ||
@@ -437,20 +448,11 @@ const selectedTest = ref(null)
 const currentRejectTest = ref(null)
 const selectedRejectReason = ref(null)
 
-const projectOptions = [
-  '香港屯马项目',
-  '波尔图二期项目',
-  '阿根廷有轨项目',
-  '波哥大有轨项目',
-  '成都项目'
-]
+const projectOptions = ref([])
+const projectMap = ref({})
 
-const hardwareVersionOptions = [
-  'HD-CRRC-HKTM.01.V1.1.0',
-  'HD-CRRC-AGTB-04.T1.1.0',
-  'HD-CRRC-BOGT-03.T1.1.0',
-  'HD-CRRC-DUBAI-05.S1.1.0'
-]
+const hardwareVersionOptions = ref([])
+const hardwareVersionMap = ref({})
 
 const deviceTypeOptions = [
   '广播控制盒',
@@ -478,72 +480,169 @@ const rejectForm = reactive({
   reason: ''
 })
 
-const hardwareTestList = ref([
-  {
-    id: 1,
-    projectName: '香港屯马项目',
-    recordName: '香港屯马广播控制盒硬件测试记录',
-    hardwareVersion: 'HD-CRRC-HKTM',
-    deviceType: '广播控制盒',
-    fileName: '香港屯马硬件测试记录_V1.0.docx',
-    fileUrl: '',
-    uploader: '郑宇',
-    uploadTime: '2026-05-10',
-    auditStatus: 'approved',
-    auditor: '领导',
-    auditTime: '2026-05-11',
-    rejectReason: '',
-    remark: '硬件功能测试通过，音频输入输出、按键、网络通信测试正常'
-  },
-  {
-    id: 2,
-    projectName: '波尔图二期项目',
-    recordName: '波尔图客室解码板硬件测试记录',
-    hardwareVersion: 'HD-CRRC-POR2',
-    deviceType: '客室解码板',
-    fileName: '波尔图硬件测试记录_V0.9.docx',
-    fileUrl: '',
-    uploader: '郑宇',
-    uploadTime: '2026-05-16',
-    auditStatus: 'submitted',
-    auditor: '',
-    auditTime: '',
-    rejectReason: '',
-    remark: '待领导审核确认'
-  },
-  {
-    id: 3,
-    projectName: '阿根廷有轨项目',
-    recordName: '阿根廷乘客报警器硬件测试记录',
-    hardwareVersion: 'HD-CRRC-AGTB',
-    deviceType: '乘客报警器',
-    fileName: '阿根廷硬件测试记录_草稿.docx',
-    fileUrl: '',
-    uploader: '郑宇',
-    uploadTime: '2026-05-18',
-    auditStatus: 'draft',
-    auditor: '',
-    auditTime: '',
-    rejectReason: '',
-    remark: '草稿，尚未提交审核'
-  },
-  {
-    id: 4,
-    projectName: '波哥大有轨项目',
-    recordName: '波哥大编码板硬件测试记录',
-    hardwareVersion: 'HD-CRRC-BOGT',
-    deviceType: '编码板',
-    fileName: '波哥大硬件测试记录_V1.1.docx',
-    fileUrl: '',
-    uploader: '郑宇',
-    uploadTime: '2026-05-20',
-    auditStatus: 'rejected',
-    auditor: '领导',
-    auditTime: '2026-05-21',
-    rejectReason: '测试结论不完整，需要补充接口测试结果、测试截图和最终结论。',
-    remark: '测试结论不完整，需要补充接口测试结果'
+const hardwareTestList = ref([])
+
+onMounted(async () => {
+  await loadProjects()
+  await loadHardwareVersions()
+  await loadHardwareTests()
+})
+
+function getResponseData(res) {
+  if (res && res.data) return res.data
+  return res
+}
+
+function formatDate(value) {
+  if (!value) return ''
+
+  // 后端返回普通字符串
+  if (typeof value === 'string') {
+    return value.slice(0, 10)
   }
-])
+
+  // 后端返回 Go 的 sql.NullTime：{ Time: "...", Valid: true }
+  if (typeof value === 'object') {
+    if (value.Valid === false) return ''
+
+    const timeValue = value.Time || value.time
+    if (timeValue) {
+      return String(timeValue).slice(0, 10)
+    }
+  }
+
+  return ''
+}
+function backendAuditStatusToFrontend(status) {
+  const map = {
+    草稿: 'draft',
+    未提交: 'draft',
+    待审核: 'submitted',
+    已通过: 'approved',
+    审核通过: 'approved',
+    已驳回: 'rejected',
+    审核驳回: 'rejected',
+    draft: 'draft',
+    submitted: 'submitted',
+    approved: 'approved',
+    rejected: 'rejected'
+  }
+
+  return map[status] || status || 'draft'
+}
+
+function findProjectName(projectId) {
+  const found = Object.entries(projectMap.value).find(([, id]) => Number(id) === Number(projectId))
+  return found ? found[0] : `项目ID-${projectId}`
+}
+
+function findHardwareVersion(hardwareId) {
+  const found = Object.entries(hardwareVersionMap.value).find(([, id]) => Number(id) === Number(hardwareId))
+  return found ? found[0] : `硬件ID-${hardwareId}`
+}
+
+async function loadProjects() {
+  try {
+    const res = await getProjects()
+    const result = getResponseData(res)
+
+    if (result.code !== 200) {
+      alert(result.msg || '加载项目失败')
+      return
+    }
+
+    const list = result.data || []
+    projectOptions.value = list.map(item => item.projectName)
+
+    const map = {}
+    list.forEach(item => {
+      map[item.projectName] = item.id
+    })
+
+    projectMap.value = map
+  } catch (err) {
+    console.error('加载项目失败：', err)
+    alert('加载项目失败')
+  }
+}
+
+async function loadHardwareVersions() {
+  try {
+    const res = await getHardwareVersions()
+    const result = getResponseData(res)
+
+    if (result.code !== 200) {
+      alert(result.msg || '加载硬件版本失败')
+      return
+    }
+
+    const list = result.data || []
+
+    hardwareVersionOptions.value = list.map(item => item.hardwareVersion)
+
+    const map = {}
+    list.forEach(item => {
+      map[item.hardwareVersion] = item.id
+    })
+
+    hardwareVersionMap.value = map
+  } catch (err) {
+    console.error('加载硬件版本失败：', err)
+    alert('加载硬件版本失败')
+  }
+}
+
+async function loadHardwareTests() {
+  try {
+    const res = await getHardwareTests()
+    const result = getResponseData(res)
+
+    console.log('硬件测试列表返回：', result)
+
+    if (result.code !== 200) {
+      alert(result.msg || '加载硬件测试记录失败')
+      return
+    }
+
+    hardwareTestList.value = (result.data || []).map(item => normalizeHardwareTest(item))
+  } catch (err) {
+    console.error('加载硬件测试记录失败：', err)
+    alert('加载硬件测试记录失败，请检查后端接口')
+  }
+}
+
+function normalizeHardwareTest(item) {
+  return {
+    id: item.id,
+    projectId: item.projectId || 0,
+    hardwareId: item.hardwareId || 0,
+    projectName: item.projectName || findProjectName(item.projectId),
+    recordName: item.recordName || item.testName || item.hardwareTestName || '',
+    hardwareVersion: item.hardwareVersion || findHardwareVersion(item.hardwareId),
+    deviceType: item.deviceType || '',
+    fileId: item.fileId || 0,
+    fileName:
+      item.fileName ||
+      item.fileDisplayName ||
+      (item.fileId ? `文件ID-${item.fileId}.docx` : '暂无文件'),
+    fileUrl: item.fileUrl || '',
+    uploaderId: item.uploaderId || 0,
+    uploader:
+  item.uploaderName ||
+  item.uploadUserName ||
+  item.submitUserName ||
+  item.creatorName ||
+  item.uploader ||
+  currentUserName.value ||
+  '当前用户',
+    uploadTime: formatDate(item.uploadTime || item.createdAt),
+    auditStatus: backendAuditStatusToFrontend(item.auditStatus || item.status),
+    auditor: item.auditorName || item.auditUserName || item.auditor || '',
+    auditTime: formatDate(item.auditTime),
+    rejectReason: item.rejectReason || '',
+    remark: item.remark || ''
+  }
+}
 
 const filteredTestList = computed(() => {
   return hardwareTestList.value.filter(item => {
@@ -614,7 +713,7 @@ function handleFileChange(event) {
   uploadForm.fileUrl = URL.createObjectURL(file)
 }
 
-function uploadTest() {
+async function uploadTest() {
   if (!uploadForm.deviceType) {
     alert('请选择终端类型')
     return
@@ -640,24 +739,57 @@ function uploadTest() {
     return
   }
 
-  hardwareTestList.value.unshift({
-    id: Date.now(),
-    projectName: uploadForm.projectName,
-    recordName: uploadForm.recordName,
-    hardwareVersion: uploadForm.hardwareVersion,
-    deviceType: uploadForm.deviceType,
-    fileName: uploadForm.fileName,
-    fileUrl: uploadForm.fileUrl,
-    uploader: currentUserName.value,
-    uploadTime: new Date().toISOString().slice(0, 10),
-    auditStatus: 'draft',
-    auditor: '',
-    auditTime: '',
-    rejectReason: '',
-    remark: uploadForm.remark
-  })
+  const projectId = projectMap.value[uploadForm.projectName]
+  const hardwareId = hardwareVersionMap.value[uploadForm.hardwareVersion]
 
-  showUploadDialog.value = false
+  if (!projectId) {
+    alert('没有找到项目ID，请重新选择项目')
+    return
+  }
+
+  if (!hardwareId) {
+    alert('没有找到硬件版本ID，请重新选择硬件版本')
+    return
+  }
+
+const payload = {
+  projectId,
+  hardwareId,
+  deviceType: uploadForm.deviceType,
+  testName: uploadForm.recordName,
+  recordName: uploadForm.recordName,
+  hardwareVersion: uploadForm.hardwareVersion,
+  fileId: 1,
+  fileName: uploadForm.fileName,
+
+  // 上传人
+  uploaderId: 1,
+  uploaderName: currentUserName.value,
+  uploadUserId: 1,
+  uploadUserName: currentUserName.value,
+
+  auditStatus: '草稿',
+  status: '草稿',
+  remark: uploadForm.remark || ''
+}
+
+  try {
+    const res = await createHardwareTest(payload)
+    const result = getResponseData(res)
+
+    console.log('新增硬件测试记录返回：', result)
+
+    if (result.code === 200) {
+      alert('上传硬件测试记录成功')
+      showUploadDialog.value = false
+      await loadHardwareTests()
+    } else {
+      alert(result.msg || '上传硬件测试记录失败')
+    }
+  } catch (err) {
+    console.error('上传硬件测试记录失败：', err)
+    alert('上传硬件测试记录失败，请检查后端接口')
+  }
 }
 
 function viewTest(item) {
@@ -666,7 +798,7 @@ function viewTest(item) {
 
 function downloadTest(item) {
   if (!item.fileUrl) {
-    alert('当前是模拟数据，暂无可下载的 Word 文件')
+    alert('当前还没有接真实文件下载，后面做 project_files 文件上传下载时再接')
     return
   }
 
@@ -678,25 +810,65 @@ function downloadTest(item) {
   document.body.removeChild(link)
 }
 
-function submitTest(item) {
-  item.auditStatus = 'submitted'
-  item.auditor = ''
-  item.auditTime = ''
-  item.rejectReason = ''
-  alert(`硬件测试记录【${item.recordName}】已提交领导审核`)
+async function submitTest(item) {
+  if (!item || !item.id) {
+    alert('提交失败：没有拿到硬件测试记录ID')
+    return
+  }
+
+  try {
+    const res = await submitHardwareTest(item.id)
+    const result = getResponseData(res)
+
+    console.log('提交硬件测试记录返回：', result)
+
+    if (result.code === 200) {
+      alert(`硬件测试记录【${item.recordName}】已提交领导审核`)
+      await loadHardwareTests()
+    } else {
+      alert(result.msg || '提交失败')
+    }
+  } catch (err) {
+    console.error('提交硬件测试记录失败：', err)
+    alert('提交失败。如果这里是 404，说明后端还没有 /api/hardware-tests/{id}/submit 接口')
+  }
 }
 
 function auditTest(item) {
   selectedTest.value = item
 }
 
-function approveTest(item) {
-  item.auditStatus = 'approved'
-  item.auditor = '领导'
-  item.auditTime = new Date().toISOString().slice(0, 10)
-  item.rejectReason = ''
-  selectedTest.value = null
-  alert(`硬件测试记录【${item.recordName}】审核通过`)
+async function approveTest(item) {
+  if (!item || !item.id) {
+    alert('审核失败：没有拿到硬件测试记录ID')
+    return
+  }
+
+  try {
+    const res = await auditHardwareTest(item.id, {
+      auditorId: 1,
+      auditorName: '领导',
+      auditUserId: 1,
+      auditUserName: '领导',
+      auditStatus: '已通过',
+      rejectReason: ''
+    })
+
+    const result = getResponseData(res)
+
+    console.log('硬件测试审核通过返回：', result)
+
+    if (result.code === 200) {
+      alert(`硬件测试记录【${item.recordName}】审核通过`)
+      selectedTest.value = null
+      await loadHardwareTests()
+    } else {
+      alert(result.msg || '审核失败')
+    }
+  } catch (err) {
+    console.error('硬件测试审核失败：', err)
+    alert('审核失败，请检查后端接口')
+  }
 }
 
 function openRejectDialog(item) {
@@ -705,7 +877,7 @@ function openRejectDialog(item) {
   showRejectDialog.value = true
 }
 
-function confirmRejectTest() {
+async function confirmRejectTest() {
   if (!currentRejectTest.value) return
 
   if (!rejectForm.reason) {
@@ -713,28 +885,64 @@ function confirmRejectTest() {
     return
   }
 
-  currentRejectTest.value.auditStatus = 'rejected'
-  currentRejectTest.value.auditor = '领导'
-  currentRejectTest.value.auditTime = new Date().toISOString().slice(0, 10)
-  currentRejectTest.value.rejectReason = rejectForm.reason
+  try {
+    const res = await auditHardwareTest(currentRejectTest.value.id, {
+      auditorId: 1,
+      auditorName: '领导',
+      auditUserId: 1,
+      auditUserName: '领导',
+      auditStatus: '已驳回',
+      rejectReason: rejectForm.reason
+    })
 
-  showRejectDialog.value = false
-  selectedTest.value = null
+    const result = getResponseData(res)
 
-  alert(`硬件测试记录【${currentRejectTest.value.recordName}】已驳回`)
+    console.log('硬件测试审核驳回返回：', result)
+
+    if (result.code === 200) {
+      alert(`硬件测试记录【${currentRejectTest.value.recordName}】已驳回`)
+      showRejectDialog.value = false
+      selectedTest.value = null
+      await loadHardwareTests()
+    } else {
+      alert(result.msg || '驳回失败')
+    }
+  } catch (err) {
+    console.error('硬件测试驳回失败：', err)
+    alert('驳回失败，请检查后端接口')
+  }
 }
 
 function viewRejectReason(item) {
   selectedRejectReason.value = item.rejectReason || '暂无驳回原因'
 }
 
-function deleteTest(item) {
+async function deleteTest(item) {
+  if (!item || !item.id) {
+    alert('删除失败：没有拿到硬件测试记录ID')
+    return
+  }
+
   const ok = confirm(`确认删除硬件测试记录【${item.recordName}】吗？`)
   if (!ok) return
 
-  hardwareTestList.value = hardwareTestList.value.filter(
-    record => record.id !== item.id
-  )
+  try {
+    const res = await deleteHardwareTest(item.id)
+    const result = getResponseData(res)
+
+    console.log('删除硬件测试记录返回：', result)
+
+    if (result.code === 200) {
+      alert('删除成功')
+      selectedTest.value = null
+      await loadHardwareTests()
+    } else {
+      alert(result.msg || '删除失败')
+    }
+  } catch (err) {
+    console.error('删除硬件测试记录失败：', err)
+    alert('删除失败，请检查后端接口')
+  }
 }
 </script>
 

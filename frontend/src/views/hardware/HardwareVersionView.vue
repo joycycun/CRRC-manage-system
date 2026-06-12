@@ -42,7 +42,7 @@
         <option value="sample">样品</option>
       </select>
 
-      <button class="query-btn">查询</button>
+      <button class="query-btn" @click="loadHardwareVersions">查询</button>
       <button class="reset-btn" @click="resetFilters">重置</button>
     </div>
 
@@ -373,7 +373,16 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+
+import { getProjects } from '@/api/project'
+
+import {
+  getHardwareVersions,
+  createHardwareVersion,
+  updateHardwareVersion,
+  uploadHardwareZip
+} from '@/api/hardware'
 
 const currentUserName = ref(
   localStorage.getItem('username') ||
@@ -407,13 +416,8 @@ const deviceTypeOptions = [
   '噪声检测器'
 ]
 
-const projectOptions = [
-  '香港屯马项目',
-  '波尔图二期项目',
-  '阿根廷有轨项目',
-  '波哥大有轨项目',
-  '成都项目'
-]
+const projectOptions = ref([])
+const projectMap = ref({})
 
 const hardwareForm = reactive({
   hardwareVersion: '',
@@ -434,56 +438,139 @@ const zipForm = reactive({
   remark: ''
 })
 
-const hardwareVersionList = ref([
-  {
-    id: 1,
-    hardwareVersion: 'HD-CRRC-HKTM.01.V1.1.0',
-    deviceType: '广播控制盒',
-    bindProjects: ['香港屯马项目', '波尔图二期项目'],
-    status: 'batch',
-    owner: '王宇',
-    updateTime: '2026-05-10',
-    zipFileName: '',
-    zipFileUrl: '',
-    description: '广播控制盒硬件版本，适配司机人工广播和乘客报警功能'
-  },
-  {
-    id: 2,
-    hardwareVersion: 'HD-CRRC-AGTB-04.T1.1.0',
-    deviceType: '客室解码板',
-    bindProjects: ['阿根廷有轨项目'],
-    status: 'trial',
-    owner: '王宇',
-    updateTime: '2026-05-16',
-    zipFileName: '',
-    zipFileUrl: '',
-    description: '客室解码板硬件试产版本，用于车厢广播解码'
-  },
-  {
-    id: 3,
-    hardwareVersion: 'HD-CRRC-BOGT-03.T1.1.0',
-    deviceType: '乘客报警器',
-    bindProjects: ['波哥大有轨项目'],
-    status: 'batch',
-    owner: '郑宇',
-    updateTime: '2026-05-18',
-    zipFileName: '',
-    zipFileUrl: '',
-    description: '乘客报警器硬件批量版本'
-  },
-  {
-    id: 4,
-    hardwareVersion: 'HD-CRRC-DUBAI-05.S1.1.0',
-    deviceType: '编码板',
-    bindProjects: ['迪拜项目'],
-    status: 'sample',
-    owner: '郑宇',
-    updateTime: '2026-05-20',
-    zipFileName: '',
-    zipFileUrl: '',
-    description: '编码板硬件样品版本'
+const hardwareVersionList = ref([])
+
+onMounted(async () => {
+  await loadProjects()
+  await loadHardwareVersions()
+})
+
+function getResponseData(res) {
+  if (res && res.data) return res.data
+  return res
+}
+
+function formatDate(value) {
+  if (!value) return ''
+  if (typeof value === 'string') return value.slice(0, 10)
+  return value
+}
+
+function backendStatusToFrontend(status) {
+  const map = {
+    试产: 'trial',
+    批量: 'batch',
+    样品: 'sample',
+    trial: 'trial',
+    batch: 'batch',
+    sample: 'sample'
   }
-])
+
+  return map[status] || status || 'trial'
+}
+
+function frontendStatusToBackend(status) {
+  const map = {
+    trial: '试产',
+    batch: '批量',
+    sample: '样品'
+  }
+
+  return map[status] || status || '试产'
+}
+
+function findProjectName(projectId) {
+  const found = Object.entries(projectMap.value).find(([, id]) => Number(id) === Number(projectId))
+  return found ? found[0] : `项目ID-${projectId}`
+}
+
+function getProjectIdsByNames(projectNames) {
+  return projectNames
+    .map(name => projectMap.value[name])
+    .filter(id => id !== undefined && id !== null)
+}
+
+async function loadProjects() {
+  try {
+    const res = await getProjects()
+    const result = getResponseData(res)
+
+    console.log('项目列表返回：', result)
+
+    if (result.code !== 200) {
+      alert(result.msg || '加载项目失败')
+      return
+    }
+
+    const list = result.data || []
+
+    projectOptions.value = list.map(item => item.projectName)
+
+    const map = {}
+    list.forEach(item => {
+      map[item.projectName] = item.id
+    })
+
+    projectMap.value = map
+  } catch (err) {
+    console.error('加载项目失败：', err)
+    alert('加载项目失败')
+  }
+}
+
+async function loadHardwareVersions() {
+  try {
+    const res = await getHardwareVersions()
+    const result = getResponseData(res)
+
+    console.log('硬件版本列表返回：', result)
+
+    if (result.code !== 200) {
+      alert(result.msg || '加载硬件版本失败')
+      return
+    }
+
+    hardwareVersionList.value = (result.data || []).map(item => normalizeHardware(item))
+  } catch (err) {
+    console.error('加载硬件版本失败：', err)
+    alert('加载硬件版本失败，请检查后端接口')
+  }
+}
+
+function normalizeHardware(item) {
+  let bindProjects = []
+
+  if (Array.isArray(item.bindProjects)) {
+    bindProjects = item.bindProjects
+  } else if (Array.isArray(item.projectNames)) {
+    bindProjects = item.projectNames
+  } else if (item.projectName) {
+    bindProjects = [item.projectName]
+  } else if (item.projectId) {
+    bindProjects = [findProjectName(item.projectId)]
+  }
+
+  return {
+    id: item.id,
+    hardwareVersion: item.hardwareVersion || '',
+    deviceType: item.deviceType || '',
+    bindProjects,
+    status: backendStatusToFrontend(item.status),
+    backendStatus: item.status || '',
+    ownerId: item.ownerId || 1,
+    owner: item.owner || item.ownerName || '未分配',
+    ownerName: item.ownerName || item.owner || '未分配',
+    updateTime: formatDate(item.updateTime || item.updatedAt || item.createdAt),
+    zipFileId: item.zipFileId || item.zipFileID || 0,
+    zipFileName:
+      item.zipFileName ||
+      item.fileName ||
+      item.fileDisplayName ||
+      (item.zipFileId || item.zipFileID ? `文件ID-${item.zipFileId || item.zipFileID}.zip` : ''),
+    zipFileUrl: item.zipFileUrl || item.fileUrl || '',
+    description: item.description || ''
+  }
+}
 
 const filteredHardwareList = computed(() => {
   return hardwareVersionList.value.filter(item => {
@@ -576,7 +663,7 @@ function handleHardwareFileChange(event) {
   hardwareForm.zipFileUrl = URL.createObjectURL(file)
 }
 
-function saveHardwareVersion() {
+async function saveHardwareVersion() {
   if (!hardwareForm.hardwareVersion) {
     alert('请输入硬件版本号')
     return
@@ -592,35 +679,56 @@ function saveHardwareVersion() {
     return
   }
 
-  if (editMode.value === 'create') {
-    hardwareVersionList.value.unshift({
-      id: Date.now(),
-      hardwareVersion: hardwareForm.hardwareVersion,
-      deviceType: hardwareForm.deviceType,
-      bindProjects: [...hardwareForm.bindProjects],
-      status: hardwareForm.status,
-      owner: currentUserName.value,
-      updateTime: new Date().toISOString().slice(0, 10),
-      zipFileName: hardwareForm.zipFileName,
-      zipFileUrl: hardwareForm.zipFileUrl,
-      description: hardwareForm.description
-    })
-  } else {
-    currentEditHardware.value.hardwareVersion = hardwareForm.hardwareVersion
-    currentEditHardware.value.deviceType = hardwareForm.deviceType
-    currentEditHardware.value.owner = hardwareForm.owner || currentUserName.value
-    currentEditHardware.value.status = hardwareForm.status
-    currentEditHardware.value.bindProjects = [...hardwareForm.bindProjects]
-    currentEditHardware.value.description = hardwareForm.description
-    currentEditHardware.value.updateTime = new Date().toISOString().slice(0, 10)
+  const projectIds = getProjectIdsByNames(hardwareForm.bindProjects)
 
-    if (hardwareForm.zipFileName && hardwareForm.zipFileUrl) {
-      currentEditHardware.value.zipFileName = hardwareForm.zipFileName
-      currentEditHardware.value.zipFileUrl = hardwareForm.zipFileUrl
-    }
+  if (projectIds.length === 0) {
+    alert('没有找到绑定项目ID，请重新选择项目')
+    return
   }
 
-  showEditDialog.value = false
+  const payload = {
+    hardwareVersion: hardwareForm.hardwareVersion,
+    deviceType: hardwareForm.deviceType,
+    projectId: projectIds[0],
+    projectIds,
+    bindProjects: hardwareForm.bindProjects,
+    status: frontendStatusToBackend(hardwareForm.status),
+    ownerId: 1,
+    owner: editMode.value === 'create'
+      ? currentUserName.value
+      : (hardwareForm.owner || currentUserName.value),
+    ownerName: editMode.value === 'create'
+      ? currentUserName.value
+      : (hardwareForm.owner || currentUserName.value),
+    zipFileId: hardwareForm.zipFileName ? 1 : 0,
+    zipFileName: hardwareForm.zipFileName || '',
+    description: hardwareForm.description || ''
+  }
+
+  try {
+    let res
+
+    if (editMode.value === 'create') {
+      res = await createHardwareVersion(payload)
+    } else {
+      res = await updateHardwareVersion(currentEditHardware.value.id, payload)
+    }
+
+    const result = getResponseData(res)
+
+    console.log('保存硬件版本返回：', result)
+
+    if (result.code === 200) {
+      alert(editMode.value === 'create' ? '新增硬件版本成功' : '修改硬件版本成功')
+      showEditDialog.value = false
+      await loadHardwareVersions()
+    } else {
+      alert(result.msg || '保存硬件版本失败')
+    }
+  } catch (err) {
+    console.error('保存硬件版本失败：', err)
+    alert('保存硬件版本失败，请检查后端接口')
+  }
 }
 
 function viewHardware(item) {
@@ -655,7 +763,7 @@ function handleZipFileChange(event) {
   zipForm.fileUrl = URL.createObjectURL(file)
 }
 
-function saveZipFile() {
+async function saveZipFile() {
   if (!currentZipHardware.value) return
 
   if (!zipForm.file) {
@@ -663,22 +771,34 @@ function saveZipFile() {
     return
   }
 
-  currentZipHardware.value.zipFileName = zipForm.fileName
-  currentZipHardware.value.zipFileUrl = zipForm.fileUrl
-  currentZipHardware.value.updateTime = new Date().toISOString().slice(0, 10)
-
-  if (zipForm.remark) {
-    currentZipHardware.value.description = zipForm.remark
+  const payload = {
+    zipFileId: 1,
+    zipFileName: zipForm.fileName,
+    remark: zipForm.remark || ''
   }
 
-  showZipDialog.value = false
+  try {
+    const res = await uploadHardwareZip(currentZipHardware.value.id, payload)
+    const result = getResponseData(res)
 
-  alert(`硬件版本【${currentZipHardware.value.hardwareVersion}】ZIP 文件已上传`)
+    console.log('上传硬件 ZIP 返回：', result)
+
+    if (result.code === 200) {
+      alert(`硬件版本【${currentZipHardware.value.hardwareVersion}】ZIP 文件已上传`)
+      showZipDialog.value = false
+      await loadHardwareVersions()
+    } else {
+      alert(result.msg || '上传 ZIP 失败')
+    }
+  } catch (err) {
+    console.error('上传硬件 ZIP 失败：', err)
+    alert('上传 ZIP 失败，请检查后端接口')
+  }
 }
 
 function downloadZip(item) {
   if (!item.zipFileUrl) {
-    alert('当前硬件版本暂未上传 ZIP 文件')
+    alert('当前还没有接真实文件下载，后面做 project_files 文件上传下载时再接')
     return
   }
 

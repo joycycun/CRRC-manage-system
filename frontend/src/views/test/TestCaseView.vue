@@ -37,7 +37,7 @@
         <option value="rejected">审核驳回</option>
       </select>
 
-      <button class="query-btn">查询</button>
+      <button class="query-btn" @click="loadTestCases">查询</button>
       <button class="reset-btn" @click="resetFilters">重置</button>
     </div>
 
@@ -428,7 +428,18 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+
+import { getProjects } from '@/api/project'
+
+import {
+  getTestCases,
+  createTestCase,
+  submitTestCaseApi,
+  auditTestCaseApi,
+  deleteTestCaseApi,
+  uploadTestReportApi
+} from '@/api/test'
 
 const currentUserName = ref(
   localStorage.getItem('username') ||
@@ -449,13 +460,8 @@ const showReportUploadDialog = ref(false)
 const selectedTestCase = ref(null)
 const currentReportCase = ref(null)
 
-const projectOptions = [
-  '香港屯马项目',
-  '波尔图二期项目',
-  '阿根廷有轨项目',
-  '波哥大有轨项目',
-  '迪拜项目'
-]
+const projectOptions = ref([])
+const projectMap = ref({})
 
 const uploadForm = reactive({
   projectName: '',
@@ -474,84 +480,151 @@ const reportForm = reactive({
   reportRemark: ''
 })
 
-const testCaseList = ref([
-  {
-    id: 1,
-    projectName: '香港屯马项目',
-    caseName: '香港屯马项目系统测试用例',
-    fileName: '香港屯马系统测试用例_V1.0.xlsx',
-    fileUrl: '',
-    uploader: '寸诗睿',
-    uploadTime: '2026-05-10',
-    auditStatus: 'approved',
-    auditor: '领导',
-    auditTime: '2026-05-11',
-    remark: '覆盖人工广播、乘客报警、客室广播、SIP注册、网络通信等测试项',
-    reportName: '香港屯马项目系统测试报告',
-    reportFileName: '香港屯马项目系统测试报告_V1.0.docx',
-    reportFileUrl: '',
-    reportUploader: '寸诗睿',
-    reportUploadTime: '2026-05-12',
-    reportRemark: '根据系统测试用例执行测试，主要功能测试通过。'
-  },
-  {
-    id: 2,
-    projectName: '波尔图二期项目',
-    caseName: '波尔图二期广播系统测试用例',
-    fileName: '波尔图二期测试用例_V0.9.docx',
-    fileUrl: '',
-    uploader: '寸诗睿',
-    uploadTime: '2026-05-16',
-    auditStatus: 'submitted',
-    auditor: '',
-    auditTime: '',
-    remark: '待领导审核确认',
-    reportName: '',
-    reportFileName: '',
-    reportFileUrl: '',
-    reportUploader: '',
-    reportUploadTime: '',
-    reportRemark: ''
-  },
-  {
-    id: 3,
-    projectName: '阿根廷有轨项目',
-    caseName: '阿根廷DACU测试用例',
-    fileName: '阿根廷DACU测试用例_草稿.xlsx',
-    fileUrl: '',
-    uploader: '寸诗睿',
-    uploadTime: '2026-05-18',
-    auditStatus: 'draft',
-    auditor: '',
-    auditTime: '',
-    remark: '草稿，尚未提交审核',
-    reportName: '',
-    reportFileName: '',
-    reportFileUrl: '',
-    reportUploader: '',
-    reportUploadTime: '',
-    reportRemark: ''
-  },
-  {
-    id: 4,
-    projectName: '波哥大有轨项目',
-    caseName: '波哥大乘客报警器测试用例',
-    fileName: '波哥大乘客报警器测试用例_V1.1.docx',
-    fileUrl: '',
-    uploader: '寸诗睿',
-    uploadTime: '2026-05-20',
-    auditStatus: 'rejected',
-    auditor: '领导',
-    auditTime: '2026-05-21',
-    remark: '测试项不完整，需要补充异常断网、SIP重注册、报警恢复测试',
-    reportName: '波哥大乘客报警器测试报告',
-    reportFileName: '波哥大乘客报警器测试报告_V1.1.pdf',
-    reportFileUrl: '',
-    reportUploader: '寸诗睿',
-    reportUploadTime: '2026-05-22',
-    reportRemark: '报告已上传，但测试项不完整，需要补充后重新提交测试用例。'
+const testCaseList = ref([])
+
+onMounted(async () => {
+  await loadProjects()
+  await loadTestCases()
+})
+
+function getResponseData(res) {
+  if (res && res.data) return res.data
+  return res
+}
+
+function formatDate(value) {
+  if (!value) return ''
+
+  if (typeof value === 'string') {
+    return value.slice(0, 10)
   }
-])
+
+  if (value.Time) {
+    return String(value.Time).slice(0, 10)
+  }
+
+  return value
+}
+
+function backendAuditStatusToFrontend(status) {
+  const map = {
+    草稿: 'draft',
+    未提交: 'draft',
+    待审核: 'submitted',
+    已提交: 'submitted',
+    审核通过: 'approved',
+    已通过: 'approved',
+    审核驳回: 'rejected',
+    已驳回: 'rejected',
+    draft: 'draft',
+    submitted: 'submitted',
+    approved: 'approved',
+    rejected: 'rejected'
+  }
+
+  return map[status] || status || 'draft'
+}
+
+function frontendAuditStatusToBackend(status) {
+  const map = {
+    draft: '草稿',
+    submitted: '待审核',
+    approved: '已通过',
+    rejected: '已驳回'
+  }
+
+  return map[status] || status || '草稿'
+}
+
+function findProjectName(projectId) {
+  const found = Object.entries(projectMap.value).find(([, id]) => Number(id) === Number(projectId))
+  return found ? found[0] : `项目ID-${projectId}`
+}
+
+async function loadProjects() {
+  try {
+    const res = await getProjects()
+    const result = getResponseData(res)
+
+    if (result.code !== 200) {
+      alert(result.msg || '加载项目失败')
+      return
+    }
+
+    const list = result.data || []
+    projectOptions.value = list.map(item => item.projectName)
+
+    const map = {}
+    list.forEach(item => {
+      map[item.projectName] = item.id
+    })
+
+    projectMap.value = map
+  } catch (err) {
+    console.error('加载项目失败：', err)
+    alert('加载项目失败')
+  }
+}
+
+async function loadTestCases() {
+  try {
+    const res = await getTestCases()
+    const result = getResponseData(res)
+
+    console.log('测试用例列表返回：', result)
+
+    if (result.code !== 200) {
+      alert(result.msg || '加载测试用例失败')
+      return
+    }
+
+    testCaseList.value = (result.data || []).map(item => normalizeTestCase(item))
+  } catch (err) {
+    console.error('加载测试用例失败：', err)
+    alert('加载测试用例失败，请检查后端接口')
+  }
+}
+
+function normalizeTestCase(item) {
+  return {
+    id: item.id,
+    projectId: item.projectId || 0,
+    projectName: item.projectName || findProjectName(item.projectId),
+    caseName: item.caseName || item.testCaseName || item.name || '',
+    fileId: item.fileId || 0,
+    fileName:
+      item.fileName ||
+      item.caseFileName ||
+      item.testCaseFileName ||
+      (item.fileId ? `文件ID-${item.fileId}` : ''),
+    fileUrl: item.fileUrl || item.caseFileUrl || '',
+    uploaderId: item.uploaderId || item.submitUserId || item.creatorId || 1,
+    uploader:
+      item.uploaderName ||
+      item.uploadUserName ||
+      item.submitUserName ||
+      item.creatorName ||
+      item.uploader ||
+      currentUserName.value,
+    uploadTime: formatDate(item.uploadTime || item.submitTime || item.createdAt),
+    auditStatus: backendAuditStatusToFrontend(item.auditStatus || item.status),
+    auditorId: item.auditorId || item.auditUserId || 0,
+    auditor: item.auditorName || item.auditUserName || item.auditor || '',
+    auditTime: formatDate(item.auditTime),
+    rejectReason: item.rejectReason || '',
+    remark: item.remark || '',
+
+    reportId: item.reportId || item.testReportId || 0,
+    reportName: item.reportName || item.testReportName || '',
+    reportFileId: item.reportFileId || 0,
+    reportFileName: item.reportFileName || item.testReportFileName || '',
+    reportFileUrl: item.reportFileUrl || item.testReportFileUrl || '',
+    reportUploaderId: item.reportUploaderId || 0,
+    reportUploader: item.reportUploaderName || item.reportUploader || '',
+    reportUploadTime: formatDate(item.reportUploadTime),
+    reportRemark: item.reportRemark || ''
+  }
+}
 
 const filteredTestCaseList = computed(() => {
   return testCaseList.value.filter(item => {
@@ -618,7 +691,7 @@ function handleFileChange(event) {
   }
 }
 
-function uploadTestCase() {
+async function uploadTestCase() {
   if (!uploadForm.projectName) {
     alert('请选择测试用例绑定项目')
     return
@@ -634,27 +707,46 @@ function uploadTestCase() {
     return
   }
 
-  testCaseList.value.unshift({
-    id: Date.now(),
+  const projectId = projectMap.value[uploadForm.projectName]
+
+  if (!projectId) {
+    alert('没有找到项目ID，请重新选择项目')
+    return
+  }
+
+  const payload = {
+    projectId,
     projectName: uploadForm.projectName,
     caseName: uploadForm.caseName,
+    testCaseName: uploadForm.caseName,
+    fileId: 1,
     fileName: uploadForm.fileName,
-    fileUrl: uploadForm.fileUrl,
-    uploader: currentUserName.value,
-    uploadTime: new Date().toISOString().slice(0, 10),
-    auditStatus: 'draft',
-    auditor: '',
-    auditTime: '',
-    remark: uploadForm.remark,
-    reportName: '',
-    reportFileName: '',
-    reportFileUrl: '',
-    reportUploader: '',
-    reportUploadTime: '',
-    reportRemark: ''
-  })
+    caseFileName: uploadForm.fileName,
+    uploaderId: 1,
+    uploaderName: currentUserName.value,
+    uploadUserName: currentUserName.value,
+    auditStatus: frontendAuditStatusToBackend('draft'),
+    status: frontendAuditStatusToBackend('draft'),
+    remark: uploadForm.remark || ''
+  }
 
-  showUploadDialog.value = false
+  try {
+    const res = await createTestCase(payload)
+    const result = getResponseData(res)
+
+    console.log('新增测试用例返回：', result)
+
+    if (result.code === 200) {
+      alert('上传测试用例成功')
+      showUploadDialog.value = false
+      await loadTestCases()
+    } else {
+      alert(result.msg || '上传测试用例失败')
+    }
+  } catch (err) {
+    console.error('上传测试用例失败：', err)
+    alert('上传测试用例失败，请检查后端接口')
+  }
 }
 
 function viewTestCase(item) {
@@ -663,7 +755,7 @@ function viewTestCase(item) {
 
 function openTestCaseFile(item) {
   if (!item.fileUrl) {
-    alert('当前是模拟数据，暂无可直接打开的原始测试用例文件')
+    alert('当前还没有接真实文件预览，后面做 project_files 文件上传下载时再接')
     return
   }
 
@@ -672,7 +764,7 @@ function openTestCaseFile(item) {
 
 function downloadTestCase(item) {
   if (!item.fileUrl) {
-    alert('当前是模拟数据，暂无可下载的原始测试用例文件')
+    alert('当前还没有接真实文件下载，后面做 project_files 文件上传下载时再接')
     return
   }
 
@@ -709,7 +801,7 @@ function handleReportFileChange(event) {
   }
 }
 
-function uploadTestReport() {
+async function uploadTestReport() {
   if (!currentReportCase.value) return
 
   if (!reportForm.reportName) {
@@ -722,20 +814,47 @@ function uploadTestReport() {
     return
   }
 
-  currentReportCase.value.reportName = reportForm.reportName
-  currentReportCase.value.reportFileName = reportForm.reportFileName
-  currentReportCase.value.reportFileUrl = reportForm.reportFileUrl
-  currentReportCase.value.reportUploader = currentUserName.value
-  currentReportCase.value.reportUploadTime = new Date().toISOString().slice(0, 10)
-  currentReportCase.value.reportRemark = reportForm.reportRemark
+  const payload = {
+    testCaseId: currentReportCase.value.id,
+    projectId: currentReportCase.value.projectId,
+    projectName: currentReportCase.value.projectName,
+    reportName: reportForm.reportName,
+    testReportName: reportForm.reportName,
+    reportFileId: 1,
+    reportFileName: reportForm.reportFileName,
+    fileId: 1,
+    fileName: reportForm.reportFileName,
+    reportUploaderId: 1,
+    reportUploaderName: currentUserName.value,
+    uploaderId: 1,
+    uploaderName: currentUserName.value,
+    reportRemark: reportForm.reportRemark || '',
+    remark: reportForm.reportRemark || ''
+  }
 
-  showReportUploadDialog.value = false
-  alert(`项目【${currentReportCase.value.projectName}】对应测试报告已上传`)
+  try {
+    const res = await uploadTestReportApi(currentReportCase.value.id, payload)
+    const result = getResponseData(res)
+
+    console.log('上传测试报告返回：', result)
+
+    if (result.code === 200) {
+      alert(`项目【${currentReportCase.value.projectName}】对应测试报告已上传`)
+      showReportUploadDialog.value = false
+      selectedTestCase.value = null
+      await loadTestCases()
+    } else {
+      alert(result.msg || '上传测试报告失败')
+    }
+  } catch (err) {
+    console.error('上传测试报告失败：', err)
+    alert('上传测试报告失败，请检查后端接口')
+  }
 }
 
 function openTestReportFile(item) {
   if (!item.reportFileUrl) {
-    alert('当前是模拟数据，暂无可直接打开的原始测试报告文件')
+    alert('当前还没有接真实文件预览，后面做 project_files 文件上传下载时再接')
     return
   }
 
@@ -749,7 +868,7 @@ function downloadTestReport(item) {
   }
 
   if (!item.reportFileUrl) {
-    alert('当前是模拟数据，暂无可下载的原始测试报告文件')
+    alert('当前还没有接真实文件下载，后面做 project_files 文件上传下载时再接')
     return
   }
 
@@ -761,43 +880,133 @@ function downloadTestReport(item) {
   document.body.removeChild(link)
 }
 
-function submitTestCase(item) {
-  item.auditStatus = 'submitted'
-  item.auditor = ''
-  item.auditTime = ''
-  alert(`测试用例【${item.fileName || item.caseName}】已提交领导审核`)
+async function submitTestCase(item) {
+  if (!item || !item.id) {
+    alert('提交失败：没有拿到测试用例ID')
+    return
+  }
+
+  try {
+    const res = await submitTestCaseApi(item.id)
+    const result = getResponseData(res)
+
+    console.log('提交测试用例返回：', result)
+
+    if (result.code === 200) {
+      alert(`测试用例【${item.fileName || item.caseName}】已提交领导审核`)
+      await loadTestCases()
+    } else {
+      alert(result.msg || '提交失败')
+    }
+  } catch (err) {
+    console.error('提交测试用例失败：', err)
+    alert('提交失败。如果这里是 404，说明后端还没有 /api/test-cases/{id}/submit 接口')
+  }
 }
 
 function auditTestCase(item) {
   selectedTestCase.value = item
 }
 
-function approveTestCase(item) {
-  item.auditStatus = 'approved'
-  item.auditor = '领导'
-  item.auditTime = new Date().toISOString().slice(0, 10)
-  selectedTestCase.value = null
-  alert(`测试用例【${item.fileName || item.caseName}】审核通过`)
+async function approveTestCase(item) {
+  if (!item || !item.id) {
+    alert('审核失败：没有拿到测试用例ID')
+    return
+  }
+
+  try {
+    const res = await auditTestCaseApi(item.id, {
+      auditorId: 1,
+      auditorName: '领导',
+      auditUserId: 1,
+      auditUserName: '领导',
+      auditStatus: frontendAuditStatusToBackend('approved'),
+      status: frontendAuditStatusToBackend('approved'),
+      rejectReason: ''
+    })
+
+    const result = getResponseData(res)
+
+    console.log('测试用例审核通过返回：', result)
+
+    if (result.code === 200) {
+      alert(`测试用例【${item.fileName || item.caseName}】审核通过`)
+      selectedTestCase.value = null
+      await loadTestCases()
+    } else {
+      alert(result.msg || '审核失败')
+    }
+  } catch (err) {
+    console.error('测试用例审核失败：', err)
+    alert('审核失败，请检查后端接口')
+  }
 }
 
-function rejectTestCase(item) {
-  item.auditStatus = 'rejected'
-  item.auditor = '领导'
-  item.auditTime = new Date().toISOString().slice(0, 10)
-  selectedTestCase.value = null
-  alert(`测试用例【${item.fileName || item.caseName}】已驳回`)
+async function rejectTestCase(item) {
+  if (!item || !item.id) {
+    alert('驳回失败：没有拿到测试用例ID')
+    return
+  }
+
+  const reason = prompt('请输入驳回原因')
+  if (!reason) return
+
+  try {
+    const res = await auditTestCaseApi(item.id, {
+      auditorId: 1,
+      auditorName: '领导',
+      auditUserId: 1,
+      auditUserName: '领导',
+      auditStatus: frontendAuditStatusToBackend('rejected'),
+      status: frontendAuditStatusToBackend('rejected'),
+      rejectReason: reason
+    })
+
+    const result = getResponseData(res)
+
+    console.log('测试用例审核驳回返回：', result)
+
+    if (result.code === 200) {
+      alert(`测试用例【${item.fileName || item.caseName}】已驳回`)
+      selectedTestCase.value = null
+      await loadTestCases()
+    } else {
+      alert(result.msg || '驳回失败')
+    }
+  } catch (err) {
+    console.error('测试用例驳回失败：', err)
+    alert('驳回失败，请检查后端接口')
+  }
 }
 
-function deleteTestCase(item) {
+async function deleteTestCase(item) {
+  if (!item || !item.id) {
+    alert('删除失败：没有拿到测试用例ID')
+    return
+  }
+
   const ok = confirm(`确认删除测试用例【${item.fileName || item.caseName}】吗？`)
   if (!ok) return
 
-  testCaseList.value = testCaseList.value.filter(
-    record => record.id !== item.id
-  )
+  try {
+    const res = await deleteTestCaseApi(item.id)
+    const result = getResponseData(res)
+
+    console.log('删除测试用例返回：', result)
+
+    if (result.code === 200) {
+      alert('删除成功')
+      selectedTestCase.value = null
+      await loadTestCases()
+    } else {
+      alert(result.msg || '删除失败')
+    }
+  } catch (err) {
+    console.error('删除测试用例失败：', err)
+    alert('删除失败，请检查后端接口')
+  }
 }
 </script>
-
 <style scoped>
 .page {
   width: 100%;

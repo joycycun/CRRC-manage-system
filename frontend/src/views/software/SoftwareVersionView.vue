@@ -40,7 +40,7 @@
         </option>
       </select>
 
-      <button class="query-btn">查询</button>
+      <button class="query-btn" @click="loadSoftwareVersions">查询</button>
       <button class="reset-btn" @click="resetFilters">重置</button>
     </div>
 
@@ -57,6 +57,7 @@
               <th>适配硬件版本</th>
               <th>负责人</th>
               <th>发布日期</th>
+              <th>状态</th>
               <th class="operation-col">操作</th>
             </tr>
           </thead>
@@ -102,7 +103,13 @@
               <td>{{ item.owner }}</td>
 
               <td class="muted">
-                {{ item.releaseDate }}
+                {{ item.releaseDate || '-' }}
+              </td>
+
+              <td>
+                <span class="status-tag" :class="item.softwareStatus">
+                  {{ getSoftwareStatusText(item.softwareStatus) }}
+                </span>
               </td>
 
               <td class="operation-col">
@@ -115,8 +122,28 @@
                     修改
                   </button>
 
+                  <button
+                    v-if="item.softwareStatus !== 'released'"
+                    class="text-btn green"
+                    @click="releaseSoftware(item)"
+                  >
+                    发布
+                  </button>
+
+                  <button
+                    v-if="item.softwareStatus !== 'discarded'"
+                    class="text-btn yellow"
+                    @click="discardSoftware(item)"
+                  >
+                    废弃
+                  </button>
+
                   <button class="text-btn green" @click="openDownloadPage(item)">
-                    跳转下载
+                    下载
+                  </button>
+
+                  <button class="text-btn red" @click="deleteSoftware(item)">
+                    删除
                   </button>
                 </div>
               </td>
@@ -275,7 +302,12 @@
 
           <div>
             <span>发布日期</span>
-            <strong>{{ selectedSoftware.releaseDate }}</strong>
+            <strong>{{ selectedSoftware.releaseDate || '-' }}</strong>
+          </div>
+
+          <div>
+            <span>状态</span>
+            <strong>{{ getSoftwareStatusText(selectedSoftware.softwareStatus) }}</strong>
           </div>
 
           <div>
@@ -307,7 +339,19 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+
+import { getProjects } from '@/api/project'
+import { getHardwareVersions } from '@/api/hardware'
+
+import {
+  getSoftwareVersions,
+  createSoftwareVersion,
+  updateSoftwareVersion,
+  releaseSoftwareVersion,
+  discardSoftwareVersion,
+  deleteSoftwareVersion
+} from '@/api/software'
 
 const currentUserName = ref(
   localStorage.getItem('username') ||
@@ -327,13 +371,8 @@ const selectedSoftware = ref(null)
 const currentEditSoftware = ref(null)
 const editMode = ref('create')
 
-const projectOptions = [
-  '香港屯马项目',
-  '波尔图二期项目',
-  '阿根廷有轨项目',
-  '波哥大有轨项目',
-  '迪拜项目'
-]
+const projectOptions = ref([])
+const projectMap = ref({})
 
 const deviceTypeOptions = [
   '广播控制盒',
@@ -341,55 +380,14 @@ const deviceTypeOptions = [
   '编码板',
   '乘客报警器',
   '司机室话筒',
-  '功放模块'
+  '功放模块',
+  '司机室广播控制盒',
+  '解码板',
+  '功放板',
+  '噪声检测器'
 ]
 
-const hardwareVersionList = ref([
-  {
-    id: 1,
-    hardwareVersion: 'HD-CRRC-HKTM.01.V1.1.0',
-    deviceType: '广播控制盒',
-    bindProjects: ['香港屯马项目', '波尔图二期项目'],
-    owner: '王宇',
-    updateTime: '2026-05-10',
-    zipFileName: '',
-    zipFileUrl: '',
-    description: '广播控制盒硬件版本，适配司机人工广播和乘客报警功能'
-  },
-  {
-    id: 2,
-    hardwareVersion: 'HD-CRRC-AGTB-04.T1.1.0',
-    deviceType: '客室解码板',
-    bindProjects: ['阿根廷有轨项目'],
-    owner: '王宇',
-    updateTime: '2026-05-16',
-    zipFileName: '',
-    zipFileUrl: '',
-    description: '客室解码板硬件测试版本，用于车厢广播解码'
-  },
-  {
-    id: 3,
-    hardwareVersion: 'HD-CRRC-BOGT-03.T1.1.0',
-    deviceType: '乘客报警器',
-    bindProjects: ['波哥大有轨项目'],
-    owner: '郑宇',
-    updateTime: '2026-05-18',
-    zipFileName: '',
-    zipFileUrl: '',
-    description: '乘客报警器硬件冻结版本'
-  },
-  {
-    id: 4,
-    hardwareVersion: 'HD-CRRC-DUBAI-05.S1.1.0',
-    deviceType: '编码板',
-    bindProjects: ['迪拜项目'],
-    owner: '郑宇',
-    updateTime: '2026-05-20',
-    zipFileName: '',
-    zipFileUrl: '',
-    description: '编码板硬件草稿版本'
-  }
-])
+const hardwareVersionList = ref([])
 
 const softwareForm = reactive({
   softwareVersion: '',
@@ -402,61 +400,199 @@ const softwareForm = reactive({
   description: ''
 })
 
-const softwareVersionList = ref([
-  {
-    id: 1,
-    softwareVersion: 'SW-CRRC-ARG-DACU.V1.0.0',
-    projectNames: ['阿根廷有轨项目'],
-    deviceType: '广播控制盒',
-    hardwareVersion: 'HD-CRRC-HKTM.01.V1.1.0',
-    owner: '卢进',
-    releaseDate: '2026-05-10',
-    downloadUrl: 'http://bc.zycoo.com:8050/files/Argentina/DACU/',
-    businessDesc: '实现阿根廷项目 DACU 广播控制盒的人工广播、OCC广播、PAD广播、预录制紧急广播、特殊广播和站台广播业务。',
-    description: '适配阿根廷项目 DACU 终端，完成广播业务主流程。'
-  },
-  {
-    id: 2,
-    softwareVersion: 'SW-CRRC-HKTM-PACU.V1.2.0',
-    projectNames: ['香港屯马项目'],
-    deviceType: '广播控制盒',
-    hardwareVersion: 'HD-CRRC-HKTM.01.V1.1.0',
-    owner: '卢进',
-    releaseDate: '2026-05-16',
-    downloadUrl: 'http://bc.zycoo.com:8050/files/HongKong/PACU/',
-    businessDesc: '实现香港屯马项目 PACU 人工广播、乘客报警联动、司机室广播优先级处理。',
-    description: '当前版本等待内部初始测试问题闭环。'
-  },
-  {
-    id: 3,
-    softwareVersion: 'SW-CRRC-BOGT-PECU.V1.0.1',
-    projectNames: ['波哥大有轨项目'],
-    deviceType: '乘客报警器',
-    hardwareVersion: 'HD-CRRC-BOGT-03.T1.1.0',
-    owner: '寸诗睿',
-    releaseDate: '2026-05-18',
-    downloadUrl: 'http://bc.zycoo.com:8050/files/Bogota/PECU/',
-    businessDesc: '实现乘客报警器呼叫、报警上报、司机室接听、报警状态恢复等业务。',
-    description: '用于乘客报警器业务流程验证。'
-  },
-  {
-    id: 4,
-    softwareVersion: 'SW-CRRC-DUBAI-ECU.V0.9.0',
-    projectNames: ['迪拜项目'],
-    deviceType: '编码板',
-    hardwareVersion: 'HD-CRRC-DUBAI-05.S1.1.0',
-    owner: '寸诗睿',
-    releaseDate: '2026-05-20',
-    downloadUrl: 'http://bc.zycoo.com:8050/files/Dubai/ECU/',
-    businessDesc: '实现迪拜项目编码板音频编码、码流发送、网络传输基础业务。',
-    description: '旧测试版本，仅用于历史记录。'
+const softwareVersionList = ref([])
+
+onMounted(async () => {
+  await loadProjects()
+  await loadHardwareVersions()
+  await loadSoftwareVersions()
+})
+
+function getResponseData(res) {
+  if (res && res.data) return res.data
+  return res
+}
+
+function formatDate(value) {
+  if (!value) return ''
+
+  if (typeof value === 'string') {
+    return value.slice(0, 10)
   }
-])
+
+  if (value.Time) {
+    return String(value.Time).slice(0, 10)
+  }
+
+  return value
+}
+
+function backendSoftwareStatusToFrontend(status) {
+  const map = {
+    草稿: 'draft',
+    已发布: 'released',
+    已废弃: 'discarded',
+    draft: 'draft',
+    released: 'released',
+    discarded: 'discarded'
+  }
+
+  return map[status] || status || 'draft'
+}
+
+function frontendSoftwareStatusToBackend(status) {
+  const map = {
+    draft: '草稿',
+    released: '已发布',
+    discarded: '已废弃'
+  }
+
+  return map[status] || status || '草稿'
+}
+
+function getSoftwareStatusText(status) {
+  const map = {
+    draft: '草稿',
+    released: '已发布',
+    discarded: '已废弃'
+  }
+
+  return map[status] || status
+}
+
+function findProjectName(projectId) {
+  const found = Object.entries(projectMap.value).find(([, id]) => Number(id) === Number(projectId))
+  return found ? found[0] : `项目ID-${projectId}`
+}
+
+function getProjectIdsByNames(projectNames) {
+  return projectNames
+    .map(name => projectMap.value[name])
+    .filter(id => id !== undefined && id !== null)
+}
+
+async function loadProjects() {
+  try {
+    const res = await getProjects()
+    const result = getResponseData(res)
+
+    if (result.code !== 200) {
+      alert(result.msg || '加载项目失败')
+      return
+    }
+
+    const list = result.data || []
+
+    projectOptions.value = list.map(item => item.projectName)
+
+    const map = {}
+    list.forEach(item => {
+      map[item.projectName] = item.id
+    })
+
+    projectMap.value = map
+  } catch (err) {
+    console.error('加载项目失败：', err)
+    alert('加载项目失败')
+  }
+}
+
+async function loadHardwareVersions() {
+  try {
+    const res = await getHardwareVersions()
+    const result = getResponseData(res)
+
+    if (result.code !== 200) {
+      alert(result.msg || '加载硬件版本失败')
+      return
+    }
+
+    hardwareVersionList.value = (result.data || []).map(item => normalizeHardware(item))
+  } catch (err) {
+    console.error('加载硬件版本失败：', err)
+    alert('加载硬件版本失败')
+  }
+}
+
+function normalizeHardware(item) {
+  let bindProjects = []
+
+  if (Array.isArray(item.bindProjects)) {
+    bindProjects = item.bindProjects
+  } else if (Array.isArray(item.projectNames)) {
+    bindProjects = item.projectNames
+  } else if (item.projectName) {
+    bindProjects = [item.projectName]
+  } else if (item.projectId) {
+    bindProjects = [findProjectName(item.projectId)]
+  }
+
+  return {
+    id: item.id,
+    hardwareVersion: item.hardwareVersion || '',
+    deviceType: item.deviceType || '',
+    bindProjects,
+    owner: item.owner || item.ownerName || '',
+    updateTime: formatDate(item.updatedAt || item.createdAt),
+    description: item.description || ''
+  }
+}
+
+async function loadSoftwareVersions() {
+  try {
+    const res = await getSoftwareVersions()
+    const result = getResponseData(res)
+
+    console.log('软件版本列表返回：', result)
+
+    if (result.code !== 200) {
+      alert(result.msg || '加载软件版本失败')
+      return
+    }
+
+    softwareVersionList.value = (result.data || []).map(item => normalizeSoftware(item))
+  } catch (err) {
+    console.error('加载软件版本失败：', err)
+    alert('加载软件版本失败，请检查后端接口')
+  }
+}
+
+function normalizeSoftware(item) {
+  let projectNames = []
+
+  if (Array.isArray(item.projectNames)) {
+    projectNames = item.projectNames
+  } else if (Array.isArray(item.bindProjects)) {
+    projectNames = item.bindProjects
+  } else if (item.projectName) {
+    projectNames = [item.projectName]
+  } else if (item.projectId) {
+    projectNames = [findProjectName(item.projectId)]
+  }
+
+  return {
+    id: item.id,
+    projectId: item.projectId || 0,
+    projectNames,
+    softwareVersion: item.softwareVersion || '',
+    deviceType: item.deviceType || '',
+    hardwareId: item.hardwareId || 0,
+    hardwareVersion: item.hardwareVersion || '',
+    ownerId: item.ownerId || 1,
+    owner: item.owner || item.ownerName || '未分配',
+    releaseDate: formatDate(item.releaseDate || item.createdAt),
+    downloadUrl: item.downloadUrl || '',
+    businessDesc: item.businessDesc || '',
+    description: item.description || '',
+    softwareStatus: backendSoftwareStatusToFrontend(item.softwareStatus || item.status)
+  }
+}
 
 const availableHardwareVersions = computed(() => {
   return hardwareVersionList.value.filter(item => {
     const projectMatch =
       softwareForm.projectNames.length === 0 ||
+      item.bindProjects.length === 0 ||
       item.bindProjects.some(project =>
         softwareForm.projectNames.includes(project)
       )
@@ -476,13 +612,16 @@ const availableDeviceTypes = computed(() => {
 
   const types = hardwareVersionList.value
     .filter(item => {
-      return item.bindProjects.some(project =>
-        softwareForm.projectNames.includes(project)
+      return (
+        item.bindProjects.length === 0 ||
+        item.bindProjects.some(project =>
+          softwareForm.projectNames.includes(project)
+        )
       )
     })
     .map(item => item.deviceType)
 
-  return [...new Set(types)]
+  return [...new Set([...types, ...deviceTypeOptions])]
 })
 
 const filteredSoftwareList = computed(() => {
@@ -589,7 +728,7 @@ function openEditDialog(item) {
   showEditDialog.value = true
 }
 
-function saveSoftwareVersion() {
+async function saveSoftwareVersion() {
   if (!softwareForm.softwareVersion) {
     alert('请输入软件版本号')
     return
@@ -620,33 +759,63 @@ function saveSoftwareVersion() {
     return
   }
 
-  if (editMode.value === 'create') {
-    softwareVersionList.value.unshift({
-      id: Date.now(),
-      softwareVersion: softwareForm.softwareVersion,
-      projectNames: [...softwareForm.projectNames],
-      deviceType: softwareForm.deviceType,
-      hardwareVersion: softwareForm.hardwareVersion,
-      owner: currentUserName.value,
-      releaseDate: new Date().toISOString().slice(0, 10),
-      downloadUrl: softwareForm.downloadUrl,
-      businessDesc: softwareForm.businessDesc,
-      description: softwareForm.description
-    })
-  } else {
-    currentEditSoftware.value.softwareVersion = softwareForm.softwareVersion
-    currentEditSoftware.value.projectNames = [...softwareForm.projectNames]
-    currentEditSoftware.value.projectName = ''
-    currentEditSoftware.value.deviceType = softwareForm.deviceType
-    currentEditSoftware.value.hardwareVersion = softwareForm.hardwareVersion
-    currentEditSoftware.value.owner = currentEditSoftware.value.owner || currentUserName.value
-    currentEditSoftware.value.releaseDate = new Date().toISOString().slice(0, 10)
-    currentEditSoftware.value.downloadUrl = softwareForm.downloadUrl
-    currentEditSoftware.value.businessDesc = softwareForm.businessDesc
-    currentEditSoftware.value.description = softwareForm.description
+  const projectIds = getProjectIdsByNames(softwareForm.projectNames)
+  const hardware = hardwareVersionList.value.find(
+    item => item.hardwareVersion === softwareForm.hardwareVersion
+  )
+
+  if (projectIds.length === 0) {
+    alert('没有找到项目ID，请重新选择项目')
+    return
   }
 
-  showEditDialog.value = false
+  const payload = {
+    projectId: projectIds[0],
+    projectIds,
+    projectNames: softwareForm.projectNames,
+    softwareVersion: softwareForm.softwareVersion,
+    deviceType: softwareForm.deviceType,
+    hardwareId: hardware?.id || 0,
+    hardwareVersion: softwareForm.hardwareVersion,
+    ownerId: 1,
+    owner: editMode.value === 'create'
+      ? currentUserName.value
+      : (softwareForm.owner || currentUserName.value),
+    ownerName: editMode.value === 'create'
+      ? currentUserName.value
+      : (softwareForm.owner || currentUserName.value),
+    releaseDate: new Date().toISOString().slice(0, 10),
+    downloadUrl: softwareForm.downloadUrl,
+    businessDesc: softwareForm.businessDesc,
+    description: softwareForm.description,
+    softwareStatus: frontendSoftwareStatusToBackend('draft'),
+    status: frontendSoftwareStatusToBackend('draft')
+  }
+
+  try {
+    let res
+
+    if (editMode.value === 'create') {
+      res = await createSoftwareVersion(payload)
+    } else {
+      res = await updateSoftwareVersion(currentEditSoftware.value.id, payload)
+    }
+
+    const result = getResponseData(res)
+
+    console.log('保存软件版本返回：', result)
+
+    if (result.code === 200) {
+      alert(editMode.value === 'create' ? '新增软件版本成功' : '修改软件版本成功')
+      showEditDialog.value = false
+      await loadSoftwareVersions()
+    } else {
+      alert(result.msg || '保存软件版本失败')
+    }
+  } catch (err) {
+    console.error('保存软件版本失败：', err)
+    alert('保存软件版本失败，请检查后端接口')
+  }
 }
 
 function viewSoftware(item) {
@@ -660,6 +829,88 @@ function openDownloadPage(item) {
   }
 
   window.open(item.downloadUrl, '_blank')
+}
+
+async function releaseSoftware(item) {
+  if (!item || !item.id) {
+    alert('发布失败：没有拿到软件版本ID')
+    return
+  }
+
+  const ok = confirm(`确认发布软件版本【${item.softwareVersion}】吗？`)
+  if (!ok) return
+
+  try {
+    const res = await releaseSoftwareVersion(item.id)
+    const result = getResponseData(res)
+
+    console.log('发布软件版本返回：', result)
+
+    if (result.code === 200) {
+      alert('发布成功')
+      await loadSoftwareVersions()
+    } else {
+      alert(result.msg || '发布失败')
+    }
+  } catch (err) {
+    console.error('发布软件版本失败：', err)
+    alert('发布失败，请检查后端接口')
+  }
+}
+
+async function discardSoftware(item) {
+  if (!item || !item.id) {
+    alert('废弃失败：没有拿到软件版本ID')
+    return
+  }
+
+  const ok = confirm(`确认废弃软件版本【${item.softwareVersion}】吗？`)
+  if (!ok) return
+
+  try {
+    const res = await discardSoftwareVersion(item.id)
+    const result = getResponseData(res)
+
+    console.log('废弃软件版本返回：', result)
+
+    if (result.code === 200) {
+      alert('废弃成功')
+      await loadSoftwareVersions()
+    } else {
+      alert(result.msg || '废弃失败')
+    }
+  } catch (err) {
+    console.error('废弃软件版本失败：', err)
+    alert('废弃失败，请检查后端接口')
+  }
+}
+
+async function deleteSoftware(item) {
+  if (!item || !item.id) {
+    alert('删除失败：没有拿到软件版本ID')
+    return
+  }
+
+  const ok = confirm(`确认删除软件版本【${item.softwareVersion}】吗？`)
+  if (!ok) return
+
+  try {
+    const res = await deleteSoftwareVersion(item.id)
+    const result = getResponseData(res)
+
+    console.log('删除软件版本返回：', result)
+
+    if (result.code === 200) {
+      alert('删除成功')
+      selectedSoftware.value = null
+      await loadSoftwareVersions()
+    } else {
+      alert(result.msg || '删除失败')
+    }
+  } catch (err) {
+    console.error('删除软件版本失败：', err)
+    alert('删除失败，请检查后端接口')
+  }
 }
 </script>
 
@@ -798,7 +1049,7 @@ function openDownloadPage(item) {
 
 .table-card table {
   width: 100%;
-  min-width: 1250px;
+  min-width: 1380px;
   border-collapse: collapse;
   table-layout: fixed;
 }
@@ -860,6 +1111,11 @@ function openDownloadPage(item) {
   width: 110px;
 }
 
+.table-card th:nth-child(8),
+.table-card td:nth-child(8) {
+  width: 90px;
+}
+
 .version-link {
   border: none;
   background: transparent;
@@ -894,7 +1150,8 @@ function openDownloadPage(item) {
 
 .project-tag,
 .device-tag,
-.hardware-tag {
+.hardware-tag,
+.status-tag {
   display: inline-flex;
   padding: 4px 9px;
   border-radius: 999px;
@@ -925,6 +1182,21 @@ function openDownloadPage(item) {
   box-sizing: border-box;
 }
 
+.status-tag.draft {
+  background: #47556933;
+  color: #94a3b8;
+}
+
+.status-tag.released {
+  background: #16a34a33;
+  color: #4ade80;
+}
+
+.status-tag.discarded {
+  background: #dc262633;
+  color: #f87171;
+}
+
 .hardware-version-cell {
   overflow: hidden;
   max-width: 0;
@@ -944,7 +1216,7 @@ function openDownloadPage(item) {
 }
 
 .operation-col {
-  width: 260px;
+  width: 360px;
   text-align: right !important;
 }
 
@@ -975,6 +1247,14 @@ function openDownloadPage(item) {
 
 .text-btn.green {
   color: #4ade80;
+}
+
+.text-btn.yellow {
+  color: #fbbf24;
+}
+
+.text-btn.red {
+  color: #f87171;
 }
 
 .table-footer {
@@ -1140,7 +1420,7 @@ function openDownloadPage(item) {
   }
 
   .table-card table {
-    min-width: 1250px;
+    min-width: 1380px;
   }
 
   .form-grid,

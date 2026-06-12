@@ -29,7 +29,7 @@
         </option>
       </select>
 
-      <button class="query-btn">查询</button>
+      <button class="query-btn" @click="loadCustomerSuppliedFiles">查询</button>
       <button class="reset-btn" @click="resetFilters">重置</button>
     </div>
 
@@ -317,7 +317,15 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+
+import { getProjects } from '@/api/project'
+
+import {
+  getCustomerSuppliedFiles,
+  createCustomerSuppliedFile,
+  deleteCustomerSuppliedFile
+} from '@/api/requirement'
 
 const currentUserName = ref(
   localStorage.getItem('username') ||
@@ -335,13 +343,8 @@ const showUploadDialog = ref(false)
 const selectedConfig = ref(null)
 const expandedProjects = ref([])
 
-const projectOptions = [
-  '香港屯马项目',
-  '波尔图二期项目',
-  '阿根廷有轨项目',
-  '波哥大有轨项目',
-  '迪拜项目'
-]
+const projectOptions = ref([])
+const projectMap = ref({})
 
 const uploadForm = reactive({
   projectName: '',
@@ -354,94 +357,129 @@ const uploadForm = reactive({
   previewContent: ''
 })
 
-const configFileList = ref([
-  {
-    id: 1,
-    projectName: '阿根廷有轨项目',
-    configName: '阿根廷项目DACU SIP账号资料',
-    fileName: 'Argentina_DACU_sip_accounts.ini',
-    fileSize: '12 KB',
-    fileUrl: '',
-    uploader: '卢进',
-    uploadTime: '2026-05-10',
-    description: '用于配置阿根廷项目DACU广播控制盒的SIP账号、认证密码、注册服务器等参数。',
-    previewContent:
-`[sip_account]
-terminal=DACU
-server=10.0.11.11
-backup_server=10.0.11.81
-username=1001
-password=******
-transport=udp`
-  },
-  {
-    id: 2,
-    projectName: '波尔图二期项目',
-    configName: '波尔图二期终端IP地址规划',
-    fileName: 'Porto_IP_Address_Config.xlsx',
-    fileSize: '28 KB',
-    fileUrl: '',
-    uploader: '寸诗睿',
-    uploadTime: '2026-05-16',
-    description: '用于记录波尔图二期项目各终端IP地址、网关、子网掩码和服务器地址。',
-    previewContent:
-`终端类型：广播控制盒
-设备IP：10.0.24.41
-主服务器：10.0.11.11
-备用服务器：10.0.11.81
-网关：10.0.24.1`
-  },
-  {
-    id: 3,
-    projectName: '香港屯马项目',
-    configName: '香港屯马PA协议资料',
-    fileName: 'HKTM_PA_protocol_config.json',
-    fileSize: '18 KB',
-    fileUrl: '',
-    uploader: '王宇',
-    uploadTime: '2026-05-18',
-    description: '用于配置香港屯马项目PA广播协议、心跳周期、报警上报协议和联动参数。',
-    previewContent:
-`{
-  "heartbeat_interval": 30,
-  "pa_protocol": "udp",
-  "alarm_report": true,
-  "multicast_enabled": false
-}`
-  },
-  {
-    id: 4,
-    projectName: '迪拜项目',
-    configName: '迪拜项目编码板音频参数资料',
-    fileName: 'Dubai_ECU_audio_config.conf',
-    fileSize: '9 KB',
-    fileUrl: '',
-    uploader: '郑宇',
-    uploadTime: '2026-05-20',
-    description: '用于配置迪拜项目编码板采样率、编码格式、音频通道和码率。',
-    previewContent:
-`sample_rate=48000
-codec=opus
-channels=2
-bitrate=64000
-rtp_payload_type=111`
-  },
-  {
-    id: 5,
-    projectName: '阿根廷有轨项目',
-    configName: '阿根廷项目服务器地址资料',
-    fileName: 'Argentina_Server_Address.xlsx',
-    fileSize: '21 KB',
-    fileUrl: '',
-    uploader: '卢进',
-    uploadTime: '2026-05-21',
-    description: '阿根廷项目主备服务器地址、网关、终端编号等资料。',
-    previewContent:
-`主服务器：10.0.11.11
-备用服务器：10.0.11.81
-网关：10.0.24.1`
+const configFileList = ref([])
+
+onMounted(async () => {
+  await loadProjects()
+  await loadCustomerSuppliedFiles()
+})
+
+function getResponseData(res) {
+  if (res && res.data) return res.data
+  return res
+}
+
+function formatDate(value) {
+  if (!value) return ''
+
+  // 后端返回普通字符串
+  if (typeof value === 'string') {
+    return value.slice(0, 10)
   }
-])
+
+  // 后端返回 Go 的 sql.NullTime：{ Time: "...", Valid: true }
+  if (typeof value === 'object') {
+    if (value.Valid === false) return ''
+
+    const timeValue = value.Time || value.time
+    if (timeValue) {
+      return String(timeValue).slice(0, 10)
+    }
+  }
+
+  return ''
+}
+
+function findProjectName(projectId) {
+  const found = Object.entries(projectMap.value).find(([, id]) => Number(id) === Number(projectId))
+  return found ? found[0] : `项目ID-${projectId}`
+}
+
+async function loadProjects() {
+  try {
+    const res = await getProjects()
+    const result = getResponseData(res)
+
+    console.log('项目列表返回：', result)
+
+    if (result.code !== 200) {
+      alert(result.msg || '加载项目失败')
+      return
+    }
+
+    const list = result.data || []
+
+    projectOptions.value = list.map(item => item.projectName)
+
+    const map = {}
+    list.forEach(item => {
+      map[item.projectName] = item.id
+    })
+
+    projectMap.value = map
+  } catch (err) {
+    console.error('加载项目失败：', err)
+    alert('加载项目失败')
+  }
+}
+
+async function loadCustomerSuppliedFiles() {
+  try {
+    const res = await getCustomerSuppliedFiles()
+    const result = getResponseData(res)
+
+    console.log('客供资料列表返回：', result)
+
+    if (result.code !== 200) {
+      alert(result.msg || '加载客供资料失败')
+      return
+    }
+
+    configFileList.value = (result.data || []).map(item => normalizeCustomerSupply(item))
+  } catch (err) {
+    console.error('加载客供资料失败：', err)
+    alert('加载客供资料失败，请检查后端接口')
+  }
+}
+
+function normalizeCustomerSupply(item) {
+  const projectName = item.projectName || findProjectName(item.projectId)
+
+  return {
+    id: item.id,
+    projectId: item.projectId,
+    projectName,
+    configName:
+      item.materialName ||
+      item.configName ||
+      item.docName ||
+      item.fileDisplayName ||
+      '未命名资料',
+    fileId: item.fileId || 0,
+    fileName:
+      item.fileDisplayName ||
+      item.fileName ||
+      (item.fileId ? `文件ID-${item.fileId}` : '暂无文件'),
+    fileSize: item.fileSize || '-',
+    fileUrl: item.fileUrl || '',
+    uploaderId: item.uploadUserId || item.uploaderId || 0,
+    uploader:
+      item.uploadUserName ||
+      item.uploader ||
+      item.uploaderName ||
+      '未知上传人',
+    uploadTime: formatDate(item.uploadTime || item.createdAt),
+    description:
+      item.materialDesc ||
+      item.description ||
+      item.remark ||
+      '',
+    previewContent:
+      item.previewContent ||
+      '当前文件暂无可预览内容，可点击下载查看原文件。',
+    remark: item.remark || ''
+  }
+}
 
 const filteredConfigList = computed(() => {
   return configFileList.value.filter(item => {
@@ -546,7 +584,7 @@ function handleFileChange(event) {
   }
 }
 
-function uploadConfig() {
+async function uploadConfig() {
   if (!uploadForm.projectName) {
     alert('请选择资料绑定项目')
     return
@@ -562,24 +600,46 @@ function uploadConfig() {
     return
   }
 
-  configFileList.value.unshift({
-    id: Date.now(),
-    projectName: uploadForm.projectName,
-    configName: uploadForm.configName,
-    fileName: uploadForm.fileName,
-    fileSize: uploadForm.fileSize,
-    fileUrl: uploadForm.fileUrl,
-    uploader: currentUserName.value,
-    uploadTime: new Date().toISOString().slice(0, 10),
-    description: uploadForm.description,
-    previewContent: uploadForm.previewContent
-  })
+  const projectId = projectMap.value[uploadForm.projectName]
 
-  if (!expandedProjects.value.includes(uploadForm.projectName)) {
-    expandedProjects.value.push(uploadForm.projectName)
+  if (!projectId) {
+    alert('没有找到对应项目ID，请重新选择项目')
+    return
   }
 
-  showUploadDialog.value = false
+  const payload = {
+    projectId,
+    fileId: 1,
+    materialName: uploadForm.configName,
+    fileDisplayName: uploadForm.fileName,
+    materialDesc: uploadForm.description || '',
+    uploadUserId: 1,
+    uploadUserName: currentUserName.value,
+    remark: uploadForm.description || ''
+  }
+
+  try {
+    const res = await createCustomerSuppliedFile(payload)
+    const result = getResponseData(res)
+
+    console.log('新增客供资料返回：', result)
+
+    if (result.code === 200) {
+      alert('上传客供资料成功')
+
+      if (!expandedProjects.value.includes(uploadForm.projectName)) {
+        expandedProjects.value.push(uploadForm.projectName)
+      }
+
+      showUploadDialog.value = false
+      await loadCustomerSuppliedFiles()
+    } else {
+      alert(result.msg || '上传客供资料失败')
+    }
+  } catch (err) {
+    console.error('上传客供资料失败：', err)
+    alert('上传客供资料失败，请检查后端接口')
+  }
 }
 
 function viewConfig(item) {
@@ -589,6 +649,7 @@ function viewConfig(item) {
 function openConfigFile(item) {
   if (!item.fileUrl) {
     selectedConfig.value = item
+    alert('当前还没有接真实文件预览，后面做 project_files 文件上传下载时再接')
     return
   }
 
@@ -597,7 +658,7 @@ function openConfigFile(item) {
 
 function downloadConfig(item) {
   if (!item.fileUrl) {
-    alert('当前是模拟数据，暂无可下载的原始资料文件')
+    alert('当前还没有接真实文件下载，后面做 project_files 文件上传下载时再接')
     return
   }
 
@@ -609,16 +670,39 @@ function downloadConfig(item) {
   document.body.removeChild(link)
 }
 
-function deleteConfig(item) {
+async function deleteConfig(item) {
+  console.log('点击删除客供资料：', item)
+
+  if (!item || !item.id) {
+    alert('删除失败：没有拿到资料ID')
+    return
+  }
+
   const ok = confirm(`确认删除资料【${item.configName}】吗？`)
   if (!ok) return
 
-  configFileList.value = configFileList.value.filter(
-    config => config.id !== item.id
-  )
+  try {
+    const res = await deleteCustomerSuppliedFile(item.id)
+    const result = getResponseData(res)
+
+    console.log('删除客供资料返回：', result)
+
+    if (result.code === 200) {
+      alert('删除成功')
+      selectedConfig.value = null
+      await loadCustomerSuppliedFiles()
+    } else {
+      alert(result.msg || '删除失败')
+    }
+  } catch (err) {
+    console.error('删除客供资料失败：', err)
+    alert('删除失败，请检查后端接口')
+  }
 }
 
 function formatFileSize(size) {
+  if (!size && size !== 0) return '-'
+
   if (size < 1024) {
     return `${size} B`
   }

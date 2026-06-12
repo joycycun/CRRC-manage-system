@@ -31,7 +31,7 @@
         <option value="closed">已关闭</option>
       </select>
 
-      <button class="query-btn">查询</button>
+      <button class="query-btn" @click="loadProjectProgress">查询</button>
       <button class="reset-btn" @click="resetFilters">重置</button>
     </div>
 
@@ -102,26 +102,6 @@
                 <div class="action-group">
                   <button class="text-btn" @click="viewProject(item)">
                     查看
-                  </button>
-
-                  <button class="text-btn blue" @click="openStageDialog(item)">
-                    设置阶段
-                  </button>
-
-                  <button
-                    v-if="item.projectStatus !== 'closed'"
-                    class="text-btn red"
-                    @click="closeProject(item)"
-                  >
-                    关闭项目
-                  </button>
-
-                  <button
-                    v-else
-                    class="text-btn green"
-                    @click="reopenProject(item)"
-                  >
-                    重新开启
                   </button>
                 </div>
               </td>
@@ -272,18 +252,6 @@
         </div>
 
         <div class="dialog-footer">
-          <button class="reset-btn" @click="openStageDialog(selectedProject)">
-            设置阶段
-          </button>
-
-          <button
-            v-if="selectedProject.projectStatus !== 'closed'"
-            class="red-btn"
-            @click="closeProject(selectedProject)"
-          >
-            关闭项目
-          </button>
-
           <button class="primary-btn" @click="selectedProject = null">
             关闭
           </button>
@@ -294,7 +262,8 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { getProjectProgressReport } from '@/api/report'
 
 const filters = reactive({
   keyword: '',
@@ -312,99 +281,93 @@ const stageForm = reactive({
 
 const stageOptions = [
   {
-    value: 'project_start',
+    value: '立项',
     label: '立项',
     percent: 10
   },
   {
-    value: 'requirement_first_confirm',
+    value: '需求书首次确认',
     label: '需求书首次确认',
     percent: 20
   },
   {
-    value: 'hardware_development',
-    label: '硬件开发',
+    value: '硬件检测',
+    label: '硬件检测',
     percent: 30
   },
   {
-    value: 'software_development',
+    value: '软件研发',
     label: '软件研发',
     percent: 40
   },
   {
-    value: 'internal_first_test',
+    value: '内部初始测试',
     label: '内部初始测试',
     percent: 50
   },
   {
-    value: 'internal_issue_closed',
-    label: '内部初始测试问题闭环',
+    value: '内部初始测试是否问题闭环',
+    label: '内部初始测试是否问题闭环',
     percent: 60
   },
   {
-    value: 'prototype_joint_debug',
+    value: '样机联调',
     label: '样机联调',
     percent: 70
   },
   {
-    value: 'factory_test',
+    value: '出厂测试',
     label: '出厂测试',
     percent: 80
   },
   {
-    value: 'receipt',
+    value: '收货',
     label: '收货',
     percent: 90
   },
   {
-    value: 'project_closed',
+    value: '已关闭',
     label: '项目关闭',
     percent: 100
   }
 ]
 
-const projectList = ref([
-  {
-    id: 1,
-    name: '香港屯马项目',
-    owner: '研发：卢进',
-    currentStage: 'factory_test',
-    projectStatus: 'running',
-    updateTime: '2026-05-20'
-  },
-  {
-    id: 2,
-    name: '波尔图二期项目',
-    owner: '测试：寸诗睿',
-    currentStage: 'internal_issue_closed',
-    projectStatus: 'running',
-    updateTime: '2026-05-18'
-  },
-  {
-    id: 3,
-    name: '香港东涌线',
-    owner: '售后：卢进',
-    currentStage: 'receipt',
-    projectStatus: 'running',
-    updateTime: '2026-05-21'
-  },
-  {
-    id: 4,
-    name: '阿根廷项目',
-    owner: '硬件研发：王宇',
-    currentStage: 'software_development',
-    projectStatus: 'running',
-    updateTime: '2026-05-15'
-  },
-  {
-    id: 5,
-    name: '波哥大有轨项目',
-    owner: '需求：寸诗睿',
-    currentStage: 'project_start',
-    projectStatus: 'running',
-    updateTime: '2026-05-12'
+const projectList = ref([])
+
+onMounted(() => {
+  loadProjectProgress()
+})
+
+function getResponseData(res) {
+  return res && res.data ? res.data : res
+}
+
+function normalizeProject(item) {
+  return {
+    id: item.id || item.projectId,
+    name: item.name || item.projectName || '',
+    owner: item.owner || '',
+    currentStage: item.currentStage || item.stage || '',
+    projectStatus: item.projectStatus || (item.status === '已关闭' ? 'closed' : 'running'),
+    updateTime: item.updateTime || '',
+    progress: Math.round(Number(item.progress || 0))
   }
-])
+}
+
+async function loadProjectProgress() {
+  try {
+    const res = await getProjectProgressReport()
+    const result = getResponseData(res)
+    if (result.code !== 200) {
+      alert(result.msg || '加载项目进度失败')
+      return
+    }
+    projectList.value = (result.data || []).map(normalizeProject)
+  } catch (err) {
+    console.error('加载项目进度失败：', err)
+    alert(err.response?.data || '加载项目进度失败')
+  }
+}
 
 const filteredProjectList = computed(() => {
   return projectList.value.filter(item => {
@@ -435,11 +398,7 @@ function getStagePercent(stageValue) {
 }
 
 function getProjectProgress(project) {
-  if (project.projectStatus === 'closed') {
-    return 100
-  }
-
-  return getStagePercent(project.currentStage)
+  return Math.round(Number(project.progress || getStagePercent(project.currentStage)))
 }
 
 function getProjectStatusText(status) {

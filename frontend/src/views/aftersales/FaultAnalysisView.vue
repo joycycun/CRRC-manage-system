@@ -370,60 +370,7 @@ const analysisForm = reactive({
   remark: ''
 })
 
-const analysisList = ref([
-  {
-    id: 1,
-    boardType: '广播控制盒',
-    analysisName: '广播控制盒无音频输出故障分析方案',
-    fileName: '广播控制盒无音频输出故障分析方案.docx',
-    fileUrl: '',
-    submitUser: '售后人员',
-    submitTime: '2026-05-10',
-    auditStatus: 'approved',
-    auditor: '领导',
-    auditTime: '2026-05-11',
-    remark: '分析广播控制盒上电后无音频输出问题，结论为音频服务启动时序异常，已提出软件优化方案。'
-  },
-  {
-    id: 2,
-    boardType: '客室解码板',
-    analysisName: '解码板SIP注册失败故障分析方案',
-    fileName: '解码板SIP注册失败分析.pdf',
-    fileUrl: '',
-    submitUser: '研发人员',
-    submitTime: '2026-05-16',
-    auditStatus: 'submitted',
-    auditor: '',
-    auditTime: '',
-    remark: '待领导审核确认。主要分析解码板在现场网络环境下SIP注册失败的问题。'
-  },
-  {
-    id: 3,
-    boardType: '司机提醒单元',
-    analysisName: '司机提醒单元提醒音异常分析方案',
-    fileName: '司机提醒单元故障分析_草稿.docx',
-    fileUrl: '',
-    submitUser: '售后人员',
-    submitTime: '2026-05-18',
-    auditStatus: 'draft',
-    auditor: '',
-    auditTime: '',
-    remark: '草稿，尚未提交审核。'
-  },
-  {
-    id: 4,
-    boardType: '客室编码板',
-    analysisName: '编码板音频中断故障分析方案',
-    fileName: '编码板音频中断故障分析方案.xlsx',
-    fileUrl: '',
-    submitUser: '研发人员',
-    submitTime: '2026-05-20',
-    auditStatus: 'rejected',
-    auditor: '领导',
-    auditTime: '2026-05-21',
-    remark: '分析结论不完整，需要补充RTP时间戳、buffer状态、网络抓包和现场日志。'
-  }
-])
+const analysisList = ref([])
 
 const filteredAnalysisList = computed(() => {
   return analysisList.value.filter(item => {
@@ -553,7 +500,7 @@ function rejectAnalysis(item) {
 
 function openFile(item) {
   if (!item.fileUrl) {
-    alert('当前是模拟数据，暂无可直接打开的原始文件')
+    alert('暂无可直接打开的原始文件')
     return
   }
 
@@ -562,7 +509,7 @@ function openFile(item) {
 
 function downloadFile(item) {
   if (!item.fileUrl) {
-    alert('当前是模拟数据，暂无可下载的原始文件')
+    alert('暂无可下载的原始文件')
     return
   }
 

@@ -29,7 +29,7 @@
         </option>
       </select>
 
-      <button class="query-btn">查询</button>
+      <button class="query-btn" @click="loadBurnRecords">查询</button>
       <button class="reset-btn" @click="resetFilters">重置</button>
     </div>
 
@@ -452,8 +452,15 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import * as XLSX from 'xlsx'
+
+import {
+  getBurnRecords,
+  importBurnRecords,
+  deleteBurnRecordApi,
+  deleteBurnBatchApi
+} from '@/api/burn'
 
 const currentUserName = ref(
   localStorage.getItem('username') ||
@@ -480,62 +487,83 @@ const uploadForm = reactive({
   remark: ''
 })
 
-const burnRecordList = ref([
-  {
-    id: 1,
-    batchNo: '20260402',
-    productName: '控制盒',
-    productModel: 'DACU-SIP-Porto',
-    productCode: 'M00004665176',
-    serialNumber: 'ZDAPO2300001',
-    macAddress: '68:69:2E:DD:17:03',
-    hardwareVersion: '-',
-    softwareVersion: '-',
-    pcbQrCode: '-',
-    note: '波尔图',
-    fileName: '生产烧录记录_20260402.xlsx',
-    fileUrl: '',
-    uploader: '生产人员',
-    uploadTime: '2026-05-10',
-    importRemark: '模拟数据，按 Excel 第 3 行表头结构生成。'
-  },
-  {
-    id: 2,
-    batchNo: '20260402',
-    productName: '乘客报警器',
-    productModel: 'PECU-BOG-Metro-PCBA',
-    productCode: 'M00004665176',
-    serialNumber: 'ZPEBOG230000X',
-    macAddress: '-',
-    hardwareVersion: '-',
-    softwareVersion: '-',
-    pcbQrCode: '-',
-    note: '模板',
-    fileName: '生产烧录记录_20260402.xlsx',
-    fileUrl: '',
-    uploader: '生产人员',
-    uploadTime: '2026-05-10',
-    importRemark: '模拟数据，按 Excel 第 3 行表头结构生成。'
-  },
-  {
-    id: 3,
-    batchNo: '20260402',
-    productName: '编码板',
-    productModel: 'ACSU-BOG-Encode-PCBA',
-    productCode: 'M00004665172',
-    serialNumber: 'ZENBOG230000X',
-    macAddress: '-',
-    hardwareVersion: '-',
-    softwareVersion: '-',
-    pcbQrCode: '-',
-    note: '模板',
-    fileName: '生产烧录记录_20260402.xlsx',
-    fileUrl: '',
-    uploader: '生产人员',
-    uploadTime: '2026-05-10',
-    importRemark: '模拟数据，按 Excel 第 3 行表头结构生成。'
+// 这里不再放假数据，改成后端加载
+const burnRecordList = ref([])
+
+onMounted(async () => {
+  await loadBurnRecords()
+})
+
+function getResponseData(res) {
+  if (res && res.data) return res.data
+  return res
+}
+
+function formatDate(value) {
+  if (!value) return ''
+
+  if (typeof value === 'string') {
+    return value.slice(0, 10)
   }
-])
+
+  if (value.Time) {
+    return String(value.Time).slice(0, 10)
+  }
+
+  return value
+}
+
+async function loadBurnRecords() {
+  try {
+    const res = await getBurnRecords()
+    const result = getResponseData(res)
+
+    console.log('烧录记录列表返回：', result)
+
+    if (result.code !== 200) {
+      alert(result.msg || '加载烧录记录失败')
+      return
+    }
+
+    burnRecordList.value = (result.data || []).map(item => normalizeBurnRecord(item))
+  } catch (err) {
+    console.error('加载烧录记录失败：', err)
+    alert('加载烧录记录失败，请检查后端接口')
+  }
+}
+
+function normalizeBurnRecord(item) {
+  return {
+    id: item.id,
+    batchNo: item.batchNo || item.batch_no || '未填写批次',
+    productName: item.productName || item.product_name || '-',
+    productModel: item.productModel || item.product_model || '-',
+    productCode: item.productCode || item.product_code || '-',
+    serialNumber: item.serialNumber || item.sn || item.SN || '-',
+    macAddress: item.macAddress || item.mac_address || '-',
+    hardwareVersion: item.hardwareVersion || item.hardware_version || '-',
+    softwareVersion: item.softwareVersion || item.software_version || '-',
+    pcbQrCode: item.pcbQrCode || item.pcbQRCode || item.pcb_qr_code || '-',
+    note: item.note || '-',
+
+    fileName:
+      item.fileName ||
+      item.sourceFileName ||
+      item.source_file_name ||
+      '暂无源文件名称',
+
+    fileUrl: item.fileUrl || item.sourceFileUrl || '',
+
+    uploader:
+      item.uploader ||
+      item.uploaderName ||
+      item.uploader_name ||
+      '-',
+
+    uploadTime: formatDate(item.uploadTime || item.upload_time),
+    importRemark: item.importRemark || item.burnDesc || item.burn_desc || ''
+  }
+}
 
 const batchNoOptions = computed(() => {
   const batches = burnRecordList.value
@@ -841,7 +869,7 @@ function handleExcelFileChange(event) {
   reader.readAsArrayBuffer(file)
 }
 
-function saveExcelBurnRecords() {
+async function saveExcelBurnRecords() {
   if (!uploadForm.file) {
     alert('请先上传 Excel 烧录记录文件')
     return
@@ -852,45 +880,75 @@ function saveExcelBurnRecords() {
     return
   }
 
-  const now = new Date().toISOString().slice(0, 10)
   const uploader = currentUserName.value
 
-  const records = excelPreviewList.value.flatMap((item, rowIndex) => {
+  const records = excelPreviewList.value.flatMap(item => {
     const serialNumbers =
       item.serialNumbers.length > 0
         ? item.serialNumbers
-        : ['-']
+        : []
 
-    return serialNumbers.map((serialNumber, snIndex) => {
+    return serialNumbers.map(serialNumber => {
       return {
-        id: Date.now() + rowIndex * 1000 + snIndex,
         batchNo: getFinalBatchNo(item.batchNo),
         productName: item.productName || '-',
         productModel: item.productModel || '-',
         productCode: item.productCode || '-',
+        deviceType: item.productName || '-',
         serialNumber,
-        macAddress: item.macAddress || '-',
+        sn: serialNumber,
+        macAddress: item.macAddress || '',
         hardwareVersion: item.hardwareVersion || '-',
         softwareVersion: item.softwareVersion || '-',
         pcbQrCode: item.pcbQrCode || '-',
+        pcbQRCode: item.pcbQrCode || '-',
         note: item.note || '-',
+
         fileName: uploadForm.fileName,
+        sourceFileName: uploadForm.fileName,
         fileUrl: uploadForm.fileUrl,
+
+        uploaderId: 1,
+        uploaderName: uploader,
         uploader,
-        uploadTime: now,
-        importRemark: uploadForm.remark
+
+        burnDesc: uploadForm.remark || '',
+        importRemark: uploadForm.remark || ''
       }
     })
   })
 
-  burnRecordList.value.unshift(...records)
-
-  const firstBatchNo = records[0]?.batchNo
-  if (firstBatchNo) {
-    expandedBatchNo.value = firstBatchNo
+  if (records.length === 0) {
+    alert('导入失败：Excel 中没有有效序列号')
+    return
   }
 
-  showUploadDialog.value = false
+  try {
+    const res = await importBurnRecords({
+      records
+    })
+
+    const result = getResponseData(res)
+
+    console.log('导入烧录记录返回：', result)
+
+    if (result.code === 200) {
+      alert(`导入成功，共导入 ${result.data?.count || records.length} 条记录`)
+
+      const firstBatchNo = records[0]?.batchNo
+      if (firstBatchNo) {
+        expandedBatchNo.value = firstBatchNo
+      }
+
+      showUploadDialog.value = false
+      await loadBurnRecords()
+    } else {
+      alert(result.msg || '导入失败')
+    }
+  } catch (err) {
+    console.error('导入烧录记录失败：', err)
+    alert(err.response?.data || '导入烧录记录失败，请检查后端接口')
+  }
 }
 
 function viewBurnRecord(item) {
@@ -899,7 +957,7 @@ function viewBurnRecord(item) {
 
 function openBurnRecordFile(item) {
   if (!item.fileUrl) {
-    alert('当前是模拟数据，暂无可直接打开的原始文件')
+    alert('当前还没有接真实文件预览，后面做文件上传下载时再接')
     return
   }
 
@@ -908,7 +966,7 @@ function openBurnRecordFile(item) {
 
 function downloadBurnRecord(item) {
   if (!item.fileUrl) {
-    alert('当前是模拟数据，暂无可下载的原始文件')
+    alert('当前还没有接真实文件下载，后面做文件上传下载时再接')
     return
   }
 
@@ -934,27 +992,48 @@ function downloadBatchFile(batch) {
   document.body.removeChild(link)
 }
 
-function deleteBurnRecord(item) {
+async function deleteBurnRecord(item) {
   const ok = confirm(`确认删除序列号【${item.serialNumber}】的烧录记录吗？`)
   if (!ok) return
 
-  burnRecordList.value = burnRecordList.value.filter(
-    record => record.id !== item.id
-  )
+  try {
+    const res = await deleteBurnRecordApi(item.id)
+    const result = getResponseData(res)
+
+    if (result.code === 200) {
+      alert('删除成功')
+      await loadBurnRecords()
+    } else {
+      alert(result.msg || '删除失败')
+    }
+  } catch (err) {
+    console.error('删除烧录记录失败：', err)
+    alert('删除失败，请检查后端接口')
+  }
 }
 
-function deleteBatch(batch) {
+async function deleteBatch(batch) {
   const ok = confirm(`确认删除生产批次【${batch.batchNo}】下的全部 ${batch.products.length} 条烧录记录吗？`)
   if (!ok) return
 
-  const ids = batch.products.map(item => item.id)
+  try {
+    const res = await deleteBurnBatchApi(batch.batchNo)
+    const result = getResponseData(res)
 
-  burnRecordList.value = burnRecordList.value.filter(
-    record => !ids.includes(record.id)
-  )
+    if (result.code === 200) {
+      alert(`删除批次成功，共删除 ${result.data?.count || batch.products.length} 条记录`)
 
-  if (expandedBatchNo.value === batch.batchNo) {
-    expandedBatchNo.value = ''
+      if (expandedBatchNo.value === batch.batchNo) {
+        expandedBatchNo.value = ''
+      }
+
+      await loadBurnRecords()
+    } else {
+      alert(result.msg || '删除批次失败')
+    }
+  } catch (err) {
+    console.error('删除烧录批次失败：', err)
+    alert('删除批次失败，请检查后端接口')
   }
 }
 </script>

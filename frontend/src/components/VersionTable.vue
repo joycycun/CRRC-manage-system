@@ -25,7 +25,6 @@
             <th>当前状态</th>
             <th>最近更新</th>
             <th>负责人</th>
-            <th class="operation-col">操作</th>
           </tr>
         </thead>
 
@@ -64,13 +63,6 @@
             <td>
               {{ item.owner }}
             </td>
-
-            <td class="operation-col">
-              <button class="text-btn" @click="$router.push('/version/matrix')">
-                查看
-              </button>
-              <button class="more-btn">...</button>
-            </td>
           </tr>
         </tbody>
       </table>
@@ -84,52 +76,35 @@
 </template>
 
 <script setup>
-const versionList = [
-  {
-    id: 1,
-    projectName: '波尔图二期项目',
-    deviceType: '广播控制盒',
-    hardwareVersion: 'HW_V2.1.0',
-    softwareVersion: 'SW_V1.2.4-Release',
-    status: '硬件开发中',
-    statusType: 'developing',
-    updateTime: '2026-05-18',
-    owner: '卢进'
-  },
-  {
-    id: 2,
-    projectName: '阿根廷有轨项目',
-    deviceType: '客室解码板',
-    hardwareVersion: 'HW_V1.0.2',
-    softwareVersion: 'SW_V2.0.1-Beta',
-    status: '集成测试',
-    statusType: 'testing',
-    updateTime: '2026-05-19',
-    owner: '寸诗睿'
-  },
-  {
-    id: 3,
-    projectName: '屯马报警器项目',
-    deviceType: '乘客报警器',
-    hardwareVersion: 'HW_V3.0.0',
-    softwareVersion: 'SW_V3.0.0-RC1',
-    status: '版本冻结',
-    statusType: 'frozen',
-    updateTime: '2026-05-12',
-    owner: '王宇'
-  },
-  {
-    id: 4,
-    projectName: '波哥大有轨项目',
-    deviceType: '编码板',
-    hardwareVersion: 'HW_V1.4.0',
-    softwareVersion: 'SW_V1.0.13',
-    status: '待量产',
-    statusType: 'production',
-    updateTime: '2026-05-16',
-    owner: '丁sir'
+import { onMounted, ref } from 'vue'
+import { getVersionMatrixReport } from '@/api/report'
+
+const versionList = ref([])
+
+onMounted(() => {
+  loadVersionMatrix()
+})
+
+async function loadVersionMatrix() {
+  try {
+    const res = await getVersionMatrixReport()
+    const result = res?.data || res
+    if (result.code !== 200) return
+    versionList.value = (result.data || []).slice(0, 6).map(item => ({
+      id: item.id,
+      projectName: item.projectName || '',
+      deviceType: item.deviceType || '',
+      hardwareVersion: item.hardwareVersion || '-',
+      softwareVersion: item.softwareVersion || '-',
+      status: item.status || '-',
+      statusType: item.statusType || 'developing',
+      updateTime: item.updateTime || '',
+      owner: item.owner || item.ownerName || '-'
+    }))
+  } catch (err) {
+    console.error('加载版本状态矩阵失败：', err)
   }
-]
+}
 </script>
 
 <style scoped>

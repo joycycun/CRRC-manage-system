@@ -1,49 +1,40 @@
 package model
 
-import (
-	"database/sql"
-	"time"
-)
-
 type TestCase struct {
-	ID                 int64        `json:"id"`
-	ProjectID          int64        `json:"projectId"`
-	CaseName           string       `json:"caseName"`
-	CaseFileID         int64        `json:"caseFileId"`
-	ReportFileID       int64        `json:"reportFileId"`
-	UploaderID         int64        `json:"uploaderId"`
-	UploaderName       string       `json:"uploaderName"`
-	UploadTime         sql.NullTime `json:"uploadTime"`
-	ReportUploaderID   int64        `json:"reportUploaderId"`
-	ReportUploaderName string       `json:"reportUploaderName"`
-	ReportUploadTime   sql.NullTime `json:"reportUploadTime"`
-	AuditStatus        string       `json:"auditStatus"`
-	AuditorID          int64        `json:"auditorId"`
-	AuditorName        string       `json:"auditorName"`
-	AuditTime          sql.NullTime `json:"auditTime"`
-	RejectReason       string       `json:"rejectReason"`
-	Remark             string       `json:"remark"`
-	CreatedAt          time.Time    `json:"createdAt"`
-	UpdatedAt          time.Time    `json:"updatedAt"`
-	IsDeleted          bool         `json:"isDeleted"`
-}
+	ID          int64  `json:"id"`
+	ProjectID   int64  `json:"projectId"`
+	ProjectName string `json:"projectName"`
 
-type TestReport struct {
-	ID           int64        `json:"id"`
-	ProjectID    int64        `json:"projectId"`
-	TestCaseID   int64        `json:"testCaseId"`
-	ReportName   string       `json:"reportName"`
-	ReportFileID int64        `json:"reportFileId"`
-	UploaderID   int64        `json:"uploaderId"`
-	UploaderName string       `json:"uploaderName"`
-	UploadTime   sql.NullTime `json:"uploadTime"`
-	AuditStatus  string       `json:"auditStatus"`
-	AuditorID    int64        `json:"auditorId"`
-	AuditorName  string       `json:"auditorName"`
-	AuditTime    sql.NullTime `json:"auditTime"`
-	RejectReason string       `json:"rejectReason"`
-	Remark       string       `json:"remark"`
-	CreatedAt    time.Time    `json:"createdAt"`
-	UpdatedAt    time.Time    `json:"updatedAt"`
-	IsDeleted    bool         `json:"isDeleted"`
+	CaseName string `json:"caseName"`
+
+	FileID   int64  `json:"fileId"`
+	FileName string `json:"fileName"`
+	FileURL  string `json:"fileUrl"`
+
+	UploaderID   int64  `json:"uploaderId"`
+	UploaderName string `json:"uploaderName"`
+	Uploader     string `json:"uploader"`
+	UploadTime   string `json:"uploadTime"`
+
+	AuditStatus string `json:"auditStatus"`
+	AuditorID   int64  `json:"auditorId"`
+	AuditorName string `json:"auditorName"`
+	Auditor     string `json:"auditor"`
+	AuditTime   string `json:"auditTime"`
+
+	RejectReason string `json:"rejectReason"`
+	Remark       string `json:"remark"`
+
+	ReportName         string `json:"reportName"`
+	ReportFileID       int64  `json:"reportFileId"`
+	ReportFileName     string `json:"reportFileName"`
+	ReportFileURL      string `json:"reportFileUrl"`
+	ReportUploaderID   int64  `json:"reportUploaderId"`
+	ReportUploaderName string `json:"reportUploaderName"`
+	ReportUploader     string `json:"reportUploader"`
+	ReportUploadTime   string `json:"reportUploadTime"`
+	ReportRemark       string `json:"reportRemark"`
+
+	CreatedAt string `json:"createdAt"`
+	UpdatedAt string `json:"updatedAt"`
 }

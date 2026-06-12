@@ -1,5 +1,7 @@
 <template>
-  <div class="app-layout">
+  <router-view v-if="isLoginPage" />
+
+  <div v-else class="app-layout">
     <Sidebar />
 
     <div class="main-area">
@@ -13,8 +15,14 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
+import { useRoute } from 'vue-router'
 import Sidebar from './components/Sidebar.vue'
 import Header from './components/Header.vue'
+
+const route = useRoute()
+
+const isLoginPage = computed(() => route.path === '/login')
 </script>
 
 <style scoped>

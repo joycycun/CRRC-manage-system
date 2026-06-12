@@ -40,7 +40,7 @@
         </option>
       </select>
 
-      <button class="query-btn">查询</button>
+      <button class="query-btn" @click="loadInventory">查询</button>
       <button class="reset-btn" @click="resetFilters">重置</button>
     </div>
 
@@ -266,10 +266,8 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch } from 'vue'
-
-const STORAGE_INVENTORY_KEY = 'inventoryList'
-const STORAGE_OUTBOUND_KEY = 'outInventoryList'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { getInventory } from '@/api/inventory'
 
 const filters = reactive({
   keyword: '',
@@ -283,219 +281,149 @@ const pageSize = ref(10)
 
 const pageSizeOptions = [10, 20, 50, 100]
 
-const deviceTypeOptions = [
-  '司机室控制盒',
-  '解码板',
-  '司机提醒单元',
-  '噪声检测',
-  '编码板',
-  '功放板'
-]
+const inventoryList = ref([])
 
-const defaultInventoryList = [
-  {
-    id: 1,
-    deviceType: '司机室控制盒',
-    sn: 'DCCU-202605100001',
-    macAddress: '00:11:22:33:44:01',
-    softwareVersion: 'SW-DCCU.V1.2.0',
-    hardwareVersion: 'HD-DCCU.V1.1.0',
-    inventoryStatus: 'ready',
-    inTime: '2026-05-10',
-    updateTime: '2026-05-11',
-    remark: '已完成烧录和出厂测试，可发货。'
-  },
-  {
-    id: 2,
-    deviceType: '司机室控制盒',
-    sn: 'DCCU-202605100002',
-    macAddress: '00:11:22:33:44:02',
-    softwareVersion: 'SW-DCCU.V1.2.0',
-    hardwareVersion: 'HD-DCCU.V1.1.0',
-    inventoryStatus: 'ready',
-    inTime: '2026-05-10',
-    updateTime: '2026-05-11',
-    remark: '已完成烧录和出厂测试，可发货。'
-  },
-  {
-    id: 3,
-    deviceType: '司机室控制盒',
-    sn: 'DCCU-202605100003',
-    macAddress: '00:11:22:33:44:03',
-    softwareVersion: 'SW-DCCU.V1.2.0',
-    hardwareVersion: 'HD-DCCU.V1.1.0',
-    inventoryStatus: 'ready',
-    inTime: '2026-05-10',
-    updateTime: '2026-05-10'
-  },
-  {
-    id: 4,
-    deviceType: '解码板',
-    sn: 'DEC-202605110001',
-    macAddress: '00:11:22:55:66:01',
-    softwareVersion: 'SW-DECODER.V1.0.3',
-    hardwareVersion: 'HD-DECODER.V1.1.0',
-    inventoryStatus: 'ready',
-    inTime: '2026-05-11',
-    updateTime: '2026-05-12'
-  },
-  {
-    id: 5,
-    deviceType: '解码板',
-    sn: 'DEC-202605110002',
-    macAddress: '00:11:22:55:66:02',
-    softwareVersion: 'SW-DECODER.V1.0.3',
-    hardwareVersion: 'HD-DECODER.V1.1.0',
-    inventoryStatus: 'ready',
-    inTime: '2026-05-11',
-    updateTime: '2026-05-12'
-  },
-  {
-    id: 6,
-    deviceType: '解码板',
-    sn: 'DEC-202605110003',
-    macAddress: '00:11:22:55:66:03',
-    softwareVersion: 'SW-DECODER.V1.0.2',
-    hardwareVersion: 'HD-DECODER.V1.0.0',
-    inventoryStatus: 'ready',
-    inTime: '2026-05-11',
-    updateTime: '2026-05-13'
-  },
-  {
-    id: 7,
-    deviceType: '司机提醒单元',
-    sn: 'DRU-202605120001',
-    macAddress: '00:11:22:77:88:01',
-    softwareVersion: 'SW-DRU.V1.0.0',
-    hardwareVersion: 'HD-DRU.V1.0.0',
-    inventoryStatus: 'ready',
-    inTime: '2026-05-12',
-    updateTime: '2026-05-13'
-  },
-  {
-    id: 8,
-    deviceType: '司机提醒单元',
-    sn: 'DRU-202605120002',
-    macAddress: '00:11:22:77:88:02',
-    softwareVersion: 'SW-DRU.V1.0.0',
-    hardwareVersion: 'HD-DRU.V1.0.0',
-    inventoryStatus: 'waiting_burn',
-    inTime: '2026-05-12',
-    updateTime: '2026-05-12',
-    remark: '未完成烧录，不在库存页面展示。'
-  },
-  {
-    id: 9,
-    deviceType: '噪声检测',
-    sn: 'NOISE-202605130001',
-    macAddress: '00:11:22:99:AA:01',
-    softwareVersion: 'SW-NOISE.V1.1.0',
-    hardwareVersion: 'HD-NOISE.V1.0.1',
-    inventoryStatus: 'ready',
-    inTime: '2026-05-13',
-    updateTime: '2026-05-14'
-  },
-  {
-    id: 10,
-    deviceType: '噪声检测',
-    sn: 'NOISE-202605130002',
-    macAddress: '00:11:22:99:AA:02',
-    softwareVersion: 'SW-NOISE.V1.1.0',
-    hardwareVersion: 'HD-NOISE.V1.0.1',
-    inventoryStatus: 'repair',
-    inTime: '2026-05-13',
-    updateTime: '2026-05-15',
-    remark: '返修库存，不在当前库存页面展示。'
-  },
-  {
-    id: 11,
-    deviceType: '编码板',
-    sn: 'ENC-202605140001',
-    macAddress: '00:11:22:BB:CC:01',
-    softwareVersion: 'SW-ENCODER.V1.3.0',
-    hardwareVersion: 'HD-ENCODER.V1.2.0',
-    inventoryStatus: 'ready',
-    inTime: '2026-05-14',
-    updateTime: '2026-05-15'
-  },
-  {
-    id: 12,
-    deviceType: '编码板',
-    sn: 'ENC-202605140002',
-    macAddress: '00:11:22:BB:CC:02',
-    softwareVersion: 'SW-ENCODER.V1.3.0',
-    hardwareVersion: 'HD-ENCODER.V1.2.0',
-    inventoryStatus: 'repair',
-    inTime: '2026-05-14',
-    updateTime: '2026-05-14',
-    remark: '返修库存，不在当前库存页面展示。'
-  },
-  {
-    id: 13,
-    deviceType: '功放板',
-    sn: 'AMP-202605150001',
-    macAddress: '00:11:22:DD:EE:01',
-    softwareVersion: 'SW-AMP.V1.0.5',
-    hardwareVersion: 'HD-AMP.V1.0.2',
-    inventoryStatus: 'ready',
-    inTime: '2026-05-15',
-    updateTime: '2026-05-16'
-  },
-  {
-    id: 14,
-    deviceType: '功放板',
-    sn: 'AMP-202605150002',
-    macAddress: '00:11:22:DD:EE:02',
-    softwareVersion: 'SW-AMP.V1.0.5',
-    hardwareVersion: 'HD-AMP.V1.0.2',
-    inventoryStatus: 'ready',
-    inTime: '2026-05-15',
-    updateTime: '2026-05-16'
+onMounted(async () => {
+  await loadInventory()
+})
+
+function getResponseData(res) {
+  if (res && res.data) return res.data
+  return res
+}
+function getInventoryStatusText(status) {
+  const map = {
+    in_stock: '在库',
+    reserved: '已预占',
+    shipped: '已出库',
+    repairing: '维修中',
+    scrapped: '已报废',
+
+    在库: '在库',
+    已预占: '已预占',
+    已出库: '已出库',
+    维修中: '维修中',
+    已报废: '已报废'
   }
-]
 
-function readStorageList(key, fallback) {
+  return map[status] || status || '-'
+}
+function getInventoryStatusClass(status) {
+  const map = {
+    in_stock: 'in-stock',
+    reserved: 'reserved',
+    shipped: 'shipped',
+    repairing: 'repairing',
+    scrapped: 'scrapped',
+
+    在库: 'in-stock',
+    已预占: 'reserved',
+    已出库: 'shipped',
+    维修中: 'repairing',
+    已报废: 'scrapped'
+  }
+
+  return map[status] || 'in-stock'
+}
+async function loadInventory() {
   try {
-    const raw = localStorage.getItem(key)
-    if (!raw) return fallback
-    return JSON.parse(raw)
-  } catch (error) {
-    return fallback
+    const res = await getInventory()
+    const result = getResponseData(res)
+
+    console.log('库存接口返回：', result)
+
+    if (result.code !== 200) {
+      alert(result.msg || '加载库存失败')
+      return
+    }
+
+    inventoryList.value = (result.data || []).map(item => normalizeInventory(item))
+  } catch (err) {
+    console.error('加载库存失败：', err)
+    alert(err.response?.data || '加载库存失败，请检查 /api/inventory 接口')
   }
 }
 
-function saveStorageList(key, value) {
-  localStorage.setItem(key, JSON.stringify(value))
+function normalizeInventory(item) {
+  return {
+    id: item.id,
+
+    projectId: item.projectId || item.project_id || 0,
+
+    deviceType: item.deviceType || item.device_type || '-',
+    productName: item.productName || item.product_name || '-',
+    productModel: item.productModel || item.product_model || '-',
+
+    sn: item.sn || '-',
+    macAddress: item.macAddress || item.mac_address || '-',
+
+    hardwareId: item.hardwareId || item.hardware_id || 0,
+    hardwareVersion: item.hardwareVersion || item.hardware_version || '-',
+
+    softwareId: item.softwareId || item.software_id || 0,
+    softwareVersion: item.softwareVersion || item.software_version || '-',
+
+    inventoryStatus: item.inventoryStatus || item.inventory_status || '',
+
+    sourceBurnRecordId:
+      item.sourceBurnRecordId ||
+      item.source_burn_record_id ||
+      0,
+
+    factoryTestId:
+      item.factoryTestId ||
+      item.factory_test_id ||
+      0,
+
+    inTime: formatDateTime(item.inTime || item.in_time),
+    updateTime: formatDateTime(item.updateTime || item.update_time),
+
+    remark: item.remark || ''
+  }
 }
 
-const inventoryList = ref(readStorageList(STORAGE_INVENTORY_KEY, defaultInventoryList))
-const outboundList = ref(readStorageList(STORAGE_OUTBOUND_KEY, []))
+function formatDateTime(value) {
+  if (!value) return ''
 
-watch(
-  inventoryList,
-  value => {
-    saveStorageList(STORAGE_INVENTORY_KEY, value)
-  },
-  { deep: true }
-)
+  if (typeof value === 'string') {
+    return value.slice(0, 19).replace('T', ' ')
+  }
 
+  if (value.Time) {
+    return String(value.Time).slice(0, 19).replace('T', ' ')
+  }
+
+  return String(value)
+}
+
+// 不按库存状态过滤；后端返回什么库存记录，前端就展示什么
 const completedInventoryList = computed(() => {
-  return inventoryList.value.filter(item => {
-    return item.inventoryStatus === 'ready'
-  })
+  return inventoryList.value
+})
+
+const deviceTypeOptions = computed(() => {
+  const types = completedInventoryList.value
+    .map(item => item.deviceType)
+    .filter(Boolean)
+    .filter(type => type !== '-')
+
+  return [...new Set(types)]
 })
 
 const filteredInventoryList = computed(() => {
   return completedInventoryList.value.filter(item => {
-    const keyword = filters.keyword.trim()
+    const keyword = filters.keyword.trim().toLowerCase()
 
     const keywordMatch =
       !keyword ||
-      item.sn.includes(keyword) ||
-      item.macAddress.includes(keyword) ||
-      item.softwareVersion.includes(keyword) ||
-      item.hardwareVersion.includes(keyword) ||
-      item.deviceType.includes(keyword)
+      item.sn.toLowerCase().includes(keyword) ||
+      item.macAddress.toLowerCase().includes(keyword) ||
+      item.softwareVersion.toLowerCase().includes(keyword) ||
+      item.hardwareVersion.toLowerCase().includes(keyword) ||
+      item.deviceType.toLowerCase().includes(keyword) ||
+      item.productName.toLowerCase().includes(keyword) ||
+      item.productModel.toLowerCase().includes(keyword) ||
+      item.remark.toLowerCase().includes(keyword)
 
     const deviceTypeMatch =
       !filters.deviceType || item.deviceType === filters.deviceType
@@ -506,16 +434,21 @@ const filteredInventoryList = computed(() => {
 
 const totalCount = computed(() => completedInventoryList.value.length)
 
+// 现在没有接出库表接口，先按 inventory_status = 已出库 且 updateTime 是当月统计
 const currentMonthOutboundCount = computed(() => {
   const currentMonth = new Date().toISOString().slice(0, 7)
 
-  return outboundList.value.filter(item => {
-    return item.outboundTime && item.outboundTime.startsWith(currentMonth)
+  return inventoryList.value.filter(item => {
+    return (
+      item.inventoryStatus === '已出库' &&
+      item.updateTime &&
+      item.updateTime.startsWith(currentMonth)
+    )
   }).length
 })
 
 const deviceTypeSummary = computed(() => {
-  return deviceTypeOptions.map(type => {
+  return deviceTypeOptions.value.map(type => {
     return {
       deviceType: type,
       count: completedInventoryList.value.filter(item => item.deviceType === type).length
@@ -562,17 +495,6 @@ watch(totalPage, value => {
     currentPage.value = value
   }
 })
-
-function getInventoryStatusText(status) {
-  const map = {
-    ready: '已完成烧录和出厂测试',
-    waiting_burn: '待烧录',
-    repair: '返修库存',
-    testing: '出厂测试中'
-  }
-
-  return map[status] || status
-}
 
 function resetFilters() {
   filters.keyword = ''

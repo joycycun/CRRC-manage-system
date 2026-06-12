@@ -39,14 +39,14 @@
         <option value="">全部项目</option>
         <option
           v-for="project in projectOptions"
-          :key="project"
-          :value="project"
+          :key="project.id"
+          :value="project.projectName"
         >
-          {{ project }}
+          {{ project.projectName }}
         </option>
       </select>
 
-      <button class="query-btn">查询</button>
+      <button class="query-btn" @click="loadRepairRecords">查询</button>
       <button class="reset-btn" @click="resetFilters">重置</button>
     </div>
 
@@ -157,14 +157,14 @@
 
           <label>
             绑定项目
-            <select v-model="repairForm.projectName">
-              <option value="">请选择项目</option>
+            <select v-model.number="repairForm.projectId">
+              <option value="">请选择已关闭项目</option>
               <option
                 v-for="project in projectOptions"
-                :key="project"
-                :value="project"
+                :key="project.id"
+                :value="project.id"
               >
-                {{ project }}
+                {{ project.projectName }}
               </option>
             </select>
           </label>
@@ -341,7 +341,14 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { getProjects } from '@/api/project'
+import {
+  createRepairRecord,
+  deleteRepairRecord,
+  getRepairRecords,
+  updateRepairRecord
+} from '@/api/repair'
 
 const currentUserName = ref(
   localStorage.getItem('username') ||
@@ -361,13 +368,7 @@ const selectedRepair = ref(null)
 const currentEditRepair = ref(null)
 const editMode = ref('create')
 
-const projectOptions = [
-  '香港屯马项目',
-  '波尔图二期项目',
-  '阿根廷有轨项目',
-  '波哥大有轨项目',
-  '迪拜项目'
-]
+const projectOptions = ref([])
 
 const deviceTypeOptions = [
   '司机室控制盒',
@@ -379,7 +380,7 @@ const deviceTypeOptions = [
 ]
 
 const repairForm = reactive({
-  projectName: '',
+  projectId: '',
   deviceType: '',
   sn: '',
   macAddress: '',
@@ -391,80 +392,105 @@ const repairForm = reactive({
   remark: ''
 })
 
-const repairList = ref([
-  {
-    id: 1,
-    projectName: '香港屯马项目',
-    deviceType: '司机室控制盒',
-    sn: 'DCCU-202605100001',
-    macAddress: '00:11:22:33:44:01',
-    faultDesc: '设备上电后无音频输出',
-    repairUser: '售后人员',
-    repairTime: '2026-05-10',
-    returnCompleteTime: '2026-05-12',
-    repairMethod: '返厂维修',
-    repairProcess: '检查音频功放输出，重新烧录软件后复测正常。',
-    updateTime: '2026-05-10',
-    remark: '维修完成，广播和对讲功能验证正常。'
-  },
-  {
-    id: 2,
-    projectName: '波尔图二期项目',
-    deviceType: '解码板',
-    sn: 'DEC-202605110001',
-    macAddress: '00:11:22:55:66:01',
-    faultDesc: '客室广播偶发解码失败',
-    repairUser: '维修人员',
-    repairTime: '2026-05-16',
-    returnCompleteTime: '',
-    repairMethod: '现场维修',
-    repairProcess: '正在检查网络模块和音频解码流程。',
-    updateTime: '2026-05-16',
-    remark: '问题仍在排查。'
-  },
-  {
-    id: 3,
-    projectName: '阿根廷有轨项目',
-    deviceType: '司机提醒单元',
-    sn: 'DRU-202605120001',
-    macAddress: '00:11:22:77:88:01',
-    faultDesc: '提醒音播放异常',
-    repairUser: '售后人员',
-    repairTime: '2026-05-18',
-    returnCompleteTime: '',
-    repairMethod: '远程指导维修',
-    repairProcess: '等待现场提供日志和设备状态。',
-    updateTime: '2026-05-18',
-    remark: '待维修确认。'
-  },
-  {
-    id: 4,
-    projectName: '迪拜项目',
-    deviceType: '编码板',
-    sn: 'ENC-202605140001',
-    macAddress: '00:11:22:BB:CC:01',
-    faultDesc: '远程维修失败，设备无法连接',
-    repairUser: '售后人员',
-    repairTime: '2026-05-20',
-    returnCompleteTime: '',
-    repairMethod: '远程指导维修',
-    repairProcess: '远程连接失败，设备无响应。',
-    updateTime: '2026-05-20',
-    remark: '错误维修记录，可删除后重新登记。'
+const repairList = ref([])
+
+onMounted(async () => {
+  await Promise.all([loadProjects(), loadRepairRecords()])
+})
+
+function getResponseData(res) {
+  return res && res.data ? res.data : res
+}
+
+function normalizeProject(item) {
+  return {
+    id: item.id,
+    projectName: item.projectName || item.project_name || '',
+    projectCode: item.projectCode || item.project_code || '',
+    status: item.status || ''
   }
-])
+}
+
+function normalizeRepair(item) {
+  return {
+    id: item.id,
+    projectId: item.projectId || item.project_id || 0,
+    projectName: item.projectName || item.project_name || '',
+    deviceType: item.deviceType || item.device_type || '',
+    inventoryDeviceId: item.inventoryDeviceId || item.inventory_device_id || 0,
+    sn: item.sn || '',
+    macAddress: item.macAddress || item.mac_address || '',
+    faultDesc: item.faultDesc || item.fault_desc || '',
+    repairUserId: item.repairUserId || item.repair_user_id || 0,
+    repairUserName: item.repairUserName || item.repair_user_name || item.repairUser || '',
+    repairUser: item.repairUser || item.repairUserName || item.repair_user_name || '',
+    repairTime: formatDate(item.repairTime || item.repair_time),
+    returnCompleteTime: formatDate(item.returnCompleteTime || item.return_complete_time || item.repairFinishTime || item.repair_finish_time),
+    repairMethod: item.repairMethod || item.repair_method || '返厂维修',
+    repairProcess: item.repairProcess || item.repair_process || '',
+    confirmStatus: item.confirmStatus || item.confirm_status || '待确认',
+    updateTime: formatDateTime(item.updateTime || item.updatedAt || item.updated_at),
+    remark: item.remark || ''
+  }
+}
+
+function formatDate(value) {
+  if (!value) return ''
+  if (typeof value === 'string') return value.slice(0, 10)
+  if (value.Time) return String(value.Time).slice(0, 10)
+  return String(value).slice(0, 10)
+}
+
+function formatDateTime(value) {
+  if (!value) return ''
+  if (typeof value === 'string') return value.slice(0, 19).replace('T', ' ')
+  if (value.Time) return String(value.Time).slice(0, 19).replace('T', ' ')
+  return String(value)
+}
+
+async function loadProjects() {
+  try {
+    const res = await getProjects()
+    const result = getResponseData(res)
+    if (result.code !== 200) {
+      alert(result.msg || '加载项目失败')
+      return
+    }
+    projectOptions.value = (result.data || [])
+      .map(normalizeProject)
+      .filter(project => project.status === '已关闭')
+  } catch (err) {
+    console.error('加载项目失败：', err)
+    alert(err.response?.data || '加载项目失败，请检查 /api/projects 接口')
+  }
+}
+
+async function loadRepairRecords() {
+  try {
+    const res = await getRepairRecords()
+    const result = getResponseData(res)
+    if (result.code !== 200) {
+      alert(result.msg || '加载维修记录失败')
+      return
+    }
+    repairList.value = (result.data || []).map(normalizeRepair)
+  } catch (err) {
+    console.error('加载维修记录失败：', err)
+    alert(err.response?.data || '加载维修记录失败，请检查 /api/repair-records 接口')
+  }
+}
 
 const filteredRepairList = computed(() => {
   return repairList.value.filter(item => {
     const keywordMatch =
       !filters.keyword ||
-      item.projectName.includes(filters.keyword) ||
-      item.deviceType.includes(filters.keyword) ||
-      item.sn.includes(filters.keyword) ||
-      item.macAddress.includes(filters.keyword) ||
-      item.faultDesc.includes(filters.keyword) ||
-      item.repairUser.includes(filters.keyword) ||
-      item.repairProcess.includes(filters.keyword) ||
+      String(item.projectName || '').includes(filters.keyword) ||
+      String(item.deviceType || '').includes(filters.keyword) ||
+      String(item.sn || '').includes(filters.keyword) ||
+      String(item.macAddress || '').includes(filters.keyword) ||
+      String(item.faultDesc || '').includes(filters.keyword) ||
+      String(item.repairUser || '').includes(filters.keyword) ||
+      String(item.repairProcess || '').includes(filters.keyword) ||
       String(item.returnCompleteTime || '').includes(filters.keyword)
 
     const projectMatch =
@@ -488,7 +514,7 @@ function openCreateDialog() {
   currentEditRepair.value = null
 
   repairForm.deviceType = ''
-  repairForm.projectName = ''
+  repairForm.projectId = ''
   repairForm.sn = ''
   repairForm.macAddress = ''
   repairForm.faultDesc = ''
@@ -506,7 +532,7 @@ function openEditDialog(item) {
   currentEditRepair.value = item
 
   repairForm.deviceType = item.deviceType
-  repairForm.projectName = item.projectName
+  repairForm.projectId = item.projectId
   repairForm.sn = item.sn
   repairForm.macAddress = item.macAddress
   repairForm.faultDesc = item.faultDesc
@@ -519,13 +545,13 @@ function openEditDialog(item) {
   showEditDialog.value = true
 }
 
-function saveRepair() {
+async function saveRepair() {
   if (!repairForm.deviceType) {
     alert('请选择终端类型')
     return
   }
 
-  if (!repairForm.projectName) {
+  if (!repairForm.projectId) {
     alert('请选择绑定项目')
     return
   }
@@ -545,50 +571,63 @@ function saveRepair() {
     return
   }
 
-  if (editMode.value === 'create') {
-    repairList.value.unshift({
-      id: Date.now(),
-      projectName: repairForm.projectName,
-      deviceType: repairForm.deviceType,
-      sn: repairForm.sn,
-      macAddress: repairForm.macAddress,
-      faultDesc: repairForm.faultDesc,
-      repairUser: currentUserName.value,
-      repairTime: repairForm.repairTime,
-      returnCompleteTime: repairForm.returnCompleteTime,
-      repairMethod: repairForm.repairMethod,
-      repairProcess: repairForm.repairProcess,
-      updateTime: new Date().toISOString().slice(0, 10),
-      remark: repairForm.remark
-    })
-  } else {
-    currentEditRepair.value.deviceType = repairForm.deviceType
-    currentEditRepair.value.projectName = repairForm.projectName
-    currentEditRepair.value.sn = repairForm.sn
-    currentEditRepair.value.macAddress = repairForm.macAddress
-    currentEditRepair.value.faultDesc = repairForm.faultDesc
-    currentEditRepair.value.repairTime = repairForm.repairTime
-    currentEditRepair.value.returnCompleteTime = repairForm.returnCompleteTime
-    currentEditRepair.value.repairMethod = repairForm.repairMethod
-    currentEditRepair.value.repairProcess = repairForm.repairProcess
-    currentEditRepair.value.updateTime = new Date().toISOString().slice(0, 10)
-    currentEditRepair.value.remark = repairForm.remark
-    currentEditRepair.value.repairUser =
-      currentEditRepair.value.repairUser || currentUserName.value
+  const selectedProject = projectOptions.value.find(project => project.id === Number(repairForm.projectId))
+  const payload = {
+    projectId: Number(repairForm.projectId),
+    projectName: selectedProject?.projectName || '',
+    deviceType: repairForm.deviceType,
+    sn: repairForm.sn,
+    macAddress: repairForm.macAddress,
+    faultDesc: repairForm.faultDesc,
+    repairUserId: 1,
+    repairUserName: editMode.value === 'create'
+      ? currentUserName.value
+      : (currentEditRepair.value?.repairUser || currentUserName.value),
+    repairTime: repairForm.repairTime,
+    returnCompleteTime: repairForm.returnCompleteTime,
+    repairMethod: repairForm.repairMethod,
+    repairProcess: repairForm.repairProcess,
+    confirmStatus: currentEditRepair.value?.confirmStatus || '待确认',
+    remark: repairForm.remark
   }
 
-  showEditDialog.value = false
+  try {
+    const res = editMode.value === 'create'
+      ? await createRepairRecord(payload)
+      : await updateRepairRecord(currentEditRepair.value.id, payload)
+    const result = getResponseData(res)
+    if (result.code !== 200) {
+      alert(result.msg || '保存维修记录失败')
+      return
+    }
+    showEditDialog.value = false
+    await loadRepairRecords()
+  } catch (err) {
+    console.error('保存维修记录失败：', err)
+    alert(err.response?.data || '保存维修记录失败')
+  }
 }
 
 function viewRepair(item) {
   selectedRepair.value = item
 }
 
-function deleteRepair(item) {
+async function deleteRepair(item) {
   const ok = confirm(`确认删除维修记录【${item.sn}】吗？`)
   if (!ok) return
 
-  repairList.value = repairList.value.filter(record => record.id !== item.id)
+  try {
+    const res = await deleteRepairRecord(item.id)
+    const result = getResponseData(res)
+    if (result.code !== 200) {
+      alert(result.msg || '删除失败')
+      return
+    }
+    await loadRepairRecords()
+  } catch (err) {
+    console.error('删除失败：', err)
+    alert(err.response?.data || '删除失败')
+  }
 }
 
 function exportRepairRecords() {

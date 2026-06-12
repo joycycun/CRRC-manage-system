@@ -42,7 +42,7 @@
         </option>
       </select>
 
-      <button class="query-btn">查询</button>
+      <button class="query-btn" @click="loadVersionMatrix">查询</button>
       <button class="reset-btn" @click="resetFilters">重置</button>
     </div>
 
@@ -58,14 +58,13 @@
       <div class="table-wrapper">
         <table class="version-table">
           <thead>
-            <tr>
-              <th>终端类型</th>
-              <th>项目名称</th>
-              <th>硬件版本</th>
-              <th>软件版本</th>
-              <th>最近更新时间</th>
-              <th class="operation-col">操作</th>
-            </tr>
+          <tr>
+            <th>终端类型</th>
+            <th>项目名称</th>
+            <th>硬件版本</th>
+            <th>软件版本</th>
+            <th>最近更新时间</th>
+          </tr>
           </thead>
 
           <tbody>
@@ -77,9 +76,7 @@
               </td>
 
               <td>
-                <button class="record-link" @click="viewMatrix(item)">
-                  {{ item.projectName }}
-                </button>
+                <span class="project-name">{{ item.projectName }}</span>
               </td>
 
 
@@ -96,14 +93,6 @@
               </td>
 
               <td class="muted">{{ item.updateTime }}</td>
-
-              <td class="operation-col">
-                <div class="action-group">
-                  <button class="text-btn" @click="viewMatrix(item)">
-                    查看
-                  </button>
-                </div>
-              </td>
             </tr>
           </tbody>
         </table>
@@ -113,64 +102,12 @@
       </div>
     </div>
 
-    <!-- 查看详情弹窗 -->
-    <div v-if="selectedMatrix" class="dialog-mask">
-      <div class="dialog large-dialog">
-        <div class="dialog-header">
-          <h3>版本矩阵详情</h3>
-          <button @click="selectedMatrix = null">×</button>
-        </div>
-
-        <div class="detail-card">
-          <div>
-            <span>终端类型</span>
-            <strong>{{ selectedMatrix.deviceType }}</strong>
-          </div>
-
-
-          <div>
-            <span>项目名称</span>
-            <strong>{{ selectedMatrix.projectName }}</strong>
-          </div>
-
-          <div>
-            <span>硬件版本</span>
-            <strong>{{ selectedMatrix.hardwareVersion }}</strong>
-          </div>
-
-          <div>
-            <span>软件版本</span>
-            <strong>{{ selectedMatrix.softwareVersion }}</strong>
-          </div>
-
-          <div>
-            <span>最近更新时间</span>
-            <strong>{{ selectedMatrix.updateTime }}</strong>
-          </div>
-
-          <div>
-            <span>负责人</span>
-            <strong>{{ selectedMatrix.owner }}</strong>
-          </div>
-        </div>
-
-        <div class="remark-card">
-          <span>版本说明</span>
-          <p>{{ selectedMatrix.remark || '暂无说明' }}</p>
-        </div>
-
-        <div class="dialog-footer">
-          <button class="primary-btn" @click="selectedMatrix = null">
-            关闭
-          </button>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { getVersionMatrixReport } from '@/api/report'
 
 const filters = reactive({
   keyword: '',
@@ -178,97 +115,47 @@ const filters = reactive({
   deviceType: ''
 })
 
-const selectedMatrix = ref(null)
+const matrixList = ref([])
 
-const projectOptions = [
-  '波尔图二期项目',
-  '阿根廷有轨项目',
-  '屯马报警器项目',
-  '波哥大有轨项目',
-  '香港屯马项目',
-  '香港东涌线'
-]
+onMounted(() => {
+  loadVersionMatrix()
+})
 
-const deviceTypeOptions = [
-  '广播控制盒',
-  '客室解码板',
-  '乘客报警器',
-  '编码板',
-  '司机室控制盒',
-  '解码板',
-  '司机提醒单元',
-  '功放板'
-]
+function getResponseData(res) {
+  return res && res.data ? res.data : res
+}
 
-/**
- * 这里先用前端模拟数据。
- * 正式项目中：
- * 1. hardwareVersion 应该来自 HardwareVersionView.vue 对应的后端表
- * 2. softwareVersion 应该来自 SoftwareVersionView.vue 对应的后端表
- * 3. 当前页面只负责把项目 + 终端类型 + 硬件版本 + 软件版本合并展示
- */
-const matrixList = ref([
-  {
-    id: 1,
-    projectName: '波尔图二期项目',
-    deviceType: '广播控制盒',
-    hardwareVersion: 'HW_V2.1.0',
-    softwareVersion: 'SW_V1.2.4-Release',
-    updateTime: '2026-05-18',
-    owner: '卢进',
-    remark: '广播控制盒当前硬件版本与软件发布版本已完成绑定。'
-  },
-  {
-    id: 2,
-    projectName: '阿根廷有轨项目',
-    deviceType: '客室解码板',
-    hardwareVersion: 'HW_V1.0.2',
-    softwareVersion: 'SW_V2.0.1-Beta',
-    updateTime: '2026-05-19',
-    owner: '寸诗睿',
-    remark: '客室解码板当前处于集成测试版本。'
-  },
-  {
-    id: 3,
-    projectName: '屯马报警器项目',
-    deviceType: '乘客报警器',
-    hardwareVersion: 'HW_V3.0.0',
-    softwareVersion: 'SW_V3.0.0-RC1',
-    updateTime: '2026-05-12',
-    owner: '王宇',
-    remark: '乘客报警器版本已冻结，等待生产使用。'
-  },
-  {
-    id: 4,
-    projectName: '波哥大有轨项目',
-    deviceType: '编码板',
-    hardwareVersion: 'HW_V1.4.0',
-    softwareVersion: 'SW_V1.0.13',
-    updateTime: '2026-05-16',
-    owner: '丁sir',
-    remark: '编码板版本待量产确认。'
-  },
-  {
-    id: 5,
-    projectName: '香港屯马项目',
-    deviceType: '司机室控制盒',
-    hardwareVersion: 'HD-DCCU.V1.1.0',
-    softwareVersion: 'SW-DCCU.V1.2.0',
-    updateTime: '2026-05-20',
-    owner: '卢进',
-    remark: '司机室控制盒已完成当前项目软件与硬件版本绑定。'
-  },
-  {
-    id: 6,
-    projectName: '香港东涌线',
-    deviceType: '解码板',
-    hardwareVersion: 'HD-DECODER.V1.1.0',
-    softwareVersion: 'SW-DECODER.V1.0.3',
-    updateTime: '2026-05-21',
-    owner: '寸诗睿',
-    remark: '解码板版本用于香港东涌线项目。'
+function normalizeMatrix(item) {
+  return {
+    id: item.id,
+    projectName: item.projectName || '',
+    deviceType: item.deviceType || '',
+    hardwareVersion: item.hardwareVersion || '',
+    softwareVersion: item.softwareVersion || '',
+    updateTime: item.updateTime || '',
+    owner: item.owner || item.ownerName || '',
+    remark: item.remark || '',
+    status: item.status || ''
   }
-])
+}
+
+async function loadVersionMatrix() {
+  try {
+    const res = await getVersionMatrixReport()
+    const result = getResponseData(res)
+    if (result.code !== 200) {
+      alert(result.msg || '加载版本矩阵失败')
+      return
+    }
+    matrixList.value = (result.data || []).map(normalizeMatrix)
+  } catch (err) {
+    console.error('加载版本矩阵失败：', err)
+    alert(err.response?.data || '加载版本矩阵失败')
+  }
+}
+
+const projectOptions = computed(() => [...new Set(matrixList.value.map(item => item.projectName).filter(Boolean))])
+const deviceTypeOptions = computed(() => [...new Set(matrixList.value.map(item => item.deviceType).filter(Boolean))])
 
 const filteredMatrixList = computed(() => {
   return matrixList.value.filter(item => {
@@ -296,10 +183,6 @@ function resetFilters() {
   filters.deviceType = ''
 }
 
-function viewMatrix(item) {
-  selectedMatrix.value = item
-}
-
 function exportVersionMatrix() {
   const header = [
     '终端类型', 
@@ -312,8 +195,8 @@ function exportVersionMatrix() {
   ]
 
   const rows = filteredMatrixList.value.map(item => [
-    item.projectName,
     item.deviceType,
+    item.projectName,
     item.hardwareVersion,
     item.softwareVersion,
     item.updateTime,

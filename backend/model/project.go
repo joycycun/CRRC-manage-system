@@ -23,6 +23,7 @@ type Project struct {
 	CreatedAt     time.Time    `json:"createdAt"`
 	UpdatedAt     time.Time    `json:"updatedAt"`
 	CloseTime     sql.NullTime `json:"-"`
+	IsDeleted     bool         `json:"isDeleted"`
 }
 
 type ProjectResponse struct {
@@ -43,9 +44,10 @@ type ProjectResponse struct {
 	CreatedAt     time.Time  `json:"createdAt"`
 	UpdatedAt     time.Time  `json:"updatedAt"`
 	CloseTime     *time.Time `json:"closeTime"`
+	IsDeleted     bool       `json:"isDeleted"`
 }
 
-func NullTimeToPtr(t sql.NullTime) *time.Time {
+func ProjectNullTimeToPtr(t sql.NullTime) *time.Time {
 	if t.Valid {
 		return &t.Time
 	}
@@ -61,15 +63,16 @@ func (p Project) ToResponse() ProjectResponse {
 		OwnerName:     p.OwnerName,
 		Stage:         p.Stage,
 		Status:        p.Status,
-		SubmitTime:    NullTimeToPtr(p.SubmitTime),
+		SubmitTime:    ProjectNullTimeToPtr(p.SubmitTime),
 		AuditStatus:   p.AuditStatus,
 		AuditUserID:   p.AuditUserID,
 		AuditUserName: p.AuditUserName,
-		AuditTime:     NullTimeToPtr(p.AuditTime),
-		ArchiveTime:   NullTimeToPtr(p.ArchiveTime),
+		AuditTime:     ProjectNullTimeToPtr(p.AuditTime),
+		ArchiveTime:   ProjectNullTimeToPtr(p.ArchiveTime),
 		Remark:        p.Remark,
 		CreatedAt:     p.CreatedAt,
 		UpdatedAt:     p.UpdatedAt,
-		CloseTime:     NullTimeToPtr(p.CloseTime),
+		CloseTime:     ProjectNullTimeToPtr(p.CloseTime),
+		IsDeleted:     p.IsDeleted,
 	}
 }

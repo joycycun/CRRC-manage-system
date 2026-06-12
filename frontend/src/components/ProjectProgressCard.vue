@@ -22,13 +22,30 @@
 </template>
 
 <script setup>
-const projects = [
-  { id: 1, name: '香港屯马项目', owner: '研发：卢进', progress: 85 },
-  { id: 2, name: '波尔图二期项目', owner: '测试：寸诗睿', progress: 62 },
-  { id: 3, name: '香港东涌线', owner: '售后：卢进', progress: 92 },
-  { id: 4, name: '阿根廷项目', owner: '硬件研发：王宇', progress: 45 },
-  { id: 5, name: '波哥大有轨项目', owner: '需求：寸诗睿', progress: 15 }
-]
+import { onMounted, ref } from 'vue'
+import { getProjectProgressReport } from '@/api/report'
+
+const projects = ref([])
+
+onMounted(() => {
+  loadProjects()
+})
+
+async function loadProjects() {
+  try {
+    const res = await getProjectProgressReport()
+    const result = res?.data || res
+    if (result.code !== 200) return
+    projects.value = (result.data || []).slice(0, 5).map(item => ({
+      id: item.id || item.projectId,
+      name: item.name || item.projectName || '',
+      owner: item.owner || '-',
+      progress: Math.round(Number(item.progress || 0))
+    }))
+  } catch (err) {
+    console.error('加载项目进度概览失败：', err)
+  }
+}
 </script>
 
 <style scoped>

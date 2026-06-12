@@ -10,42 +10,58 @@
     </div>
 
     <div class="legend-list">
-      <div class="legend-item">
-        <span class="dot red"></span>
-        <span>严重（5）</span>
-      </div>
-
-      <div class="legend-item">
-        <span class="dot yellow"></span>
-        <span>一般（12）</span>
-      </div>
-
-      <div class="legend-item">
-        <span class="dot blue"></span>
-        <span>轻微（4）</span>
-      </div>
-
-      <div class="legend-item">
-        <span class="dot gray"></span>
-        <span>建议（3）</span>
+      <div class="legend-item" v-for="item in legendItems" :key="item.level">
+        <span class="dot" :class="item.className"></span>
+        <span>{{ item.name }}（{{ item.value }}）</span>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import * as echarts from 'echarts'
+import { getIssueStatisticsReport } from '@/api/report'
 
 const chartRef = ref(null)
 let chart = null
 
-const chartData = [
-  { value: 5, name: '严重', itemStyle: { color: '#ef4444' } },
-  { value: 12, name: '一般', itemStyle: { color: '#f59e0b' } },
-  { value: 4, name: '轻微', itemStyle: { color: '#3b82f6' } },
-  { value: 3, name: '建议', itemStyle: { color: '#64748b' } }
+const levelConfig = [
+  { level: 'serious', name: '严重', color: '#ef4444', className: 'red' },
+  { level: 'normal', name: '一般', color: '#f59e0b', className: 'yellow' },
+  { level: 'minor', name: '轻微', color: '#3b82f6', className: 'blue' },
+  { level: 'suggestion', name: '建议', color: '#64748b', className: 'gray' }
 ]
+
+const issueList = ref([])
+
+const legendItems = computed(() => {
+  return levelConfig.map(config => ({
+    ...config,
+    value: issueList.value.filter(item => item.issueLevel === config.level).length
+  }))
+})
+
+const chartData = computed(() => {
+  return legendItems.value.map(item => ({
+    value: item.value,
+    name: item.name,
+    itemStyle: { color: item.color }
+  }))
+})
+
+async function loadIssueStatistics() {
+  try {
+    const res = await getIssueStatisticsReport()
+    const result = res?.data || res
+    if (result.code !== 200) return
+    issueList.value = (result.data || []).map(item => ({
+      issueLevel: item.issueLevel || 'normal'
+    }))
+  } catch (err) {
+    console.error('加载问题图表失败：', err)
+  }
+}
 
 function initChart() {
   if (!chartRef.value) return
@@ -102,7 +118,7 @@ function initChart() {
           }
         },
 
-        data: chartData
+        data: chartData.value
       }
     ]
   })
@@ -117,6 +133,7 @@ function resizeChart() {
 }
 
 onMounted(async () => {
+  await loadIssueStatistics()
   await nextTick()
   initChart()
   window.addEventListener('resize', resizeChart)

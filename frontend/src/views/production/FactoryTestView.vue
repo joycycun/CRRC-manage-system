@@ -37,7 +37,7 @@
         <option value="rejected">审核驳回</option>
       </select>
 
-      <button class="query-btn">查询</button>
+      <button class="query-btn" @click="loadProductionBurnRecords">查询</button>
       <button class="reset-btn" @click="resetFilters">重置</button>
     </div>
 
@@ -135,6 +135,13 @@
                     @click="auditModelGroup(group)"
                   >
                     审核
+                  </button>
+                  <button
+                    v-if="canDeleteModelGroup(group)"
+                    class="text-btn red"
+                    @click="deleteModelGroup(group)"
+                  >
+                    删除
                   </button>
                 </div>
               </td>
@@ -462,7 +469,19 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+
+import {
+  getBurnRecords
+} from '@/api/burn'
+
+import {
+  getFactoryTests,
+  importFactoryTests,
+  deleteFactoryTests,
+  submitFactoryTests,
+  auditFactoryTests
+} from '@/api/factoryTest'
 
 const currentUserName = ref(
   localStorage.getItem('username') ||
@@ -491,117 +510,103 @@ const uploadForm = reactive({
   remark: ''
 })
 
-/**
- * 模拟“生产烧录记录页面”解析 Excel 后得到的数据。
- * 实际项目中这里应由后端接口返回，例如：
- * GET /api/production/burn-records
- *
- * factoryTestStatus:
- * passed：已通过，不再允许勾选
- * failed：未通过，允许勾选上传出厂测试文档
- */
-const productionBurnRecordList = ref([
-  {
-    id: 1,
-    productName: '控制盒',
-    productModel: 'DACU-SIP-Porto',
-    productCode: 'M00004665176',
-    serialNumber: 'ZDAPO2300001',
-    macAddress: '68:69:2E:DD:17:27',
-    hardwareVersion: '-',
-    softwareVersion: '-',
-    factoryTestStatus: 'passed'
-  },
-  {
-    id: 2,
-    productName: '控制盒',
-    productModel: 'DACU-SIP-Porto',
-    productCode: 'M00004665176',
-    serialNumber: 'ZDAPO2300002',
-    macAddress: '68:69:2E:DD:1A:E6',
-    hardwareVersion: '-',
-    softwareVersion: '-',
-    factoryTestStatus: 'passed'
-  },
-  {
-    id: 3,
-    productName: '控制盒',
-    productModel: 'DACU-SIP-Porto',
-    productCode: 'M00004665176',
-    serialNumber: 'ZDAPO2300003',
-    macAddress: '68:69:2E:DD:1A:E7',
-    hardwareVersion: '-',
-    softwareVersion: '-',
-    factoryTestStatus: 'failed'
-  },
-  {
-    id: 4,
-    productName: '乘客报警器',
-    productModel: 'PECU-BOG-Metro-PCBA',
-    productCode: 'M00004665176',
-    serialNumber: 'ZPEBOG230000X',
-    macAddress: '68:69:2E:DD:22:01',
-    hardwareVersion: '-',
-    softwareVersion: '-',
-    factoryTestStatus: 'failed'
-  },
-  {
-    id: 5,
-    productName: '编码板',
-    productModel: 'ACSU-BOG-Encode-PCBA',
-    productCode: 'M00004665172',
-    serialNumber: 'ZENBOG230000X',
-    macAddress: '68:69:2E:DD:33:01',
-    hardwareVersion: '-',
-    softwareVersion: '-',
-    factoryTestStatus: 'failed'
-  }
-])
+// 从 burn_records 读取出来的烧录记录明细
+const productionBurnRecordList = ref([])
 
-const factoryTestList = ref([
-  {
-    id: 1,
-    productModel: 'DACU-SIP-Porto',
-    macAddress: '68:69:2E:DD:17:27',
-    recordName: 'DACU-SIP-Porto_出厂测试记录_V1.0.xlsx',
-    fileName: 'DACU-SIP-Porto_出厂测试记录_V1.0.xlsx',
-    fileUrl: '',
-    uploader: '生产人员',
-    uploadTime: '2026-05-10',
-    auditStatus: 'approved',
-    auditor: '领导',
-    auditTime: '2026-05-11',
-    remark: '该型号板卡出厂测试通过。'
-  },
-  {
-    id: 2,
-    productModel: 'DACU-SIP-Porto',
-    macAddress: '68:69:2E:DD:1A:E6',
-    recordName: 'DACU-SIP-Porto_出厂测试记录_V1.0.xlsx',
-    fileName: 'DACU-SIP-Porto_出厂测试记录_V1.0.xlsx',
-    fileUrl: '',
-    uploader: '生产人员',
-    uploadTime: '2026-05-10',
-    auditStatus: 'approved',
-    auditor: '领导',
-    auditTime: '2026-05-11',
-    remark: '同型号板卡使用同一份测试文档。'
-  },
-  {
-    id: 3,
-    productModel: 'PECU-BOG-Metro-PCBA',
-    macAddress: '68:69:2E:DD:22:01',
-    recordName: 'PECU-BOG-Metro-PCBA_出厂测试记录_V1.0.xlsx',
-    fileName: 'PECU-BOG-Metro-PCBA_出厂测试记录_V1.0.xlsx',
-    fileUrl: '',
-    uploader: '生产人员',
-    uploadTime: '2026-05-16',
-    auditStatus: 'submitted',
-    auditor: '',
-    auditTime: '',
-    remark: '待领导审核确认。'
+// 从 /api/burn-records/options 读取出来的型号统计
+const burnOptionList = ref([])
+
+// 这里目前仍然是前端临时数据，后面再接 factory_tests 后端表
+const factoryTestList = ref([])
+
+onMounted(async () => {
+  await loadProductionBurnRecords()
+  await loadFactoryTests()
+})
+
+function getResponseData(res) {
+  if (res && res.data) return res.data
+  return res
+}
+
+function formatDate(value) {
+  if (!value) return ''
+
+  if (typeof value === 'string') {
+    return value.slice(0, 10)
   }
-])
+
+  if (value.Time) {
+    return String(value.Time).slice(0, 10)
+  }
+
+  return value
+}
+
+
+async function loadProductionBurnRecords() {
+  try {
+    const res = await getBurnRecords()
+    const result = getResponseData(res)
+
+    console.log('烧录记录明细返回：', result)
+
+    if (result.code !== 200) {
+      alert(result.msg || '加载烧录记录失败')
+      return
+    }
+
+    productionBurnRecordList.value = (result.data || [])
+      .map(item => normalizeBurnRecord(item))
+      .filter(item => item.productModel)
+  } catch (err) {
+    console.error('加载烧录记录失败：', err)
+    alert('加载烧录记录失败，请检查 /api/burn-records 接口')
+  }
+}
+
+async function loadFactoryTests() {
+  try {
+    const res = await getFactoryTests()
+    const result = getResponseData(res)
+
+    console.log('出厂测试记录返回：', result)
+
+    if (result.code !== 200) {
+      alert(result.msg || '加载出厂测试记录失败')
+      return
+    }
+
+    factoryTestList.value = result.data || []
+  } catch (err) {
+    console.error('加载出厂测试记录失败：', err)
+    alert('加载出厂测试记录失败，请检查 /api/factory-tests 接口')
+  }
+}
+
+function normalizeBurnRecord(item) {
+  const macAddress =
+    item.macAddress ||
+    item.mac_address ||
+    ''
+
+  return {
+    id: item.id,
+    batchNo: item.batchNo || item.batch_no || '',
+    productName: item.productName || item.product_name || '',
+    productModel: item.productModel || item.product_model || '',
+    productCode: item.productCode || item.product_code || '',
+    deviceType: item.deviceType || item.device_type || '',
+    serialNumber: item.serialNumber || item.sn || '',
+    macAddress: macAddress === '-' ? '' : macAddress,
+    hardwareVersion: item.hardwareVersion || item.hardware_version || '',
+    softwareVersion: item.softwareVersion || item.software_version || '',
+    pcbQrCode: item.pcbQrCode || item.pcbQRCode || item.pcb_qr_code || '',
+
+    // 默认认为：烧录记录进来后，还没有上传出厂测试文档
+    factoryTestStatus: 'failed'
+  }
+}
 
 const productionProductModelOptions = computed(() => {
   const models = productionBurnRecordList.value
@@ -619,6 +624,14 @@ const productModelOptions = computed(() => {
   return [...new Set(models)]
 })
 
+const testedMacSet = computed(() => {
+  return new Set(
+    factoryTestList.value
+      .map(item => item.macAddress)
+      .filter(Boolean)
+  )
+})
+
 const unpassedMacList = computed(() => {
   if (!uploadForm.productModel) {
     return []
@@ -628,7 +641,7 @@ const unpassedMacList = computed(() => {
     return (
       item.productModel === uploadForm.productModel &&
       item.macAddress &&
-      item.factoryTestStatus === 'failed'
+      !testedMacSet.value.has(item.macAddress)
     )
   })
 })
@@ -780,7 +793,7 @@ function openModelMacDialog(group) {
   selectedModelGroup.value = group
 }
 
-function openUploadDialog() {
+async function openUploadDialog() {
   uploadForm.productModel = ''
   uploadForm.excludedMacs = []
   uploadForm.macKeyword = ''
@@ -788,6 +801,7 @@ function openUploadDialog() {
   uploadForm.file = null
   uploadForm.fileUrl = ''
   uploadForm.remark = ''
+
 
   showUploadDialog.value = true
 }
@@ -806,7 +820,7 @@ function handleFileChange(event) {
   uploadForm.fileUrl = URL.createObjectURL(file)
 }
 
-function uploadFactoryTest() {
+async function uploadFactoryTest() {
   if (!uploadForm.productModel) {
     alert('请选择产品型号')
     return
@@ -826,27 +840,52 @@ function uploadFactoryTest() {
   const uploader = currentUserName.value
   const recordName = uploadForm.fileName
 
-  const newRecords = finalUploadMacList.value.map((macItem, index) => {
+  const records = finalUploadMacList.value.map(macItem => {
     return {
-      id: Date.now() + index,
       productModel: uploadForm.productModel,
       macAddress: macItem.macAddress,
+      sn: macItem.serialNumber || '',
+      productName: macItem.productName || '',
+      productCode: macItem.productCode || '',
+
       recordName,
       fileName: uploadForm.fileName,
       fileUrl: uploadForm.fileUrl,
-      uploader,
+
+      uploaderId: 1,
+      uploaderName: uploader,
       uploadTime: today,
+
       auditStatus: 'draft',
-      auditor: '',
+      auditorId: 0,
+      auditorName: '',
       auditTime: '',
+
       remark: uploadForm.remark
     }
   })
-  factoryTestList.value.unshift(...newRecords)
 
-  showUploadDialog.value = false
+  try {
+    const res = await importFactoryTests({
+      records
+    })
+
+    const result = getResponseData(res)
+
+    if (result.code !== 200) {
+      alert(result.msg || '保存出厂测试记录失败')
+      return
+    }
+
+    alert(`保存成功，共保存 ${result.data?.count || records.length} 条 MAC 出厂测试记录`)
+
+    showUploadDialog.value = false
+    await loadFactoryTests()
+  } catch (err) {
+    console.error('保存出厂测试记录失败：', err)
+    alert(err.response?.data || '保存出厂测试记录失败，请检查后端接口')
+  }
 }
-
 function openFactoryTestFile(item) {
   if (!item.fileUrl) {
     alert('当前是模拟数据，暂无可直接打开的原始文件')
@@ -870,6 +909,57 @@ function downloadFactoryTest(item) {
   document.body.removeChild(link)
 }
 
+function canDeleteModelGroup(group) {
+  if (!group) return false
+
+  // 未审批前允许删除：草稿、待审核、驳回
+  // 审核通过后不允许删除
+  return group.auditStatus !== 'approved'
+}
+
+async function deleteModelGroup(group) {
+  if (!group) return
+
+  if (!canDeleteModelGroup(group)) {
+    alert('审核通过的出厂测试文档不能删除')
+    return
+  }
+
+  const ok = confirm(
+    `确认删除产品型号【${group.productModel}】的出厂测试文档【${group.fileName}】吗？\n` +
+    `该操作会删除该文档关联的 ${group.records.length} 条 MAC 出厂测试记录。`
+  )
+
+  if (!ok) return
+
+  const ids = group.records.map(item => item.id)
+
+  try {
+    const res = await deleteFactoryTests({
+      ids
+    })
+
+    const result = getResponseData(res)
+
+    if (result.code !== 200) {
+      alert(result.msg || '删除失败')
+      return
+    }
+
+    if (selectedModelGroup.value?.groupKey === group.groupKey) {
+      selectedModelGroup.value = null
+    }
+
+    selectedFactoryTest.value = null
+
+    alert('删除成功')
+    await loadFactoryTests()
+  } catch (err) {
+    console.error('删除出厂测试文档失败：', err)
+    alert(err.response?.data || '删除失败，请检查后端接口')
+  }
+}
+
 function downloadModelGroup(group) {
   const first = group.records[0]
 
@@ -881,14 +971,40 @@ function downloadModelGroup(group) {
   downloadFactoryTest(first)
 }
 
-function submitModelGroup(group) {
-  group.records.forEach(item => {
-    item.auditStatus = 'submitted'
-    item.auditor = ''
-    item.auditTime = ''
-  })
+async function submitModelGroup(group) {
+  if (!group || !group.records || group.records.length === 0) {
+    alert('没有可提交的出厂测试记录')
+    return
+  }
 
-  alert(`产品型号【${group.productModel}】的出厂测试文档已提交领导审核`)
+  const ids = group.records.map(item => item.id).filter(Boolean)
+
+  if (ids.length === 0) {
+    alert('提交失败：没有拿到出厂测试记录ID')
+    return
+  }
+
+  try {
+    const res = await submitFactoryTests({
+      ids
+    })
+
+    const result = getResponseData(res)
+
+    console.log('提交出厂测试返回：', result)
+
+    if (result.code !== 200) {
+      alert(result.msg || '提交失败')
+      return
+    }
+
+    alert(`产品型号【${group.productModel}】的出厂测试文档已提交领导审核`)
+
+    await loadFactoryTests()
+  } catch (err) {
+    console.error('提交出厂测试失败：', err)
+    alert(err.response?.data || '提交失败，请检查后端接口')
+  }
 }
 
 function auditModelGroup(group) {
@@ -899,35 +1015,82 @@ function auditModelGroup(group) {
   selectedFactoryTest.value = first
 }
 
-function approveFactoryTest(item) {
-  updateSameGroupAuditStatus(item, 'approved')
+async function approveFactoryTest(item) {
+  const ids = selectedModelGroup.value
+    ? selectedModelGroup.value.records.map(record => record.id)
+    : [item.id]
 
-  selectedFactoryTest.value = null
-  alert(`出厂测试文档【${item.fileName}】审核通过`)
-}
+  try {
+    const res = await auditFactoryTests({
+      ids,
+      status: 'approved',
+      auditorId: 1,
+      auditorName: '领导'
+    })
 
-function rejectFactoryTest(item) {
-  updateSameGroupAuditStatus(item, 'rejected')
+    const result = getResponseData(res)
 
-  selectedFactoryTest.value = null
-  alert(`出厂测试文档【${item.fileName}】已驳回`)
-}
-
-function updateSameGroupAuditStatus(target, status) {
-  factoryTestList.value.forEach(item => {
-    const sameGroup =
-      item.productModel === target.productModel &&
-      item.fileName === target.fileName &&
-      item.uploader === target.uploader &&
-      item.uploadTime === target.uploadTime
-
-    if (sameGroup) {
-      item.auditStatus = status
-      item.auditor = '领导'
-      item.auditTime = new Date().toISOString().slice(0, 10)
+    if (result.code !== 200) {
+      alert(result.msg || '审核通过失败')
+      return
     }
-  })
+
+    selectedFactoryTest.value = null
+    alert(`出厂测试文档【${item.fileName}】审核通过，已自动入库`)
+
+    await loadFactoryTests()
+  } catch (err) {
+    console.error('审核通过失败：', err)
+    alert(err.response?.data || '审核通过失败，请检查 /api/factory-tests/audit 接口')
+  }
 }
+
+async function rejectFactoryTest(item) {
+  const ids = selectedModelGroup.value
+    ? selectedModelGroup.value.records.map(record => record.id)
+    : [item.id]
+
+  try {
+    const res = await auditFactoryTests({
+      ids,
+      status: 'rejected',
+      auditorId: 1,
+      auditorName: '领导',
+      rejectReason: '审核驳回'
+    })
+
+    const result = getResponseData(res)
+
+    if (result.code !== 200) {
+      alert(result.msg || '审核驳回失败')
+      return
+    }
+
+    selectedFactoryTest.value = null
+    alert(`出厂测试文档【${item.fileName}】已驳回`)
+
+    await loadFactoryTests()
+  } catch (err) {
+    console.error('审核驳回失败：', err)
+    alert(err.response?.data || '审核驳回失败，请检查 /api/factory-tests/audit 接口')
+  }
+}
+
+// function updateSameGroupAuditStatus(target, status) {
+//   factoryTestList.value.forEach(item => {
+//     const sameGroup =
+//       item.productModel === target.productModel &&
+//       item.fileName === target.fileName &&
+//       item.uploader === target.uploader &&
+//       item.uploadTime === target.uploadTime
+
+//     if (sameGroup) {
+//       item.auditStatus = status
+//       item.auditor = '领导'
+//       item.auditTime = new Date().toISOString().slice(0, 10)
+//     }
+//   })
+// }
 </script>
 
 <style scoped>
@@ -1106,7 +1269,7 @@ function updateSameGroupAuditStatus(target, status) {
 
 .model-table {
   width: 100%;
-  min-width: 1280px;
+  min-width: 1500px;
   border-collapse: collapse;
   table-layout: fixed;
 }
@@ -1176,7 +1339,7 @@ function updateSameGroupAuditStatus(target, status) {
 
 .model-table th:nth-child(8),
 .model-table td:nth-child(8) {
-  width: 160px;
+  width: 340px;
 }
 
 .model-row {
@@ -1286,16 +1449,17 @@ function updateSameGroupAuditStatus(target, status) {
 }
 
 .operation-col {
-  text-align: right !important;
+  text-align: left !important;
 }
 
 .action-group {
   display: flex;
-  justify-content: flex-end;
+  justify-content: flex-start;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   flex-wrap: nowrap;
   white-space: nowrap;
+  min-width: 300px;
 }
 
 .text-btn {

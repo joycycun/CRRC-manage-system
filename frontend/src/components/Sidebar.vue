@@ -328,21 +328,57 @@
 
     <!-- User -->
     <div class="sidebar-user">
-      <div class="avatar">丁</div>
+      <div class="avatar">{{ userInitial }}</div>
       <div class="user-info">
-        <div class="user-name">丁sir</div>
-        <div class="user-role">研发主管</div>
+        <div class="user-name">{{ currentUserName }}</div>
+        <div class="user-role">{{ currentRoleName }}</div>
       </div>
-      <div class="logout">⇥</div>
+      <button class="logout" type="button" title="退出登录" @click="handleLogout">
+        ⇥
+      </button>
     </div>
   </aside>
 </template>
 
 <script setup>
-import { reactive } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, reactive } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 const route = useRoute()
+const router = useRouter()
+
+const storedUser = computed(() => {
+  try {
+    const text = localStorage.getItem('user')
+    return text ? JSON.parse(text) : {}
+  } catch (err) {
+    console.warn('读取用户信息失败：', err)
+    return {}
+  }
+})
+
+const storedRoles = computed(() => {
+  try {
+    const text = localStorage.getItem('roles')
+    return text ? JSON.parse(text) : []
+  } catch (err) {
+    console.warn('读取角色信息失败：', err)
+    return []
+  }
+})
+
+const currentUserName = computed(() => {
+  return storedUser.value.realName || storedUser.value.username || localStorage.getItem('realName') || '当前用户'
+})
+
+const currentRoleName = computed(() => {
+  const firstRole = storedRoles.value[0]
+  return firstRole?.roleName || firstRole?.role_name || storedUser.value.department || localStorage.getItem('department') || '系统用户'
+})
+
+const userInitial = computed(() => {
+  return currentUserName.value.slice(0, 1).toUpperCase()
+})
 
 const openedMenus = reactive({
   requirement: true,
@@ -361,6 +397,18 @@ function toggleMenu(name) {
 
 function isActive(path) {
   return route.path === path
+}
+
+function handleLogout() {
+  localStorage.removeItem('token')
+  localStorage.removeItem('user')
+  localStorage.removeItem('roles')
+  localStorage.removeItem('permissions')
+  localStorage.removeItem('username')
+  localStorage.removeItem('accountName')
+  localStorage.removeItem('realName')
+  localStorage.removeItem('department')
+  router.replace('/login')
 }
 </script>
 
@@ -555,8 +603,12 @@ function isActive(path) {
 }
 
 .logout {
+  border: none;
+  background: transparent;
   color: #64748b;
   cursor: pointer;
+  font-size: 18px;
+  padding: 4px;
 }
 
 .logout:hover {

@@ -264,7 +264,17 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+
+import { getProjects } from '@/api/project'
+
+import {
+  getRequirementBooks,
+  createRequirementBook,
+  submitRequirementBook,
+  auditRequirementBook,
+  deleteRequirementBook
+} from '@/api/requirement'
 
 const currentUserName = ref(
   localStorage.getItem('username') ||
@@ -282,73 +292,131 @@ const filters = reactive({
 const showUploadDialog = ref(false)
 const selectedBook = ref(null)
 
-const projectOptions = [
-  '香港屯马项目',
-  '波尔图二期项目',
-  '阿根廷有轨项目',
-  '波哥大有轨项目',
-  '成都项目'
-]
+const projectOptions = ref([])
+const projectMap = ref({})
 
 const uploadForm = reactive({
   projectName: '',
   bookName: '',
   fileName: '',
   file: null,
-  fileUrl: '',                  
+  fileUrl: '',
   remark: ''
 })
 
-const requirementBookList = ref([
-  {
-    id: 1,
-    projectName: '香港屯马项目',
-    bookName: '香港屯马项目需求书',
-    fileName: '香港屯马需求书_V1.0.docx',
-    uploader: '寸诗睿',
-    uploadTime: '2026-05-10',
-    status: 'approved',
-    auditor: '领导',
-    auditTime: '2026-05-11',
-    remark: '首次确认版本，作为软件和硬件开发输入依据'
-  },
-  {
-    id: 2,
-    projectName: '波尔图二期项目',
-    bookName: '波尔图二期需求书',
-    fileName: '波尔图二期需求书_V0.9.docx',
-    uploader: '寸诗睿',
-    uploadTime: '2026-05-16',
-    status: 'submitted',
-    auditor: '',
-    auditTime: '',
-    remark: '待领导审核确认'
-  },
-  {
-    id: 3,
-    projectName: '阿根廷有轨项目',
-    bookName: '阿根廷项目需求书',
-    fileName: '阿根廷需求书_草稿.docx',
-    uploader: '寸诗睿',
-    uploadTime: '2026-05-18',
-    status: 'draft',
-    auditor: '',
-    auditTime: '',
-    remark: '草稿，尚未提交审核'
-  },
-  {
-    id: 4,
-    projectName: '波哥大有轨项目',
-    bookName: '波哥大项目需求书',
-    fileName: '波哥大需求书_V1.1.docx',
-    uploader: '寸诗睿',
-    uploadTime: '2026-05-20',
-    status: 'rejected',
-    auditor: '领导',
-    auditTime: '2026-05-21',
-    remark: '需求描述不完整，需补充广播控制盒功能说明'
+const requirementBookList = ref([])
+
+onMounted(async () => {
+  await loadProjects()
+  await loadRequirementBooks()
+})
+
+function getResponseData(res) {
+  if (res && res.data) return res.data
+  return res
+}
+
+function formatDate(value) {
+  if (!value) return ''
+  if (typeof value === 'string') return value.slice(0, 10)
+  return value
+}
+
+function backendStatusToFrontend(status) {
+  const map = {
+    草稿: 'draft',
+    未提交: 'draft',
+    待审核: 'submitted',
+    已通过: 'approved',
+    审核通过: 'approved',
+    已驳回: 'rejected',
+    审核驳回: 'rejected'
   }
-])
+
+  return map[status] || status || 'draft'
+}
+
+function frontendStatusToBackend(status) {
+  const map = {
+    draft: '草稿',
+    submitted: '待审核',
+    approved: '已通过',
+    rejected: '已驳回'
+  }
+
+  return map[status] || status
+}
+
+function findProjectName(projectId) {
+  const found = Object.entries(projectMap.value).find(([, id]) => Number(id) === Number(projectId))
+  return found ? found[0] : `项目ID-${projectId}`
+}
+
+async function loadProjects() {
+  try {
+    const res = await getProjects()
+    const result = getResponseData(res)
+
+    if (result.code !== 200) {
+      alert(result.msg || '加载项目失败')
+      return
+    }
+
+    const list = result.data || []
+
+    projectOptions.value = list.map(item => item.projectName)
+
+    const map = {}
+    list.forEach(item => {
+      map[item.projectName] = item.id
+    })
+
+    projectMap.value = map
+  } catch (err) {
+    console.error('加载项目失败：', err)
+    alert('加载项目失败')
+  }
+}
+
+async function loadRequirementBooks() {
+  try {
+    const res = await getRequirementBooks()
+    const result = getResponseData(res)
+
+    console.log('需求书列表返回：', result)
+
+    if (result.code !== 200) {
+      alert(result.msg || '加载需求书失败')
+      return
+    }
+
+    requirementBookList.value = (result.data || []).map(item => ({
+      id: item.id,
+      projectId: item.projectId,
+      projectName: item.projectName || findProjectName(item.projectId),
+      bookName: item.bookName || '',
+      fileId: item.fileId || 0,
+      fileName: item.fileName || uploadFileNameFromItem(item),
+      fileUrl: item.fileUrl || '',
+      uploader: item.submitUserName || item.uploader || '',
+      uploadTime: formatDate(item.submitTime || item.uploadTime || item.createdAt),
+      status: backendStatusToFrontend(item.status),
+      auditor: item.auditUserName || item.auditor || '',
+      auditTime: formatDate(item.auditTime),
+      remark: item.remark || ''
+    }))
+  } catch (err) {
+    console.error('加载需求书失败：', err)
+    alert('加载需求书失败，请检查后端接口')
+  }
+}
+
+function uploadFileNameFromItem(item) {
+  if (item.fileName) return item.fileName
+  if (item.fileDisplayName) return item.fileDisplayName
+  if (item.fileId) return `文件ID-${item.fileId}`
+  return '暂无文件'
+}
 
 const filteredRequirementBooks = computed(() => {
   return requirementBookList.value.filter(item => {
@@ -367,18 +435,7 @@ const filteredRequirementBooks = computed(() => {
     return keywordMatch && projectMatch && statusMatch
   })
 })
-const showReuploadDialog = ref(false)
-const currentReuploadBook = ref(null)
 
-const reuploadForm = reactive({
-  projectName: '',
-  bookName: '',
-  oldFileName: '',
-  newFileName: '',
-  newFile: null,
-  newFileUrl: '',
-  remark: ''
-})
 function getStatusText(status) {
   const map = {
     draft: '草稿',
@@ -390,10 +447,9 @@ function getStatusText(status) {
   return map[status] || status
 }
 
-
 function downloadBook(item) {
   if (!item.fileUrl) {
-    alert('当前是模拟数据，暂无可下载的 Word 文件')
+    alert('当前还没有接真实文件下载，后面做 project_files 文件上传下载时再接')
     return
   }
 
@@ -404,66 +460,7 @@ function downloadBook(item) {
   link.click()
   document.body.removeChild(link)
 }
-function openReuploadDialog(item) {
-  currentReuploadBook.value = item
 
-  reuploadForm.projectName = item.projectName
-  reuploadForm.bookName = item.bookName
-  reuploadForm.oldFileName = item.fileName
-  reuploadForm.newFileName = ''
-  reuploadForm.newFile = null
-  reuploadForm.newFileUrl = ''
-  reuploadForm.remark = item.remark || ''
-
-  showReuploadDialog.value = true
-}
-
-function handleReuploadFileChange(event) {
-  const file = event.target.files[0]
-  if (!file) return
-
-  const isWord =
-    file.name.endsWith('.doc') ||
-    file.name.endsWith('.docx')
-
-  if (!isWord) {
-    alert('只能上传 Word 文档，格式为 .doc 或 .docx')
-    event.target.value = ''
-    return
-  }
-
-  reuploadForm.newFile = file
-  reuploadForm.newFileName = file.name
-  reuploadForm.newFileUrl = URL.createObjectURL(file)
-}
-
-function saveReuploadBook() {
-  if (!currentReuploadBook.value) return
-
-  if (!reuploadForm.bookName) {
-    alert('请输入需求书名称')
-    return
-  }
-
-  if (!reuploadForm.newFile) {
-    alert('请选择新的 Word 需求书文档')
-    return
-  }
-
-  currentReuploadBook.value.bookName = reuploadForm.bookName
-  currentReuploadBook.value.fileName = reuploadForm.newFileName
-  currentReuploadBook.value.fileUrl = reuploadForm.newFileUrl
-  currentReuploadBook.value.uploadTime = new Date().toISOString().slice(0, 10)
-  currentReuploadBook.value.status = 'draft'
-  currentReuploadBook.value.auditor = ''
-  currentReuploadBook.value.auditTime = ''
-  currentReuploadBook.value.remark =
-  reuploadForm.remark 
-
-  showReuploadDialog.value = false
-  currentReuploadBook.value = null
-
-}
 function handleFileChange(event) {
   const file = event.target.files[0]
   if (!file) return
@@ -482,6 +479,7 @@ function handleFileChange(event) {
   uploadForm.fileName = file.name
   uploadForm.fileUrl = URL.createObjectURL(file)
 }
+
 function resetFilters() {
   filters.keyword = ''
   filters.projectName = ''
@@ -498,7 +496,7 @@ function openUploadDialog() {
   showUploadDialog.value = true
 }
 
-function uploadBook() {
+async function uploadBook() {
   if (!uploadForm.projectName) {
     alert('请选择需求书对应项目')
     return
@@ -514,62 +512,164 @@ function uploadBook() {
     return
   }
 
-  requirementBookList.value.unshift({
-    id: Date.now(),
-    projectName: uploadForm.projectName,
-    bookName: uploadForm.bookName,
-    fileName: uploadForm.fileName,
-    fileUrl: uploadForm.fileUrl,
-    uploader: currentUserName.value,
-    uploadTime: new Date().toISOString().slice(0, 10),
-    status: 'draft',
-    auditor: '',
-    auditTime: '',
-    remark: uploadForm.remark
-  })
+  const projectId = projectMap.value[uploadForm.projectName]
 
-  showUploadDialog.value = false
+  if (!projectId) {
+    alert('没有找到对应项目ID，请重新选择项目')
+    return
+  }
+
+  const payload = {
+    projectId,
+    bookName: uploadForm.bookName,
+    fileId: 1,
+    status: frontendStatusToBackend('draft'),
+    submitUserId: 1,
+    submitUserName: currentUserName.value,
+    remark: uploadForm.remark || ''
+  }
+
+  try {
+    const res = await createRequirementBook(payload)
+    const result = getResponseData(res)
+
+    console.log('新增需求书返回：', result)
+
+    if (result.code === 200) {
+      alert('上传需求书成功')
+      showUploadDialog.value = false
+      await loadRequirementBooks()
+    } else {
+      alert(result.msg || '上传需求书失败')
+    }
+  } catch (err) {
+    console.error('上传需求书失败：', err)
+    alert('上传需求书失败，请检查后端接口')
+  }
 }
 
- 
 function viewBook(item) {
   selectedBook.value = item
 }
 
-function submitBook(item) {
-  item.status = 'submitted'
-  item.auditor = ''
-  item.auditTime = ''
-  alert(`需求书【${item.bookName}】已提交领导审核`)
+async function submitBook(item) {
+  if (!item || !item.id) {
+    alert('提交失败：没有拿到需求书ID')
+    return
+  }
+
+  try {
+    const res = await submitRequirementBook(item.id)
+    const result = getResponseData(res)
+
+    console.log('提交需求书返回：', result)
+
+    if (result.code === 200) {
+      alert(`需求书【${item.bookName}】已提交领导审核`)
+      await loadRequirementBooks()
+    } else {
+      alert(result.msg || '提交失败')
+    }
+  } catch (err) {
+    console.error('提交需求书失败：', err)
+    alert('提交需求书失败')
+  }
 }
 
 function auditBook(item) {
   selectedBook.value = item
 }
 
-function approveBook(item) {
-  item.status = 'approved'
-  item.auditor = '领导'
-  item.auditTime = new Date().toISOString().slice(0, 10)
-  selectedBook.value = null
-  alert(`需求书【${item.bookName}】审核通过`)
+async function approveBook(item) {
+  if (!item || !item.id) {
+    alert('审核失败：没有拿到需求书ID')
+    return
+  }
+
+  try {
+    const res = await auditRequirementBook(item.id, {
+      auditUserId: 1,
+      auditUserName: '领导',
+      auditStatus: '已通过',
+      rejectReason: ''
+    })
+
+    const result = getResponseData(res)
+
+    console.log('审核通过返回：', result)
+
+    if (result.code === 200) {
+      alert(`需求书【${item.bookName}】审核通过`)
+      selectedBook.value = null
+      await loadRequirementBooks()
+    } else {
+      alert(result.msg || '审核失败')
+    }
+  } catch (err) {
+    console.error('审核需求书失败：', err)
+    alert('审核失败')
+  }
 }
 
-function rejectBook(item) {
-  item.status = 'rejected'
-  item.auditor = '领导'
-  item.auditTime = new Date().toISOString().slice(0, 10)
-  selectedBook.value = null
-  alert(`需求书【${item.bookName}】已驳回`)
+async function rejectBook(item) {
+  if (!item || !item.id) {
+    alert('审核失败：没有拿到需求书ID')
+    return
+  }
+
+  const reason = prompt('请输入驳回原因') || '需求描述不完整，请补充后重新提交'
+
+  try {
+    const res = await auditRequirementBook(item.id, {
+      auditUserId: 1,
+      auditUserName: '领导',
+      auditStatus: '已驳回',
+      rejectReason: reason
+    })
+
+    const result = getResponseData(res)
+
+    console.log('审核驳回返回：', result)
+
+    if (result.code === 200) {
+      alert(`需求书【${item.bookName}】已驳回`)
+      selectedBook.value = null
+      await loadRequirementBooks()
+    } else {
+      alert(result.msg || '审核失败')
+    }
+  } catch (err) {
+    console.error('驳回需求书失败：', err)
+    alert('审核失败')
+  }
 }
 
-function deleteBook(item) {
+async function deleteBook(item) {
+  if (!item || !item.id) {
+    alert('删除失败：没有拿到需求书ID')
+    return
+  }
+
   const ok = confirm(`确认删除需求书【${item.bookName}】吗？`)
   if (!ok) return
 
-  requirementBookList.value = requirementBookList.value.filter(
-    book => book.id !== item.id
-  )
+  try {
+    const res = await deleteRequirementBook(item.id)
+    const result = getResponseData(res)
+
+    console.log('删除需求书返回：', result)
+
+    if (result.code === 200) {
+      alert('删除成功')
+      selectedBook.value = null
+      await loadRequirementBooks()
+    } else {
+      alert(result.msg || '删除失败')
+    }
+  } catch (err) {
+    console.error('删除需求书失败：', err)
+    alert('删除失败，请检查后端接口')
+  }
 }
 </script>
 

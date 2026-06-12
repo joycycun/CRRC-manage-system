@@ -46,7 +46,7 @@
         <option value="closed">已闭环</option>
       </select>
 
-      <button class="query-btn">查询</button>
+      <button class="query-btn" @click="loadIssueStatistics">查询</button>
       <button class="reset-btn" @click="resetFilters">重置</button>
     </div>
 
@@ -162,6 +162,7 @@
               <th>问题状态</th>
               <th>问题负责人</th>
               <th>出现次数</th>
+              <th>重新打开</th>
               <th>最近更新时间</th>
               <th class="operation-col">操作</th>
             </tr>
@@ -175,8 +176,12 @@
                 </span>
               </td>
 
-              <td>
-                <button class="record-link" @click="viewIssue(item)">
+              <td class="issue-title-cell">
+                <button
+                  class="record-link"
+                  :title="item.issueTitle"
+                  @click="viewIssue(item)"
+                >
                   {{ item.issueTitle }}
                 </button>
               </td>
@@ -198,6 +203,12 @@
               <td>
                 <span class="count-tag">
                   {{ item.frequency }} 次
+                </span>
+              </td>
+
+              <td>
+                <span class="count-tag">
+                  {{ item.reopenCount }} 次
                 </span>
               </td>
 
@@ -255,6 +266,11 @@
           </div>
 
           <div>
+            <span>重新打开次数</span>
+            <strong>{{ selectedIssue.reopenCount }} 次</strong>
+          </div>
+
+          <div>
             <span>最近更新时间</span>
             <strong>{{ selectedIssue.updateTime }}</strong>
           </div>
@@ -281,7 +297,8 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { getIssueStatisticsReport } from '@/api/report'
 
 const filters = reactive({
   keyword: '',
@@ -292,105 +309,48 @@ const filters = reactive({
 
 const selectedIssue = ref(null)
 
-const projectOptions = [
-  '香港屯马项目',
-  '波尔图二期项目',
-  '香港东涌线',
-  '阿根廷项目',
-  '波哥大有轨项目',
-  '迪拜项目'
-]
+const issueList = ref([])
 
-const issueList = ref([
-  {
-    id: 1,
-    projectName: '香港屯马项目',
-    issueTitle: '广播控制盒上电后偶发无音频输出',
-    issueLevel: 'serious',
-    issueStatus: 'processing',
-    owner: '卢进',
-    frequency: 8,
-    updateTime: '2026-05-21',
-    remark: '该问题出现频率较高，影响广播功能，正在分析音频服务启动时序。'
-  },
-  {
-    id: 2,
-    projectName: '波尔图二期项目',
-    issueTitle: '解码板在现场网络下 SIP 注册失败',
-    issueLevel: 'serious',
-    issueStatus: 'open',
-    owner: '寸诗睿',
-    frequency: 6,
-    updateTime: '2026-05-20',
-    remark: '需要结合现场网络抓包、SIP服务器日志和终端日志分析。'
-  },
-  {
-    id: 3,
-    projectName: '香港东涌线',
-    issueTitle: '乘客报警器按键响应偶发延迟',
-    issueLevel: 'normal',
-    issueStatus: 'processing',
-    owner: '王宇',
-    frequency: 4,
-    updateTime: '2026-05-19',
-    remark: '初步判断与按键扫描周期和事件上报有关。'
-  },
-  {
-    id: 4,
-    projectName: '阿根廷项目',
-    issueTitle: '司机提醒单元提醒音音量偏小',
-    issueLevel: 'normal',
-    issueStatus: 'closed',
-    owner: '售后人员',
-    frequency: 3,
-    updateTime: '2026-05-18',
-    remark: '已调整默认音量配置，并完成现场验证。'
-  },
-  {
-    id: 5,
-    projectName: '波哥大有轨项目',
-    issueTitle: '编码板状态灯颜色与说明书描述不一致',
-    issueLevel: 'minor',
-    issueStatus: 'closed',
-    owner: '硬件研发：王宇',
-    frequency: 2,
-    updateTime: '2026-05-17',
-    remark: '属于显示说明不一致，已同步修改说明文档。'
-  },
-  {
-    id: 6,
-    projectName: '迪拜项目',
-    issueTitle: '后台页面部分字段命名不统一',
-    issueLevel: 'minor',
-    issueStatus: 'open',
-    owner: '项目助理',
-    frequency: 2,
-    updateTime: '2026-05-16',
-    remark: '需要统一前端字段显示名称。'
-  },
-  {
-    id: 7,
-    projectName: '香港屯马项目',
-    issueTitle: '建议在系统中增加设备版本追溯入口',
-    issueLevel: 'suggestion',
-    issueStatus: 'open',
-    owner: '项目助理',
-    frequency: 1,
-    updateTime: '2026-05-15',
-    remark: '建议类需求，可作为后续系统优化项。'
-  },
-  {
-    id: 8,
-    projectName: '波尔图二期项目',
-    issueTitle: '建议出厂测试报告增加自动导出按钮',
-    issueLevel: 'suggestion',
-    issueStatus: 'closed',
-    owner: '测试人员',
-    frequency: 1,
-    updateTime: '2026-05-14',
-    remark: '已纳入测试管理模块优化计划。'
+onMounted(() => {
+  loadIssueStatistics()
+})
+
+function getResponseData(res) {
+  return res && res.data ? res.data : res
+}
+
+function normalizeIssue(item) {
+  return {
+    id: item.id,
+    projectName: item.projectName || '',
+    issueTitle: item.issueTitle || '',
+    issueLevel: item.issueLevel || 'normal',
+    issueStatus: item.issueStatus || 'open',
+    owner: item.owner || item.ownerName || '',
+    frequency: Number(item.frequency || 1),
+    reopenCount: Number(item.reopenCount || item.reopen_count || 0),
+    updateTime: item.updateTime || '',
+    remark: item.remark || '',
+    issueSource: item.issueSource || ''
   }
-])
+}
+
+async function loadIssueStatistics() {
+  try {
+    const res = await getIssueStatisticsReport()
+    const result = getResponseData(res)
+    if (result.code !== 200) {
+      alert(result.msg || '加载问题统计失败')
+      return
+    }
+    issueList.value = (result.data || []).map(normalizeIssue)
+  } catch (err) {
+    console.error('加载问题统计失败：', err)
+    alert(err.response?.data || '加载问题统计失败')
+  }
+}
+
+const projectOptions = computed(() => [...new Set(issueList.value.map(item => item.projectName).filter(Boolean))])
 
 const filteredIssueList = computed(() => {
   return issueList.value.filter(item => {
@@ -440,7 +400,7 @@ const issueLevelSummary = computed(() => {
 })
 
 const projectIssueSummary = computed(() => {
-  return projectOptions
+  return projectOptions.value
     .map(projectName => {
       return {
         projectName,
@@ -501,6 +461,7 @@ function exportIssueStatistics() {
     '问题状态',
     '问题负责人',
     '出现次数',
+    '重新打开次数',
     '最近更新时间',
     '处理说明'
   ]
@@ -512,6 +473,7 @@ function exportIssueStatistics() {
     getIssueStatusText(item.issueStatus),
     item.owner,
     item.frequency,
+    item.reopenCount,
     item.updateTime,
     item.remark || ''
   ])
@@ -808,7 +770,7 @@ function exportIssueStatistics() {
 
 .version-table {
   width: 100%;
-  min-width: 1250px;
+  min-width: 1380px;
   border-collapse: collapse;
   table-layout: fixed;
 }
@@ -835,6 +797,44 @@ function exportIssueStatistics() {
   vertical-align: middle;
 }
 
+.version-table th:nth-child(1),
+.version-table td:nth-child(1) {
+  width: 180px;
+}
+
+.version-table th:nth-child(2),
+.version-table td:nth-child(2) {
+  width: 300px;
+}
+
+.version-table th:nth-child(3),
+.version-table td:nth-child(3),
+.version-table th:nth-child(4),
+.version-table td:nth-child(4) {
+  width: 110px;
+}
+
+.version-table th:nth-child(5),
+.version-table td:nth-child(5) {
+  width: 130px;
+}
+
+.version-table th:nth-child(6),
+.version-table td:nth-child(6),
+.version-table th:nth-child(7),
+.version-table td:nth-child(7) {
+  width: 110px;
+}
+
+.version-table th:nth-child(8),
+.version-table td:nth-child(8) {
+  width: 170px;
+}
+
+.issue-title-cell {
+  overflow: hidden;
+}
+
 .project-tag {
   display: inline-flex;
   max-width: 150px;
@@ -850,6 +850,8 @@ function exportIssueStatistics() {
 }
 
 .record-link {
+  display: block;
+  width: 100%;
   border: none;
   background: transparent;
   color: #60a5fa;
@@ -858,7 +860,6 @@ function exportIssueStatistics() {
   cursor: pointer;
   padding: 0;
   text-align: left;
-  max-width: 260px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

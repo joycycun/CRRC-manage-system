@@ -2,13 +2,16 @@
   <div class="card">
     <div class="card-header">
       <h3>待办事项</h3>
-      <span class="add-btn">+</span>
     </div>
 
     <div class="todo-list">
-      <div class="todo-item" v-for="item in todos" :key="item.id">
-        <input type="checkbox" />
-
+      <button
+        class="todo-item"
+        v-for="item in todos"
+        :key="item.id"
+        type="button"
+        @click="goTodo(item)"
+      >
         <div class="todo-content">
           <p>{{ item.title }}</p>
           <span>截止日期：{{ item.deadline }}</span>
@@ -17,18 +20,44 @@
         <b class="level-tag" :class="getLevelClass(item.level)">
           {{ item.level }}
         </b>
+      </button>
+
+      <div v-if="todos.length === 0" class="empty-state">
+        暂无待办事项
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-const todos = [
-  { id: 1, title: '屯马项目RPAU升级故障', deadline: '05-20', level: '紧急' },
-  { id: 2, title: '提交测试问题闭环', deadline: '05-22', level: '高' },
-  { id: 3, title: '波尔图需求变更查看', deadline: '05-25', level: '中' },
-  { id: 4, title: '查看新项目立项申请', deadline: '05-23', level: '低' }
-]
+import { onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { getDashboardSummary } from '@/api/report'
+import { getCurrentUserParams } from '@/utils/currentUser'
+
+const router = useRouter()
+const todos = ref([])
+
+onMounted(() => {
+  loadTodos()
+})
+
+async function loadTodos() {
+  try {
+    const res = await getDashboardSummary(getCurrentUserParams())
+    const result = res?.data || res
+    if (result.code !== 200) return
+    todos.value = result.data?.todos || []
+  } catch (err) {
+    console.error('加载待办事项失败：', err)
+  }
+}
+
+function goTodo(item) {
+  if (item.link) {
+    router.push(item.link)
+  }
+}
 
 function getLevelClass(level) {
   switch (level) {
@@ -69,16 +98,6 @@ function getLevelClass(level) {
   font-weight: 700;
 }
 
-.add-btn {
-  color: #94a3b8;
-  cursor: pointer;
-  font-size: 16px;
-}
-
-.add-btn:hover {
-  color: #f8fafc;
-}
-
 .todo-list {
   display: flex;
   flex-direction: column;
@@ -86,6 +105,7 @@ function getLevelClass(level) {
 }
 
 .todo-item {
+  width: 100%;
   display: flex;
   gap: 10px;
   align-items: flex-start;
@@ -93,10 +113,13 @@ function getLevelClass(level) {
   border: 1px solid #1e293b;
   border-radius: 8px;
   padding: 10px;
+  text-align: left;
+  cursor: pointer;
 }
 
-.todo-item input {
-  margin-top: 3px;
+.todo-item:hover {
+  border-color: #334155;
+  background: #1e293bcc;
 }
 
 .todo-content {
@@ -114,6 +137,13 @@ function getLevelClass(level) {
 .todo-item span {
   font-size: 12px;
   color: #64748b;
+}
+
+.empty-state {
+  padding: 24px 0;
+  color: #64748b;
+  font-size: 13px;
+  text-align: center;
 }
 
 .level-tag {

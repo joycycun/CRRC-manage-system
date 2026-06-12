@@ -107,17 +107,107 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		user.ID,
 	)
 
+	roles, _ := queryUserRoles(user.ID)
+	permissions, _ := queryUserPermissions(user.ID)
+
+	if len(permissions) == 0 {
+		permissions = []string{
+			"project:view",
+			"project:create",
+			"project:audit",
+		}
+	}
+
 	json.NewEncoder(w).Encode(LoginResponse{
 		Code: 200,
 		Msg:  "登录成功",
 		Data: map[string]interface{}{
-			"token": "test-token",
-			"user":  user,
-			"permissions": []string{
-				"project:view",
-				"project:create",
-				"project:audit",
-			},
+			"token":       "test-token",
+			"user":        user,
+			"roles":       roles,
+			"permissions": permissions,
 		},
 	})
+}
+
+func authTableExists(tableName string) bool {
+	var count int
+	err := config.DB.QueryRow(`
+		SELECT COUNT(*)
+		FROM information_schema.tables
+		WHERE table_schema = DATABASE()
+		  AND table_name = ?
+	`, tableName).Scan(&count)
+	return err == nil && count > 0
+}
+
+func queryUserRoles(userID int64) ([]map[string]interface{}, error) {
+	if !authTableExists("roles") || !authTableExists("user_roles") {
+		return []map[string]interface{}{}, nil
+	}
+
+	rows, err := config.DB.Query(`
+		SELECT
+			r.id,
+			r.role_code,
+			r.role_name,
+			IFNULL(r.description, '')
+		FROM user_roles ur
+		JOIN roles r ON ur.role_id = r.id
+		WHERE ur.user_id = ?
+		ORDER BY r.id
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	list := make([]map[string]interface{}, 0)
+	for rows.Next() {
+		var id int64
+		var code string
+		var name string
+		var description string
+		if err := rows.Scan(&id, &code, &name, &description); err != nil {
+			return nil, err
+		}
+		list = append(list, map[string]interface{}{
+			"id":          id,
+			"roleCode":    code,
+			"roleName":    name,
+			"description": description,
+		})
+	}
+
+	return list, rows.Err()
+}
+
+func queryUserPermissions(userID int64) ([]string, error) {
+	if !authTableExists("permissions") || !authTableExists("user_roles") || !authTableExists("role_permissions") {
+		return []string{}, nil
+	}
+
+	rows, err := config.DB.Query(`
+		SELECT DISTINCT p.permission_code
+		FROM user_roles ur
+		JOIN role_permissions rp ON ur.role_id = rp.role_id
+		JOIN permissions p ON rp.permission_id = p.id
+		WHERE ur.user_id = ?
+		ORDER BY p.permission_code
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	list := make([]string, 0)
+	for rows.Next() {
+		var code string
+		if err := rows.Scan(&code); err != nil {
+			return nil, err
+		}
+		list = append(list, code)
+	}
+
+	return list, rows.Err()
 }

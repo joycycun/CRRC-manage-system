@@ -15,38 +15,36 @@
 </template>
 
 <script setup>
-const cards = [
-  {
-    title: '进行中项目',
-    value: '18',
-    desc: '较上月增加 3 个',
-    icon: '📁'
-  },
-  {
-    title: '待处理问题',
-    value: '42',
-    desc: '研发 / 测试 / 生产待闭环',
-    icon: '⚠️'
-  },
-  {
-    title: '本月发布版本',
-    value: '12',
-    desc: '软件版本发布记录',
-    icon: '🚀'
+import { onMounted, ref } from 'vue'
+import { getDashboardSummary } from '@/api/report'
+import { getCurrentUserParams } from '@/utils/currentUser'
+
+const cards = ref([
+  { title: '进行中项目', value: 0, desc: '较上月持平', icon: '项' },
+  { title: '待处理问题', value: 0, desc: '当前负责人未闭环问题', icon: '问' },
+  { title: '本月发布版本', value: 0, desc: '较上月持平', icon: '版' }
+])
+
+onMounted(() => {
+  loadKpis()
+})
+
+async function loadKpis() {
+  try {
+    const res = await getDashboardSummary(getCurrentUserParams())
+    const result = res?.data || res
+    if (result.code !== 200) return
+    cards.value = result.data?.kpis || cards.value
+  } catch (err) {
+    console.error('加载看板KPI失败：', err)
   }
-  // {
-  //   title: '待量产终端类型',
-  //   value: '6',
-  //   desc: '待进入批量生产流程',
-  //   icon: '🏭'
-  // }
-]
+}
 </script>
 
 <style scoped>
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 20px;
 }
 

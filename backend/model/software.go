@@ -72,17 +72,29 @@ func (s SoftwareVersion) ToResponse() SoftwareVersionResponse {
 }
 
 type ProjectBranch struct {
-	ID         int64     `json:"id"`
-	ProjectID  int64     `json:"projectId"`
-	DeviceType string    `json:"deviceType"`
-	RepoName   string    `json:"repoName"`
-	RepoURL    string    `json:"repoUrl"`
-	BranchName string    `json:"branchName"`
-	CloneURL   string    `json:"cloneUrl"`
-	OwnerID    int64     `json:"ownerId"`
-	OwnerName  string    `json:"ownerName"`
-	Remark     string    `json:"remark"`
-	CreatedAt  time.Time `json:"createdAt"`
-	UpdatedAt  time.Time `json:"updatedAt"`
-	IsDeleted  bool      `json:"isDeleted"`
+	ID          int64  `json:"id"`
+	ProjectID   int64  `json:"projectId"`
+	ProjectName string `json:"projectName"`
+
+	DeviceType string `json:"deviceType"`
+
+	// 前端现在用 branchName / cloneUrl
+	BranchName string `json:"branchName"`
+	CloneURL   string `json:"cloneUrl"`
+
+	// 你现有 software_handler.go 里用的是 repoName / repoUrl
+	RepoName string `json:"repoName"`
+	RepoURL  string `json:"repoUrl"`
+
+	OwnerID   int64  `json:"ownerId"`
+	OwnerName string `json:"ownerName"`
+	Owner     string `json:"owner"`
+
+	CreateTime string `json:"createTime"`
+
+	Remark    string `json:"remark"`
+	IsDeleted int    `json:"isDeleted"`
+
+	CreatedAt string `json:"createdAt"`
+	UpdatedAt string `json:"updatedAt"`
 }

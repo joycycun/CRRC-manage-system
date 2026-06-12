@@ -40,7 +40,7 @@
         </option>
       </select>
 
-      <button class="query-btn">查询</button>
+      <button class="query-btn" @click="loadBranches">查询</button>
       <button class="reset-btn" @click="resetFilters">重置</button>
     </div>
 
@@ -112,6 +112,10 @@
 
                   <button class="text-btn yellow" @click="copyCloneUrl(item)">
                     复制
+                  </button>
+
+                  <button class="text-btn red" @click="deleteBranchRecord(item)">
+                    删除
                   </button>
                 </div>
               </td>
@@ -268,7 +272,16 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+
+import { getProjects } from '@/api/project'
+
+import {
+  getBranches,
+  createBranch,
+  updateBranch,
+  deleteBranch
+} from '@/api/software'
 
 const currentUserName = ref(
   localStorage.getItem('username') ||
@@ -288,13 +301,8 @@ const selectedBranch = ref(null)
 const currentEditBranch = ref(null)
 const editMode = ref('create')
 
-const projectOptions = [
-  '香港屯马项目',
-  '波尔图二期项目',
-  '阿根廷有轨项目',
-  '波哥大有轨项目',
-  '迪拜项目'
-]
+const projectOptions = ref([])
+const projectMap = ref({})
 
 const deviceTypeOptions = [
   '广播控制盒',
@@ -302,7 +310,11 @@ const deviceTypeOptions = [
   '编码板',
   '乘客报警器',
   '司机室话筒',
-  '功放模块'
+  '功放模块',
+  '司机室广播控制盒',
+  '解码板',
+  '功放板',
+  '噪声检测器'
 ]
 
 const branchForm = reactive({
@@ -314,44 +326,96 @@ const branchForm = reactive({
   cloneUrl: ''
 })
 
-const branchList = ref([
-  {
-    id: 1,
-    projectName: '波尔图二期项目',
-    deviceType: '广播控制盒',
-    branchName: 'dev_dacu_porto2',
-    owner: '傅建豪',
-    createTime: '2026-05-10',
-    cloneUrl: 'http://bc.zycoo.com:3000/speaker/X10-Series_PA_Intercom.git'
-  },
-  {
-    id: 2,
-    projectName: '阿根廷有轨项目',
-    deviceType: '广播控制盒',
-    branchName: 'Argentina_DACU_PA',
-    owner: '彭泉鑫',
-    createTime: '2026-05-16',
-    cloneUrl: 'http://bc.zycoo.com:3000/speaker/Argentina_DACU_PA.git'
-  },
-  {
-    id: 3,
-    projectName: '香港屯马项目',
-    deviceType: '乘客报警器',
-    branchName: 'HKTM_PECU_Alarm',
-    owner: '卢进',
-    createTime: '2026-05-18',
-    cloneUrl: 'http://bc.zycoo.com:3000/speaker/HKTM_PECU_Alarm.git'
-  },
-  {
-    id: 4,
-    projectName: '迪拜项目',
-    deviceType: '编码板',
-    branchName: 'Dubai_ECU_Encoder',
-    owner: '丁sir',
-    createTime: '2026-05-20',
-    cloneUrl: 'http://bc.zycoo.com:3000/speaker/Dubai_ECU_Encoder.git'
+const branchList = ref([])
+
+onMounted(async () => {
+  await loadProjects()
+  await loadBranches()
+})
+
+function getResponseData(res) {
+  if (res && res.data) return res.data
+  return res
+}
+
+function formatDate(value) {
+  if (!value) return ''
+
+  if (typeof value === 'string') {
+    return value.slice(0, 10)
   }
-])
+
+  if (value.Time) {
+    return String(value.Time).slice(0, 10)
+  }
+
+  return value
+}
+
+function findProjectName(projectId) {
+  const found = Object.entries(projectMap.value).find(([, id]) => Number(id) === Number(projectId))
+  return found ? found[0] : `项目ID-${projectId}`
+}
+
+async function loadProjects() {
+  try {
+    const res = await getProjects()
+    const result = getResponseData(res)
+
+    if (result.code !== 200) {
+      alert(result.msg || '加载项目失败')
+      return
+    }
+
+    const list = result.data || []
+
+    projectOptions.value = list.map(item => item.projectName)
+
+    const map = {}
+    list.forEach(item => {
+      map[item.projectName] = item.id
+    })
+
+    projectMap.value = map
+  } catch (err) {
+    console.error('加载项目失败：', err)
+    alert('加载项目失败')
+  }
+}
+
+async function loadBranches() {
+  try {
+    const res = await getBranches()
+    const result = getResponseData(res)
+
+    console.log('项目分支列表返回：', result)
+
+    if (result.code !== 200) {
+      alert(result.msg || '加载项目分支失败')
+      return
+    }
+
+    branchList.value = (result.data || []).map(item => normalizeBranch(item))
+  } catch (err) {
+    console.error('加载项目分支失败：', err)
+    alert('加载项目分支失败，请检查后端接口')
+  }
+}
+
+function normalizeBranch(item) {
+  return {
+    id: item.id,
+    projectId: item.projectId || 0,
+    projectName: item.projectName || findProjectName(item.projectId),
+    deviceType: item.deviceType || '',
+    ownerId: item.ownerId || 1,
+    owner: item.owner || item.ownerName || item.responsibleUser || '未分配',
+    createTime: formatDate(item.createTime || item.createdAt),
+    branchName: item.branchName || item.repoName || item.name || '',
+    cloneUrl: item.cloneUrl || item.repoUrl || item.gitUrl || item.repositoryUrl || ''
+    
+  }
+}
 
 const filteredBranchList = computed(() => {
   return branchList.value.filter(item => {
@@ -400,14 +464,14 @@ function openEditDialog(item) {
   branchForm.projectName = item.projectName
   branchForm.deviceType = item.deviceType
   branchForm.branchName = item.branchName
-  branchForm.owner = item.owner
+  branchForm.owner = item.owner || currentUserName.value
   branchForm.createTime = item.createTime
   branchForm.cloneUrl = item.cloneUrl
 
   showEditDialog.value = true
 }
 
-function saveBranch() {
+async function saveBranch() {
   if (!branchForm.projectName) {
     alert('请选择绑定项目')
     return
@@ -428,25 +492,53 @@ function saveBranch() {
     return
   }
 
-  if (editMode.value === 'create') {
-    branchList.value.unshift({
-      id: Date.now(),
-      projectName: branchForm.projectName,
-      deviceType: branchForm.deviceType,
-      branchName: branchForm.branchName,
-      owner: currentUserName.value,
-      createTime: branchForm.createTime || new Date().toISOString().slice(0, 10),
-      cloneUrl: branchForm.cloneUrl
-    })
-  } else {
-    currentEditBranch.value.projectName = branchForm.projectName
-    currentEditBranch.value.deviceType = branchForm.deviceType
-    currentEditBranch.value.branchName = branchForm.branchName
-    currentEditBranch.value.createTime = branchForm.createTime
-    currentEditBranch.value.cloneUrl = branchForm.cloneUrl
+  const projectId = projectMap.value[branchForm.projectName]
+
+  if (!projectId) {
+    alert('没有找到项目ID，请重新选择项目')
+    return
   }
 
-  showEditDialog.value = false
+  const payload = {
+    projectId,
+    projectName: branchForm.projectName,
+    deviceType: branchForm.deviceType,
+    branchName: branchForm.branchName,
+    ownerId: 1,
+    owner: editMode.value === 'create'
+      ? currentUserName.value
+      : (branchForm.owner || currentUserName.value),
+    ownerName: editMode.value === 'create'
+      ? currentUserName.value
+      : (branchForm.owner || currentUserName.value),
+    createTime: branchForm.createTime || new Date().toISOString().slice(0, 10),
+    cloneUrl: branchForm.cloneUrl
+  }
+
+  try {
+    let res
+
+    if (editMode.value === 'create') {
+      res = await createBranch(payload)
+    } else {
+      res = await updateBranch(currentEditBranch.value.id, payload)
+    }
+
+    const result = getResponseData(res)
+
+    console.log('保存项目分支返回：', result)
+
+    if (result.code === 200) {
+      alert(editMode.value === 'create' ? '新增项目分支成功' : '修改项目分支成功')
+      showEditDialog.value = false
+      await loadBranches()
+    } else {
+      alert(result.msg || '保存项目分支失败')
+    }
+  } catch (err) {
+    console.error('保存项目分支失败：', err)
+    alert('保存项目分支失败，请检查后端接口')
+  }
 }
 
 function viewBranch(item) {
@@ -479,6 +571,34 @@ async function copyCloneUrl(item) {
     document.execCommand('copy')
     document.body.removeChild(input)
     alert('Clone 地址已复制')
+  }
+}
+
+async function deleteBranchRecord(item) {
+  if (!item || !item.id) {
+    alert('删除失败：没有拿到项目分支ID')
+    return
+  }
+
+  const ok = confirm(`确认删除项目分支【${item.branchName}】吗？`)
+  if (!ok) return
+
+  try {
+    const res = await deleteBranch(item.id)
+    const result = getResponseData(res)
+
+    console.log('删除项目分支返回：', result)
+
+    if (result.code === 200) {
+      alert('删除成功')
+      selectedBranch.value = null
+      await loadBranches()
+    } else {
+      alert(result.msg || '删除失败')
+    }
+  } catch (err) {
+    console.error('删除项目分支失败：', err)
+    alert('删除失败，请检查后端接口')
   }
 }
 </script>
@@ -738,7 +858,7 @@ async function copyCloneUrl(item) {
 }
 
 .operation-col {
-  width: 260px;
+  width: 320px;
   text-align: right !important;
 }
 
@@ -773,6 +893,10 @@ async function copyCloneUrl(item) {
 
 .text-btn.yellow {
   color: #fbbf24;
+}
+
+.text-btn.red {
+  color: #f87171;
 }
 
 .table-footer {
@@ -913,7 +1037,7 @@ async function copyCloneUrl(item) {
   .form-grid,
   .detail-card {
     grid-template-columns: 1fr;
-  }
+  }s
 
   .full-detail-row {
     grid-column: auto;

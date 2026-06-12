@@ -3,28 +3,45 @@
     <h3>近期软件发布版本</h3>
 
     <div class="release-list">
-      <div class="release-item success">
-        <p>u_dev_pacu_decode_bogota_v_s1.0.13-dec-bog-ts_d_20260416.img</p>
-        <span>2026-05-18 14:30</span>
-        <b>发布成功</b>
+      <div
+        class="release-item"
+        v-for="item in releaseList"
+        :key="item.id"
+        :class="item.statusType"
+      >
+        <p>{{ item.version }}</p>
+        <span>{{ item.releaseTime || '暂无发布时间' }}</span>
+        <b>{{ item.status }}</b>
       </div>
 
-      <div class="release-item running">
-        <p>u_dev_pecu_dubai_v_s1.0.1-dubai_d_20260430.img</p>
-        <span>正在部署...</span>
-        <b>进行中</b>
-      </div>
-
-      <div class="release-item rollback">
-        <p>u_dev_pacu_encode_hongkong_tm_v2_V10.01_d_20260513.img</p>
-        <span>2026-05-15 09:12</span>
-        <b>已回滚</b>
+      <div v-if="releaseList.length === 0" class="empty-state">
+        暂无软件发布记录
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
+import { onMounted, ref } from 'vue'
+import { getDashboardSummary } from '@/api/report'
+import { getCurrentUserParams } from '@/utils/currentUser'
+
+const releaseList = ref([])
+
+onMounted(() => {
+  loadRecentReleases()
+})
+
+async function loadRecentReleases() {
+  try {
+    const res = await getDashboardSummary(getCurrentUserParams())
+    const result = res?.data || res
+    if (result.code !== 200) return
+    releaseList.value = result.data?.recentReleases || []
+  } catch (err) {
+    console.error('加载近期软件发布版本失败：', err)
+  }
+}
 </script>
 
 <style scoped>
@@ -72,6 +89,13 @@ h3 {
   display: inline-block;
   margin-top: 6px;
   font-size: 11px;
+}
+
+.empty-state {
+  padding: 24px 0;
+  color: #64748b;
+  font-size: 13px;
+  text-align: center;
 }
 
 .success {

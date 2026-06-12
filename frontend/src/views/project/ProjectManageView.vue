@@ -40,7 +40,7 @@
         </option>
       </select>
 
-      <button class="query-btn">查询</button>
+      <button class="query-btn" @click="loadProjects">查询</button>
       <button class="reset-btn" @click="resetFilters">重置</button>
     </div>
 
@@ -126,6 +126,13 @@
                 @click="archiveProject(item)"
               >
                 归档
+              </button>
+
+              <button
+                class="text-btn red"
+                @click="deleteProject(item)"
+              >
+                删除
               </button>
             </td>
           </tr>
@@ -264,6 +271,8 @@
           <button class="primary-btn" @click="selectedProject = null">
             关闭弹窗
           </button>
+
+
         </div>
       </div>
     </div>
@@ -271,7 +280,18 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+
+import {
+  getProjects,
+  createProject as createProjectApi,
+  updateProject as updateProjectApi,
+  submitProject as submitProjectApi,
+  auditProject as auditProjectApi,
+  archiveProject as archiveProjectApi,
+  closeProject as closeProjectApi,
+  deleteProject as deleteProjectApi
+} from '@/api/project'
 
 const filters = reactive({
   keyword: '',
@@ -279,15 +299,18 @@ const filters = reactive({
   stage: ''
 })
 
+const loading = ref(false)
 const showCreateDialog = ref(false)
 const selectedProject = ref(null)
 
 const projectForm = reactive({
   projectName: '',
   projectCode: '',
+  ownerId: 1,
   owner: '',
   stage: '立项',
-  status: 'draft'
+  status: 'draft',
+  remark: ''
 })
 
 const projectStages = [
@@ -302,53 +325,117 @@ const projectStages = [
   '收货'
 ]
 
-const projectList = ref([
-  {
-    id: 1,
-    projectName: '香港屯马项目',
-    projectCode: 'CRRC-HK-TM-2026',
-    stage: '软件研发',
-    owner: '卢进',
-    status: 'running',
-    createTime: '2026-05-10'
-  },
-  {
-    id: 2,
-    projectName: '波尔图二期项目',
-    projectCode: 'CRRC-PT-002',
-    stage: '立项',
-    owner: '寸诗睿',
-    status: 'submitted',
-    createTime: '2026-05-16'
-  },
-  {
-    id: 3,
-    projectName: '阿根廷有轨项目',
-    projectCode: 'CRRC-ARG-001',
-    stage: '需求书首次确认',
-    owner: '王宇',
-    status: 'draft',
-    createTime: '2026-05-18'
-  },
-  {
-    id: 4,
-    projectName: '波哥大有轨项目',
-    projectCode: 'CRRC-BOG-001',
-    stage: '收货',
-    owner: '丁sir',
-    status: 'approved',
-    createTime: '2026-04-28'
-  },
-  {
-    id: 5,
-    projectName: '成都项目',
-    projectCode: '未填写',
-    stage: '立项',
-    owner: '未分配',
-    status: 'approved',
-    createTime: '2026-05-25'
+const projectList = ref([])
+
+onMounted(() => {
+  loadProjects()
+})
+
+function getResponseData(res) {
+  if (res && res.data) return res.data
+  return res
+}
+
+/**
+ * 后端项目状态 -> 前端页面状态
+ */
+function backendStatusToFrontend(status, auditStatus) {
+  if (status === '归档') return 'archived'
+  if (status === '已关闭') return 'closed'
+  if (status === '已完成') return 'finished'
+
+  if (auditStatus === '未提交' || !auditStatus) return 'draft'
+  if (auditStatus === '待审核') return 'submitted'
+  if (auditStatus === '已驳回') return 'rejected'
+
+  if (auditStatus === '已通过') {
+    if (status === '进行中') return 'running'
+    return 'approved'
   }
-])
+
+  const statusMap = {
+    draft: 'draft',
+    submitted: 'submitted',
+    approved: 'approved',
+    running: 'running',
+    closed: 'closed',
+    archived: 'archived',
+    rejected: 'rejected',
+    立项中: 'draft',
+    进行中: 'running',
+    已关闭: 'closed',
+    归档: 'archived'
+  }
+
+  return statusMap[status] || 'draft'
+}
+
+/**
+ * 前端页面状态 -> 后端项目状态
+ */
+function frontendStatusToBackend(status) {
+  const map = {
+    draft: '立项中',
+    submitted: '立项中',
+    approved: '进行中',
+    running: '进行中',
+    closed: '已关闭',
+    archived: '归档',
+    rejected: '立项中'
+  }
+
+  return map[status] || status || '立项中'
+}
+
+function normalizeProject(item) {
+  return {
+    id: item.id,
+    projectName: item.projectName || '',
+    projectCode: item.projectCode || '未填写',
+    stage: item.stage || '立项',
+    ownerId: item.ownerId || 1,
+    owner: item.owner || item.ownerName || '未分配',
+    ownerName: item.ownerName || item.owner || '未分配',
+    status: backendStatusToFrontend(item.status, item.auditStatus),
+    backendStatus: item.status || '',
+    auditStatus: item.auditStatus || '',
+    auditUserName: item.auditUserName || '',
+    auditTime: formatDate(item.auditTime),
+    submitTime: formatDate(item.submitTime),
+    createTime: formatDate(item.createTime || item.createdAt),
+    archiveTime: formatDate(item.archiveTime),
+    closeTime: formatDate(item.closeTime),
+    remark: item.remark || ''
+  }
+}
+
+function formatDate(value) {
+  if (!value) return ''
+  if (typeof value === 'string') return value.slice(0, 10)
+  return value
+}
+
+async function loadProjects() {
+  loading.value = true
+
+  try {
+    const res = await getProjects()
+    const result = getResponseData(res)
+
+    console.log('项目列表返回：', result)
+
+    if (result.code === 200) {
+      projectList.value = (result.data || []).map(normalizeProject)
+    } else {
+      alert(result.msg || '查询项目失败')
+    }
+  } catch (err) {
+    console.error('查询项目失败：', err)
+    alert('查询项目失败，请检查后端是否启动')
+  } finally {
+    loading.value = false
+  }
+}
 
 const filteredProjects = computed(() => {
   return projectList.value.filter(item => {
@@ -370,6 +457,7 @@ function getStatusText(status) {
     submitted: '待审核',
     approved: '已立项',
     running: '进行中',
+    finished: '已完成',
     closed: '已关闭',
     archived: '已归档',
     rejected: '已驳回'
@@ -403,29 +491,49 @@ function resetFilters() {
 function openCreateDialog() {
   projectForm.projectName = ''
   projectForm.projectCode = ''
+  projectForm.ownerId = 1
   projectForm.owner = ''
   projectForm.stage = '立项'
   projectForm.status = 'draft'
+  projectForm.remark = ''
+
   showCreateDialog.value = true
 }
 
-function createProject() {
+async function createProject() {
   if (!projectForm.projectName) {
     alert('请输入项目名称')
     return
   }
 
-  projectList.value.unshift({
-    id: Date.now(),
+  const payload = {
     projectName: projectForm.projectName,
     projectCode: projectForm.projectCode || '未填写',
-    stage: projectForm.stage,
+    ownerId: projectForm.ownerId || 1,
     owner: projectForm.owner || '未分配',
-    status: projectForm.status,
-    createTime: new Date().toISOString().slice(0, 10)
-  })
+    ownerName: projectForm.owner || '未分配',
+    stage: projectForm.stage,
+    status: frontendStatusToBackend(projectForm.status),
+    remark: projectForm.remark || ''
+  }
 
-  showCreateDialog.value = false
+  try {
+    const res = await createProjectApi(payload)
+    const result = getResponseData(res)
+
+    console.log('新增项目返回：', result)
+
+    if (result.code === 200) {
+      alert('新增项目成功')
+      showCreateDialog.value = false
+      await loadProjects()
+    } else {
+      alert(result.msg || '新增项目失败')
+    }
+  } catch (err) {
+    console.error('新增项目失败：', err)
+    alert('新增项目失败，请检查后端接口')
+  }
 }
 
 function viewProject(item) {
@@ -436,12 +544,35 @@ function viewStage(item) {
   selectedProject.value = item
 }
 
-function changeProjectStage(stage) {
+async function changeProjectStage(stage) {
   if (!selectedProject.value) return
-  selectedProject.value.stage = stage
 
-  if (selectedProject.value.status === 'approved') {
-    selectedProject.value.status = 'running'
+  try {
+    const row = selectedProject.value
+
+    const res = await updateProjectApi(row.id, {
+      projectName: row.projectName,
+      projectCode: row.projectCode,
+      ownerId: row.ownerId || 1,
+      owner: row.owner,
+      ownerName: row.owner,
+      stage,
+      status: frontendStatusToBackend(row.status),
+      remark: row.remark || ''
+    })
+
+    const result = getResponseData(res)
+
+    if (result.code === 200) {
+      alert('阶段修改成功')
+      selectedProject.value.stage = stage
+      await loadProjects()
+    } else {
+      alert(result.msg || '阶段修改失败')
+    }
+  } catch (err) {
+    console.error('阶段修改失败：', err)
+    alert('阶段修改失败')
   }
 }
 
@@ -452,26 +583,134 @@ function isStagePassed(stage, currentStage) {
   return stageIndex !== -1 && currentIndex !== -1 && stageIndex < currentIndex
 }
 
-function submitProject(item) {
-  item.status = 'submitted'
-  alert(`项目【${item.projectName}】已提交立项审核`)
+/**
+ * 提交立项：真正调用后端
+ */
+async function submitProject(item) {
+  try {
+    const res = await submitProjectApi(item.id)
+    const result = getResponseData(res)
+
+    if (result.code === 200) {
+      alert(`项目【${item.projectName}】已提交立项审核`)
+      await loadProjects()
+    } else {
+      alert(result.msg || '提交失败')
+    }
+  } catch (err) {
+    console.error('提交项目失败：', err)
+    alert('提交项目失败')
+  }
 }
 
-function auditProject(item) {
-  item.status = 'approved'
-  item.stage = '立项'
-  alert(`领导已审核通过项目【${item.projectName}】`)
+/**
+ * 审核项目：这里用 confirm 简化
+ * 点确定 = 审核通过
+ * 点取消 = 驳回
+ */
+async function auditProject(item) {
+  const pass = confirm(`是否审核通过项目【${item.projectName}】？\n确定=通过，取消=驳回`)
+
+  let rejectReason = ''
+
+  if (!pass) {
+    rejectReason = prompt('请输入驳回原因') || '未填写驳回原因'
+  }
+
+  try {
+    const res = await auditProjectApi(item.id, {
+      auditUserId: 1,
+      auditUserName: '领导',
+      auditStatus: pass ? '已通过' : '已驳回',
+      rejectReason
+    })
+
+    const result = getResponseData(res)
+
+    if (result.code === 200) {
+      alert(pass ? '审核通过' : '已驳回')
+      await loadProjects()
+    } else {
+      alert(result.msg || '审核失败')
+    }
+  } catch (err) {
+    console.error('审核项目失败：', err)
+    alert('审核项目失败')
+  }
 }
 
-function closeProject(item) {
-  item.status = 'closed'
-  selectedProject.value = null
-  alert(`项目【${item.projectName}】已手动设置为关闭`)
+/**
+ * 关闭项目：真正调用后端
+ */
+async function closeProject(item) {
+  const ok = confirm(`确认关闭项目【${item.projectName}】吗？`)
+  if (!ok) return
+
+  try {
+    const res = await closeProjectApi(item.id)
+    const result = getResponseData(res)
+
+    if (result.code === 200) {
+      alert(`项目【${item.projectName}】已关闭`)
+      selectedProject.value = null
+      await loadProjects()
+    } else {
+      alert(result.msg || '关闭失败')
+    }
+  } catch (err) {
+    console.error('关闭项目失败：', err)
+    alert('关闭项目失败')
+  }
 }
 
-function archiveProject(item) {
-  item.status = 'archived'
-  alert(`项目【${item.projectName}】已归档`)
+/**
+ * 归档项目：真正调用后端
+ */
+async function archiveProject(item) {
+  const ok = confirm(`确认归档项目【${item.projectName}】吗？`)
+  if (!ok) return
+
+  try {
+    const res = await archiveProjectApi(item.id)
+    const result = getResponseData(res)
+
+    if (result.code === 200) {
+      alert(`项目【${item.projectName}】已归档`)
+      await loadProjects()
+    } else {
+      alert(result.msg || '归档失败')
+    }
+  } catch (err) {
+    console.error('归档项目失败：', err)
+    alert('归档项目失败')
+  }
+}
+
+/**
+ * 删除项目：模板里目前没有按钮，后面需要时可以绑定
+ */
+async function deleteProject(item) {
+  console.log('点击删除按钮：', item)
+
+  const ok = confirm(`确认删除项目【${item.projectName}】吗？`)
+  if (!ok) return
+
+  try {
+    const res = await deleteProjectApi(item.id)
+    const result = getResponseData(res)
+
+    console.log('删除项目返回：', result)
+
+    if (result.code === 200) {
+      alert('删除成功')
+      await loadProjects()
+    } else {
+      alert(result.msg || '删除失败')
+    }
+  } catch (err) {
+    console.error('删除项目失败：', err)
+    alert('删除项目失败，请检查后端接口')
+  }
 }
 </script>
 

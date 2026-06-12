@@ -43,7 +43,7 @@
         <option value="closed">已关闭</option>
       </select>
 
-      <button class="query-btn">查询</button>
+      <button class="query-btn" @click="loadRequirementChanges">查询</button>
       <button class="reset-btn" @click="resetFilters">重置</button>
     </div>
 
@@ -67,7 +67,7 @@
           <tr v-for="item in filteredChangeList" :key="item.id">
             <td>
               <div class="change-name">{{ item.changeName }}</div>
-              <!-- <div class="file-name">{{ item.fileName }}</div> -->
+              <div class="file-name">{{ item.fileName }}</div>
             </td>
 
             <td>
@@ -171,7 +171,7 @@
             需求变更名称
             <input
               v-model="uploadForm.changeName"
-
+              placeholder="例如：波哥大有轨需求变更V1.0"
             />
           </label>
 
@@ -313,13 +313,26 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+
+import { getProjects } from '@/api/project'
+
+import {
+  getRequirementChanges,
+  createRequirementChange,
+  submitRequirementChange,
+  auditRequirementChange,
+  closeRequirementChange,
+  deleteRequirementChange
+} from '@/api/requirement'
+
 const currentUserName = ref(
   localStorage.getItem('username') ||
-  localStorage.getItem('accountName') ||
-  localStorage.getItem('realName') ||
-  '当前用户'
+    localStorage.getItem('accountName') ||
+    localStorage.getItem('realName') ||
+    '当前用户'
 )
+
 const filters = reactive({
   keyword: '',
   projectName: '',
@@ -328,103 +341,196 @@ const filters = reactive({
 })
 
 const showUploadDialog = ref(false)
-
-
 const selectedChange = ref(null)
 
-
-const projectOptions = [
-  '香港屯马项目',
-  '波尔图二期项目',
-  '阿根廷有轨项目',
-  '波哥大有轨项目',
-  '成都项目'
-]
+const projectOptions = ref([])
+const projectMap = ref({})
 
 const uploadForm = reactive({
   projectName: '',
   changeName: '',
+  changeType: '功能变更',
   fileName: '',
   file: null,
   fileUrl: '',
   remark: ''
 })
 
+const requirementChangeList = ref([])
 
-const changeList = ref([
-  {
-    id: 1,
-    projectName: '香港屯马项目',
-    changeName: '地面无线电故障报警需求变更',
-    fileName: '香港屯马需求变更_V1.0.docx',
-    fileUrl: '',
-    uploader: '寸诗睿',
-    uploadTime: '2026-05-10',
-    auditStatus: 'approved',
-    closeStatus: 'closed',
-    auditor: '领导',
-    auditTime: '2026-05-11',
-    closeUser: '研发',
-    closeTime: '2026-05-12',
-    remark: '已完成变更研发处理，关闭需求变更'
-  },
-  {
-    id: 2,
-    projectName: '波尔图二期项目',
-    changeName: '广播逻辑变更',
-    fileName: '波尔图需求变更_V0.9.docx',
-    fileUrl: '',
-    uploader: '寸诗睿',
-    uploadTime: '2026-05-16',
-    auditStatus: 'submitted',
-    closeStatus: 'open',
-    auditor: '',
-    auditTime: '',
-    closeUser: '',
-    closeTime: '',
-    remark: '待领导审核确认'
-  },
-  {
-    id: 3,
-    projectName: '阿根廷有轨项目',
-    changeName: '报警器需求变更',
-    fileName: '阿根廷需求变更_草稿.docx',
-    fileUrl: '',
-    uploader: '寸诗睿',
-    uploadTime: '2026-05-18',
-    auditStatus: 'draft',
-    closeStatus: 'open',
-    auditor: '',
-    auditTime: '',
-    closeUser: '',
-    closeTime: '',
-    remark: '草稿，尚未提交审核'
-  },
-  {
-    id: 4,
-    projectName: '波哥大有轨项目',
-    changeName: '编码板需求变更',
-    fileName: '波哥大需求变更_V1.1.docx',
-    fileUrl: '',
-    uploader: '寸诗睿',
-    uploadTime: '2026-05-20',
-    auditStatus: 'rejected',
-    closeStatus: 'open',
-    auditor: '领导',
-    auditTime: '2026-05-21',
-    closeUser: '',
-    closeTime: '',
-    remark: '变更影响范围不清晰，需要补充涉及终端类型'
+onMounted(async () => {
+  await loadProjects()
+  await loadRequirementChanges()
+})
+
+function getResponseData(res) {
+  if (res && res.data) return res.data
+  return res
+}
+
+function formatDate(value) {
+  if (!value) return ''
+
+  // 后端返回普通字符串
+  if (typeof value === 'string') {
+    return value.slice(0, 10)
   }
-])
+
+  // 后端返回 Go 的 sql.NullTime：{ Time: "...", Valid: true }
+  if (typeof value === 'object') {
+    if (value.Valid === false) return ''
+
+    const timeValue = value.Time || value.time
+    if (timeValue) {
+      return String(timeValue).slice(0, 10)
+    }
+  }
+
+  return ''
+}
+function backendStatusToFrontend(status) {
+  const map = {
+    草稿: 'draft',
+    未提交: 'draft',
+    待审核: 'submitted',
+    已通过: 'approved',
+    审核通过: 'approved',
+    已驳回: 'rejected',
+    审核驳回: 'rejected'
+  }
+
+  return map[status] || status || 'draft'
+}
+
+function backendCloseStatusToFrontend(status) {
+  const map = {
+    未关闭: 'open',
+    待关闭: 'open',
+    已关闭: 'closed',
+    已闭环: 'closed'
+  }
+
+  return map[status] || status || 'open'
+}
+
+function frontendStatusToBackend(status) {
+  const map = {
+    draft: '草稿',
+    submitted: '待审核',
+    approved: '已通过',
+    rejected: '已驳回'
+  }
+
+  return map[status] || status
+}
+
+function findProjectName(projectId) {
+  const found = Object.entries(projectMap.value).find(([, id]) => Number(id) === Number(projectId))
+  return found ? found[0] : `项目ID-${projectId}`
+}
+
+async function loadProjects() {
+  try {
+    const res = await getProjects()
+    const result = getResponseData(res)
+
+    if (result.code !== 200) {
+      alert(result.msg || '加载项目失败')
+      return
+    }
+
+    const list = result.data || []
+
+    projectOptions.value = list.map(item => item.projectName)
+
+    const map = {}
+    list.forEach(item => {
+      map[item.projectName] = item.id
+    })
+
+    projectMap.value = map
+  } catch (err) {
+    console.error('加载项目失败：', err)
+    alert('加载项目失败')
+  }
+}
+
+async function loadRequirementChanges() {
+  try {
+    const res = await getRequirementChanges()
+    const result = getResponseData(res)
+
+    console.log('需求变更列表返回：', result)
+
+    if (result.code !== 200) {
+      alert(result.msg || '加载需求变更失败')
+      return
+    }
+
+    requirementChangeList.value = (result.data || []).map(item => {
+      const changeName = item.changeName || item.changeTitle || ''
+      const submitUser = item.submitUserName || item.submitUser || item.uploader || ''
+      const uploadTime = formatDate(item.submitTime || item.uploadTime || item.createdAt)
+
+      return {
+        id: item.id,
+        projectId: item.projectId,
+        projectName: item.projectName || findProjectName(item.projectId),
+
+        changeName,
+        changeTitle: changeName,
+        changeType: item.changeType || '',
+
+        fileId: item.fileId || 0,
+        fileName:
+          item.fileName ||
+          item.fileDisplayName ||
+          (item.fileId ? `文件ID-${item.fileId}` : '暂无文件'),
+        fileUrl: item.fileUrl || '',
+
+        submitUserId: item.submitUserId || 0,
+        submitUserName: submitUser,
+        submitUser,
+        uploader: submitUser,
+
+        submitTime: uploadTime,
+        uploadTime,
+
+        status: backendStatusToFrontend(item.status),
+        auditStatus: backendStatusToFrontend(item.status),
+
+        closeStatus: backendCloseStatusToFrontend(item.closeStatus),
+
+        auditUserName: item.auditUserName || '',
+        auditor: item.auditUserName || item.auditor || '',
+        auditTime: formatDate(item.auditTime),
+
+        closeUserName: item.closeUserName || '',
+        closeUser: item.closeUserName || item.closeUser || '',
+        closeTime: formatDate(item.closeTime),
+
+        rejectReason: item.rejectReason || '',
+        remark: item.remark || ''
+      }
+    })
+  } catch (err) {
+    console.error('加载需求变更失败：', err)
+    alert('加载需求变更失败，请检查后端接口')
+  }
+}
 
 const filteredChangeList = computed(() => {
-  return changeList.value.filter(item => {
+  const list = requirementChangeList.value || []
+
+  return list.filter(item => {
+    const keyword = filters.keyword || ''
+
     const keywordMatch =
-      !filters.keyword ||
-      item.projectName.includes(filters.keyword) ||
-      item.changeName.includes(filters.keyword) ||
-      item.uploader.includes(filters.keyword)
+      !keyword ||
+      String(item.projectName || '').includes(keyword) ||
+      String(item.changeName || '').includes(keyword) ||
+      String(item.changeType || '').includes(keyword) ||
+      String(item.uploader || '').includes(keyword)
 
     const projectMatch =
       !filters.projectName || item.projectName === filters.projectName
@@ -469,10 +575,12 @@ function resetFilters() {
 function openUploadDialog() {
   uploadForm.projectName = ''
   uploadForm.changeName = ''
+  uploadForm.changeType = '功能变更'
   uploadForm.fileName = ''
   uploadForm.file = null
   uploadForm.fileUrl = ''
   uploadForm.remark = ''
+
   showUploadDialog.value = true
 }
 
@@ -480,12 +588,15 @@ function handleFileChange(event) {
   const file = event.target.files[0]
   if (!file) return
 
-  const isWord =
+  const isAllowed =
     file.name.endsWith('.doc') ||
-    file.name.endsWith('.docx')
+    file.name.endsWith('.docx') ||
+    file.name.endsWith('.pdf') ||
+    file.name.endsWith('.xlsx') ||
+    file.name.endsWith('.xls')
 
-  if (!isWord) {
-    alert('只能上传 Word 文档，格式为 .doc 或 .docx')
+  if (!isAllowed) {
+    alert('只能上传 doc / docx / pdf / xls / xlsx 文件')
     event.target.value = ''
     return
   }
@@ -495,40 +606,59 @@ function handleFileChange(event) {
   uploadForm.fileUrl = URL.createObjectURL(file)
 }
 
-function uploadChange() {
+async function uploadChange() {
   if (!uploadForm.projectName) {
-    alert('请选择需求变更对应项目')
+    alert('请选择项目')
     return
   }
 
   if (!uploadForm.changeName) {
-    alert('请输入需求变更名称')
+    alert('请输入变更标题')
     return
   }
 
   if (!uploadForm.file) {
-    alert('请上传 Word 需求变更文档')
+    alert('请上传需求变更文件')
     return
   }
 
-  changeList.value.unshift({
-    id: Date.now(),
-    projectName: uploadForm.projectName,
-    changeName: uploadForm.changeName,
-    fileName: uploadForm.fileName,
-    fileUrl: uploadForm.fileUrl,
-    uploader: currentUserName.value,
-    uploadTime: new Date().toISOString().slice(0, 10),
-    auditStatus: 'draft',
-    closeStatus: 'open',
-    auditor: '',
-    auditTime: '',
-    closeUser: '',
-    closeTime: '',
-    remark: uploadForm.remark
-  })
+  const projectId = projectMap.value[uploadForm.projectName]
 
-  showUploadDialog.value = false
+  if (!projectId) {
+    alert('没有找到对应项目ID，请重新选择项目')
+    return
+  }
+
+  const payload = {
+    projectId,
+    changeTitle: uploadForm.changeName,
+    changeName: uploadForm.changeName,
+    changeType: uploadForm.changeType,
+    fileId: 1,
+    status: frontendStatusToBackend('draft'),
+    closeStatus: '未关闭',
+    submitUserId: 1,
+    submitUserName: currentUserName.value,
+    remark: uploadForm.remark || ''
+  }
+
+  try {
+    const res = await createRequirementChange(payload)
+    const result = getResponseData(res)
+
+    console.log('新增需求变更返回：', result)
+
+    if (result.code === 200) {
+      alert('新增需求变更成功')
+      showUploadDialog.value = false
+      await loadRequirementChanges()
+    } else {
+      alert(result.msg || '新增需求变更失败')
+    }
+  } catch (err) {
+    console.error('新增需求变更失败：', err)
+    alert('新增需求变更失败，请检查后端接口')
+  }
 }
 
 function viewChange(item) {
@@ -537,59 +667,168 @@ function viewChange(item) {
 
 function downloadChange(item) {
   if (!item.fileUrl) {
-    alert('当前是模拟数据，暂无可下载的 Word 文件')
+    alert('当前还没有接真实文件下载，后面做 project_files 文件上传下载时再接')
     return
   }
 
   const link = document.createElement('a')
   link.href = item.fileUrl
-  link.download = item.fileName || '需求变更.docx'
+  link.download = item.fileName || '需求变更文件'
   document.body.appendChild(link)
   link.click()
   document.body.removeChild(link)
 }
 
-function submitChange(item) {
-  item.auditStatus = 'submitted'
-  item.auditor = ''
-  item.auditTime = ''
-  alert(`需求变更【${item.changeName}】已提交领导审核`)
+async function submitChange(item) {
+  if (!item || !item.id) {
+    alert('提交失败：没有拿到需求变更ID')
+    return
+  }
+
+  try {
+    const res = await submitRequirementChange(item.id)
+    const result = getResponseData(res)
+
+    console.log('提交需求变更返回：', result)
+
+    if (result.code === 200) {
+      alert(`需求变更【${item.changeName}】已提交审核`)
+      await loadRequirementChanges()
+    } else {
+      alert(result.msg || '提交失败')
+    }
+  } catch (err) {
+    console.error('提交需求变更失败：', err)
+    alert('提交需求变更失败')
+  }
 }
 
 function auditChange(item) {
   selectedChange.value = item
 }
 
-function approveChange(item) {
-  item.auditStatus = 'approved'
-  item.auditor = '领导'
-  item.auditTime = new Date().toISOString().slice(0, 10)
-  selectedChange.value = null
-  alert(`需求变更【${item.changeName}】审核通过`)
+async function approveChange(item) {
+  if (!item || !item.id) {
+    alert('审核失败：没有拿到需求变更ID')
+    return
+  }
+
+  try {
+    const res = await auditRequirementChange(item.id, {
+      auditUserId: 1,
+      auditUserName: '领导',
+      auditStatus: '已通过',
+      rejectReason: ''
+    })
+
+    const result = getResponseData(res)
+
+    console.log('需求变更审核通过返回：', result)
+
+    if (result.code === 200) {
+      alert(`需求变更【${item.changeName}】审核通过`)
+      selectedChange.value = null
+      await loadRequirementChanges()
+    } else {
+      alert(result.msg || '审核失败')
+    }
+  } catch (err) {
+    console.error('审核需求变更失败：', err)
+    alert('审核失败')
+  }
 }
 
-function rejectChange(item) {
-  item.auditStatus = 'rejected'
-  item.auditor = '领导'
-  item.auditTime = new Date().toISOString().slice(0, 10)
-  selectedChange.value = null
-  alert(`需求变更【${item.changeName}】已驳回`)
+async function rejectChange(item) {
+  if (!item || !item.id) {
+    alert('审核失败：没有拿到需求变更ID')
+    return
+  }
+
+  const reason = prompt('请输入驳回原因') || '变更说明不完整，请补充后重新提交'
+
+  try {
+    const res = await auditRequirementChange(item.id, {
+      auditUserId: 1,
+      auditUserName: '领导',
+      auditStatus: '已驳回',
+      rejectReason: reason
+    })
+
+    const result = getResponseData(res)
+
+    console.log('需求变更审核驳回返回：', result)
+
+    if (result.code === 200) {
+      alert(`需求变更【${item.changeName}】已驳回`)
+      selectedChange.value = null
+      await loadRequirementChanges()
+    } else {
+      alert(result.msg || '审核失败')
+    }
+  } catch (err) {
+    console.error('驳回需求变更失败：', err)
+    alert('审核失败')
+  }
 }
 
-function closeChange(item) {
-  item.closeStatus = 'closed'
-  item.closeUser = '研发'
-  item.closeTime = new Date().toISOString().slice(0, 10)
-  selectedChange.value = null
-  alert(`研发已关闭需求变更【${item.changeName}】`)
+async function closeChange(item) {
+  if (!item || !item.id) {
+    alert('关闭失败：没有拿到需求变更ID')
+    return
+  }
+
+  const ok = confirm(`确认关闭需求变更【${item.changeName}】吗？`)
+  if (!ok) return
+
+  try {
+    const res = await closeRequirementChange(item.id, {
+      closeUserId: 1,
+      closeUserName: currentUserName.value
+    })
+
+    const result = getResponseData(res)
+
+    console.log('关闭需求变更返回：', result)
+
+    if (result.code === 200) {
+      alert('需求变更已关闭')
+      selectedChange.value = null
+      await loadRequirementChanges()
+    } else {
+      alert(result.msg || '关闭失败')
+    }
+  } catch (err) {
+    console.error('关闭需求变更失败：', err)
+    alert('关闭失败，请检查后端接口')
+  }
 }
 
+async function deleteChange(item) {
+  if (!item || !item.id) {
+    alert('删除失败：没有拿到需求变更ID')
+    return
+  }
 
-function deleteChange(item) {
   const ok = confirm(`确认删除需求变更【${item.changeName}】吗？`)
   if (!ok) return
 
-  changeList.value = changeList.value.filter(change => change.id !== item.id)
+  try {
+    const res = await deleteRequirementChange(item.id)
+    const result = getResponseData(res)
+
+    console.log('删除需求变更返回：', result)
+
+    if (result.code === 200) {
+      alert('删除成功')
+      selectedChange.value = null
+      await loadRequirementChanges()
+    } else {
+      alert(result.msg || '删除失败')
+    }
+  } catch (err) {
+    console.error('删除需求变更失败：', err)
+    alert('删除失败，请检查后端接口')
+  }
 }
 </script>
 
@@ -856,7 +1095,6 @@ function deleteChange(item) {
 .text-btn.green {
   color: #4ade80;
 }
-
 
 .text-btn.red {
   color: #f87171;

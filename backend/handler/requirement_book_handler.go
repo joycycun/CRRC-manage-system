@@ -3,6 +3,7 @@ package handler
 import (
 	"crrc_pm_backend/config"
 	"crrc_pm_backend/model"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -56,25 +57,75 @@ func RequirementBookActionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// POST /api/requirement-books/1/submit
-	if len(parts) == 2 && r.Method == http.MethodPost && parts[1] == "submit" {
-		SubmitRequirementBookHandler(w, r, id)
-		return
-	}
+// POST /api/requirement-books/1/submit
+if len(parts) == 2 && r.Method == http.MethodPost && parts[1] == "submit" {
+	SubmitRequirementBookHandler(w, r, id)
+	return
+}
 
-	http.Error(w, "接口不存在", http.StatusNotFound)
+// POST /api/requirement-books/1/approve
+if len(parts) == 2 && r.Method == http.MethodPost && parts[1] == "approve" {
+	ApproveRequirementBookHandler(w, r, id)
+	return
+}
+
+// POST /api/requirement-books/1/reject
+if len(parts) == 2 && r.Method == http.MethodPost && parts[1] == "reject" {
+	RejectRequirementBookHandler(w, r, id)
+	return
+}
+
+// POST /api/requirement-books/1/audit
+if len(parts) == 2 && r.Method == http.MethodPost && parts[1] == "audit" {
+	AuditRequirementBookHandler(w, r, id)
+	return
+}
+
+http.Error(w, "接口不存在", http.StatusNotFound)}
+// 返回给前端的需求书结构
+// 注意：这里把时间字段转成 string，避免前端处理 time.Time 麻烦
+type RequirementBookVO struct {
+	ID             int64  `json:"id"`
+	ProjectID      int64  `json:"projectId"`
+	BookName       string `json:"bookName"`
+	FileID         int64  `json:"fileId"`
+	Status         string `json:"status"`
+	SubmitUserID   int64  `json:"submitUserId"`
+	SubmitUserName string `json:"submitUserName"`
+	SubmitTime     string `json:"submitTime"`
+	AuditUserID    int64  `json:"auditUserId"`
+	AuditUserName  string `json:"auditUserName"`
+	AuditTime      string `json:"auditTime"`
+	RejectReason   string `json:"rejectReason"`
+	Remark         string `json:"remark"`
+	CreatedAt      string `json:"createdAt"`
+	UpdatedAt      string `json:"updatedAt"`
+	IsDeleted      int    `json:"isDeleted"`
 }
 
 // ---------------- 内部函数 -----------------
 
 func GetRequirementBooksHandler(w http.ResponseWriter, r *http.Request) {
 	rows, err := config.DB.Query(`
-		SELECT id, project_id, book_name, file_id, status,
-		       submit_user_id, submit_user_name, submit_time,
-		       audit_user_id, audit_user_name, audit_time,
-		       reject_reason, remark, created_at, updated_at, is_deleted
+		SELECT 
+			id,
+			project_id,
+			book_name,
+			file_id,
+			status,
+			submit_user_id,
+			submit_user_name,
+			submit_time,
+			audit_user_id,
+			audit_user_name,
+			audit_time,
+			reject_reason,
+			remark,
+			created_at,
+			updated_at,
+			is_deleted
 		FROM requirement_books
-		WHERE is_deleted=0
+		WHERE is_deleted = 0
 		ORDER BY id DESC
 	`)
 	if err != nil {
@@ -83,33 +134,68 @@ func GetRequirementBooksHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	list := make([]model.RequirementBook, 0)
+	list := make([]RequirementBookVO, 0)
 
 	for rows.Next() {
-		var rbook model.RequirementBook
+		var item RequirementBookVO
+
+		var fileID sql.NullInt64
+		var submitUserID sql.NullInt64
+		var auditUserID sql.NullInt64
+
+		var submitUserName sql.NullString
+		var auditUserName sql.NullString
+		var rejectReason sql.NullString
+		var remark sql.NullString
+
+		var submitTime sql.NullTime
+		var auditTime sql.NullTime
+		var createdAt sql.NullTime
+		var updatedAt sql.NullTime
+
 		err := rows.Scan(
-			&rbook.ID,
-			&rbook.ProjectID,
-			&rbook.BookName,
-			&rbook.FileID,
-			&rbook.Status,
-			&rbook.SubmitUserID,
-			&rbook.SubmitUserName,
-			&rbook.SubmitTime,
-			&rbook.AuditUserID,
-			&rbook.AuditUserName,
-			&rbook.AuditTime,
-			&rbook.RejectReason,
-			&rbook.Remark,
-			&rbook.CreatedAt,
-			&rbook.UpdatedAt,
-			&rbook.IsDeleted,
+			&item.ID,
+			&item.ProjectID,
+			&item.BookName,
+			&fileID,
+			&item.Status,
+			&submitUserID,
+			&submitUserName,
+			&submitTime,
+			&auditUserID,
+			&auditUserName,
+			&auditTime,
+			&rejectReason,
+			&remark,
+			&createdAt,
+			&updatedAt,
+			&item.IsDeleted,
 		)
 		if err != nil {
 			http.Error(w, "数据解析失败: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		list = append(list, rbook)
+
+		item.FileID = nullInt64(fileID)
+		item.SubmitUserID = nullInt64(submitUserID)
+		item.AuditUserID = nullInt64(auditUserID)
+
+		item.SubmitUserName = nullString(submitUserName)
+		item.AuditUserName = nullString(auditUserName)
+		item.RejectReason = nullString(rejectReason)
+		item.Remark = nullString(remark)
+
+		item.SubmitTime = nullTime(submitTime)
+		item.AuditTime = nullTime(auditTime)
+		item.CreatedAt = nullTime(createdAt)
+		item.UpdatedAt = nullTime(updatedAt)
+
+		list = append(list, item)
+	}
+
+	if err := rows.Err(); err != nil {
+		http.Error(w, "数据读取失败: "+err.Error(), http.StatusInternalServerError)
+		return
 	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -133,11 +219,31 @@ func CreateRequirementBookHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := time.Now()
+
 	result, err := config.DB.Exec(`
 		INSERT INTO requirement_books
-		(project_id, book_name, file_id, status, submit_user_id, submit_user_name, created_at, updated_at, is_deleted)
+		(
+			project_id,
+			book_name,
+			file_id,
+			status,
+			submit_user_id,
+			submit_user_name,
+			created_at,
+			updated_at,
+			is_deleted
+		)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
-	`, rbook.ProjectID, rbook.BookName, rbook.FileID, "草稿", rbook.SubmitUserID, rbook.SubmitUserName, now, now)
+	`,
+		rbook.ProjectID,
+		rbook.BookName,
+		rbook.FileID,
+		"草稿",
+		rbook.SubmitUserID,
+		rbook.SubmitUserName,
+		now,
+		now,
+	)
 
 	if err != nil {
 		http.Error(w, "新增失败: "+err.Error(), http.StatusInternalServerError)
@@ -160,8 +266,11 @@ func CreateRequirementBookHandler(w http.ResponseWriter, r *http.Request) {
 func SubmitRequirementBookHandler(w http.ResponseWriter, r *http.Request, id int64) {
 	result, err := config.DB.Exec(`
 		UPDATE requirement_books
-		SET status='待审核', submit_time=NOW(), updated_at=NOW()
-		WHERE id=? AND is_deleted=0
+		SET 
+			status = '待审核',
+			submit_time = NOW(),
+			updated_at = NOW()
+		WHERE id = ? AND is_deleted = 0
 	`, id)
 
 	if err != nil {
@@ -181,11 +290,168 @@ func SubmitRequirementBookHandler(w http.ResponseWriter, r *http.Request, id int
 	})
 }
 
+type RequirementBookAuditRequest struct {
+	AuditStatus   string `json:"auditStatus"`
+	AuditUserID   int64  `json:"auditUserId"`
+	AuditUserName string `json:"auditUserName"`
+	RejectReason string `json:"rejectReason"`
+}
+
+// 审核通过
+func ApproveRequirementBookHandler(w http.ResponseWriter, r *http.Request, id int64) {
+	var req RequirementBookAuditRequest
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	if req.AuditUserID == 0 {
+		req.AuditUserID = 1
+	}
+
+	if req.AuditUserName == "" {
+		req.AuditUserName = "当前领导"
+	}
+
+	result, err := config.DB.Exec(`
+		UPDATE requirement_books
+		SET 
+			status = '已通过',
+			audit_user_id = ?,
+			audit_user_name = ?,
+			audit_time = NOW(),
+			reject_reason = '',
+			updated_at = NOW()
+		WHERE id = ? AND is_deleted = 0
+	`, req.AuditUserID, req.AuditUserName, id)
+
+	if err != nil {
+		http.Error(w, "审核通过失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	affected, _ := result.RowsAffected()
+	if affected == 0 {
+		http.Error(w, "需求书不存在或已删除", http.StatusNotFound)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"code": 200,
+		"msg":  "审核通过成功",
+	})
+}
+
+// 驳回
+func RejectRequirementBookHandler(w http.ResponseWriter, r *http.Request, id int64) {
+	var req RequirementBookAuditRequest
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	if req.AuditUserID == 0 {
+		req.AuditUserID = 1
+	}
+
+	if req.AuditUserName == "" {
+		req.AuditUserName = "当前领导"
+	}
+
+	if req.RejectReason == "" {
+		req.RejectReason = "未填写驳回原因"
+	}
+
+	result, err := config.DB.Exec(`
+		UPDATE requirement_books
+		SET 
+			status = '已驳回',
+			audit_user_id = ?,
+			audit_user_name = ?,
+			audit_time = NOW(),
+			reject_reason = ?,
+			updated_at = NOW()
+		WHERE id = ? AND is_deleted = 0
+	`, req.AuditUserID, req.AuditUserName, req.RejectReason, id)
+
+	if err != nil {
+		http.Error(w, "驳回失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	affected, _ := result.RowsAffected()
+	if affected == 0 {
+		http.Error(w, "需求书不存在或已删除", http.StatusNotFound)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"code": 200,
+		"msg":  "驳回成功",
+	})
+}
+
+// 通用审核接口：支持已通过 / 已驳回
+func AuditRequirementBookHandler(w http.ResponseWriter, r *http.Request, id int64) {
+	var req RequirementBookAuditRequest
+	err := json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
+		http.Error(w, "参数解析失败: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if req.AuditUserID == 0 {
+		req.AuditUserID = 1
+	}
+
+	if req.AuditUserName == "" {
+		req.AuditUserName = "当前领导"
+	}
+
+	if req.AuditStatus == "已通过" {
+		ApproveRequirementBookHandler(w, r, id)
+		return
+	}
+
+	if req.AuditStatus == "已驳回" {
+		if req.RejectReason == "" {
+			req.RejectReason = "未填写驳回原因"
+		}
+
+		result, err := config.DB.Exec(`
+			UPDATE requirement_books
+			SET 
+				status = '已驳回',
+				audit_user_id = ?,
+				audit_user_name = ?,
+				audit_time = NOW(),
+				reject_reason = ?,
+				updated_at = NOW()
+			WHERE id = ? AND is_deleted = 0
+		`, req.AuditUserID, req.AuditUserName, req.RejectReason, id)
+
+		if err != nil {
+			http.Error(w, "审核驳回失败: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		affected, _ := result.RowsAffected()
+		if affected == 0 {
+			http.Error(w, "需求书不存在或已删除", http.StatusNotFound)
+			return
+		}
+
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"code": 200,
+			"msg":  "审核驳回成功",
+		})
+		return
+	}
+
+	http.Error(w, "审核状态错误，只能是 已通过 或 已驳回", http.StatusBadRequest)
+}
+
 func DeleteRequirementBookHandler(w http.ResponseWriter, r *http.Request, id int64) {
 	result, err := config.DB.Exec(`
 		UPDATE requirement_books
-		SET is_deleted=1, updated_at=NOW()
-		WHERE id=?
+		SET 
+			is_deleted = 1,
+			updated_at = NOW()
+		WHERE id = ?
 	`, id)
 
 	if err != nil {
@@ -203,4 +469,27 @@ func DeleteRequirementBookHandler(w http.ResponseWriter, r *http.Request, id int
 		"code": 200,
 		"msg":  "删除成功",
 	})
+}
+
+// ---------------- NULL 字段转换函数 -----------------
+
+func nullInt64(v sql.NullInt64) int64 {
+	if v.Valid {
+		return v.Int64
+	}
+	return 0
+}
+
+func nullString(v sql.NullString) string {
+	if v.Valid {
+		return v.String
+	}
+	return ""
+}
+
+func nullTime(v sql.NullTime) string {
+	if v.Valid {
+		return v.Time.Format("2006-01-02 15:04:05")
+	}
+	return ""
 }
