@@ -6,7 +6,7 @@
         <h1>项目分支管理</h1>
       </div>
 
-      <button class="primary-btn" @click="openCreateDialog">
+      <button v-if="canUseAction('branch:create')" class="primary-btn" @click="openCreateDialog">
         新增项目分支
       </button>
     </div>
@@ -102,19 +102,19 @@
                     查看
                   </button>
 
-                  <button class="text-btn blue" @click="openEditDialog(item)">
+                  <button v-if="canUseAction('branch:update')" class="text-btn blue" @click="openEditDialog(item)">
                     修改
                   </button>
 
-                  <button class="text-btn green" @click="openCloneUrl(item)">
+                  <button v-if="canUseAction('branch:download')" class="text-btn green" @click="openCloneUrl(item)">
                     打开
                   </button>
 
-                  <button class="text-btn yellow" @click="copyCloneUrl(item)">
+                  <button v-if="canUseAction('branch:download')" class="text-btn yellow" @click="copyCloneUrl(item)">
                     复制
                   </button>
 
-                  <button class="text-btn red" @click="deleteBranchRecord(item)">
+                  <button v-if="canUseAction('branch:delete')" class="text-btn red" @click="deleteBranchRecord(item)">
                     删除
                   </button>
                 </div>
@@ -247,18 +247,18 @@
 
           <div class="full-detail-row">
             <span>Clone 地址</span>
-            <button class="inline-link" @click="openCloneUrl(selectedBranch)">
+            <button v-if="canUseAction('branch:download')" class="inline-link" @click="openCloneUrl(selectedBranch)">
               {{ selectedBranch.cloneUrl }}
             </button>
           </div>
         </div>
 
         <div class="dialog-footer">
-          <button class="reset-btn" @click="copyCloneUrl(selectedBranch)">
+          <button v-if="canUseAction('branch:download')" class="reset-btn" @click="copyCloneUrl(selectedBranch)">
             复制 Clone 地址
           </button>
 
-          <button class="primary-btn" @click="openCloneUrl(selectedBranch)">
+          <button v-if="canUseAction('branch:download')" class="primary-btn" @click="openCloneUrl(selectedBranch)">
             打开 Clone 地址
           </button>
 
@@ -273,6 +273,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import { canUseAction } from '@/utils/permission'
 
 import { getProjects } from '@/api/project'
 

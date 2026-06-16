@@ -8,6 +8,14 @@ export function getDashboardSummary(params) {
   })
 }
 
+export function markNotificationRead(data) {
+  return request({
+    url: '/notifications/read',
+    method: 'post',
+    data
+  })
+}
+
 export function getProjectProgressReport(params) {
   return request({
     url: '/reports/project-progress',
@@ -27,6 +35,14 @@ export function getVersionMatrixReport(params) {
 export function getIssueStatisticsReport(params) {
   return request({
     url: '/reports/issue-statistics',
+    method: 'get',
+    params
+  })
+}
+
+export function globalSearch(params) {
+  return request({
+    url: '/global-search',
     method: 'get',
     params
   })

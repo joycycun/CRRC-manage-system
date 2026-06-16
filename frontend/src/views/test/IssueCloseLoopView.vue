@@ -7,11 +7,11 @@
       </div>
 
       <div class="header-actions">
-        <button class="secondary-btn" @click="exportIssueRecords">
+        <button v-if="canUseAction('issue:export')" class="secondary-btn" @click="exportIssueRecords">
           导出问题记录
         </button>
 
-        <button class="primary-btn" @click="openCreateDialog">
+        <button v-if="canUseAction('issue:create')" class="primary-btn" @click="openCreateDialog">
           新增问题
         </button>
       </div>
@@ -130,7 +130,7 @@
                   </button>
 
                   <button
-                    v-if="item.closeStatus === 'open'"
+                    v-if="canUseAction('issue:update') && item.closeStatus === 'open'"
                     class="text-btn blue"
                     @click="openEditDialog(item)"
                   >
@@ -138,7 +138,7 @@
                   </button>
 
                   <button
-                    v-if="item.closeStatus === 'open'"
+                    v-if="canUseAction('issue:reply') && item.closeStatus === 'open'"
                     class="text-btn green"
                     @click="openReplyDialog(item)"
                   >
@@ -146,7 +146,7 @@
                   </button>
 
                   <button
-                    v-if="item.closeStatus === 'open' && canCloseIssue(item)"
+                    v-if="canUseAction('issue:close') && item.closeStatus === 'open' && canCloseIssue(item)"
                     class="text-btn red"
                     @click="closeIssue(item)"
                   >
@@ -154,7 +154,7 @@
                   </button>
 
                   <button
-                    v-if="item.closeStatus === 'closed' && canCloseIssue(item)"
+                    v-if="canUseAction('issue:reopen') && item.closeStatus === 'closed' && canCloseIssue(item)"
                     class="text-btn yellow"
                     @click="reopenIssue(item)"
                   >
@@ -181,7 +181,7 @@
         <div class="form-grid">
           <label>
             绑定项目
-            <select v-model="issueForm.projectName">
+            <select v-model="issueForm.projectName" @change="syncIssueOwnerByProject">
               <option value="">请选择项目</option>
               <option
                 v-for="project in projectOptions"
@@ -238,16 +238,11 @@
 
           <label>
             负责人
-            <select v-model="issueForm.owner">
-              <option value="">请选择负责人</option>
-              <option
-                v-for="owner in ownerOptions"
-                :key="owner"
-                :value="owner"
-              >
-                {{ owner }}
-              </option>
-            </select>
+            <input
+              v-model="issueForm.owner"
+              disabled
+              placeholder="选择项目后自动带出软件负责人"
+            />
           </label>
 
           <label>
@@ -427,7 +422,7 @@
 
         <div class="dialog-footer">
           <button
-            v-if="selectedIssue.closeStatus === 'open'"
+            v-if="canUseAction('issue:reply') && selectedIssue.closeStatus === 'open'"
             class="reset-btn"
             @click="openReplyDialog(selectedIssue)"
           >
@@ -435,7 +430,7 @@
           </button>
 
           <button
-            v-if="selectedIssue.closeStatus === 'open' && canCloseIssue(selectedIssue)"
+            v-if="canUseAction('issue:close') && selectedIssue.closeStatus === 'open' && canCloseIssue(selectedIssue)"
             class="red-btn"
             @click="closeIssue(selectedIssue)"
           >
@@ -443,7 +438,7 @@
           </button>
 
           <button
-            v-if="selectedIssue.closeStatus === 'closed' && canCloseIssue(selectedIssue)"
+            v-if="canUseAction('issue:reopen') && selectedIssue.closeStatus === 'closed' && canCloseIssue(selectedIssue)"
             class="green-btn"
             @click="reopenIssue(selectedIssue)"
           >
@@ -461,6 +456,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import { canUseAction } from '@/utils/permission'
 
 import { getProjects } from '@/api/project'
 
@@ -498,6 +494,7 @@ const editMode = ref('create')
 
 const projectOptions = ref([])
 const projectMap = ref({})
+const projectOwnerMap = ref({})
 
 const deviceTypeOptions = [
   '广播控制盒',
@@ -513,23 +510,13 @@ const deviceTypeOptions = [
   '噪声检测器'
 ]
 
-const ownerOptions = [
-  '卢进',
-  '王宇',
-  '郑宇',
-  '寸诗睿',
-  '研发人员',
-  '测试人员',
-  '生产人员',
-  '售后人员'
-]
-
 const issueForm = reactive({
   projectName: '',
   deviceType: '',
   issueSource: '',
   level: '中',
   issueTitle: '',
+  ownerId: 0,
   owner: '',
   planCloseTime: ''
 })
@@ -612,15 +599,28 @@ async function loadProjects() {
     projectOptions.value = list.map(item => item.projectName)
 
     const map = {}
+    const ownerMap = {}
     list.forEach(item => {
       map[item.projectName] = item.id
+      ownerMap[item.projectName] = {
+        ownerId: item.ownerId || 0,
+        owner: item.owner || item.ownerName || ''
+      }
     })
 
     projectMap.value = map
+    projectOwnerMap.value = ownerMap
   } catch (err) {
     console.error('加载项目失败：', err)
     alert('加载项目失败')
   }
+}
+
+function syncIssueOwnerByProject() {
+  const ownerInfo = projectOwnerMap.value[issueForm.projectName]
+
+  issueForm.ownerId = Number(ownerInfo?.ownerId || 0)
+  issueForm.owner = ownerInfo?.owner || ''
 }
 
 async function loadIssues() {
@@ -767,6 +767,7 @@ function openCreateDialog() {
   issueForm.issueSource = ''
   issueForm.level = '中'
   issueForm.issueTitle = ''
+  issueForm.ownerId = 0
   issueForm.owner = ''
   issueForm.planCloseTime = ''
 
@@ -782,6 +783,7 @@ function openEditDialog(item) {
   issueForm.issueSource = item.issueSource
   issueForm.level = item.level
   issueForm.issueTitle = item.issueTitle
+  issueForm.ownerId = item.ownerId || 0
   issueForm.owner = item.owner
   issueForm.planCloseTime = item.planCloseTime
 
@@ -810,7 +812,7 @@ async function saveIssue() {
   }
 
   if (!issueForm.owner) {
-    alert('请选择问题负责人')
+    alert('所选项目未绑定软件负责人，请先在项目立项中设置')
     return
   }
 
@@ -831,7 +833,7 @@ async function saveIssue() {
     severity: issueForm.level,
     issueTitle: issueForm.issueTitle,
     title: issueForm.issueTitle,
-    ownerId: 1,
+    ownerId: Number(issueForm.ownerId || 0),
     owner: issueForm.owner,
     ownerName: issueForm.owner,
     creatorId: 1,

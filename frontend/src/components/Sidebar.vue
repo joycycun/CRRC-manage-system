@@ -10,6 +10,7 @@
     <nav class="menu">
       <!-- 项目看板 -->
       <router-link
+        v-if="canAccess('/dashboard')"
         to="/dashboard"
         class="menu-item"
         :class="{ active: isActive('/dashboard') }"
@@ -20,6 +21,7 @@
 
       <!-- 项目立项管理 -->
       <router-link
+        v-if="canAccess('/project/manage')"
         to="/project/manage"
         class="menu-item"
         :class="{ active: isActive('/project/manage') }"
@@ -29,7 +31,7 @@
       </router-link>
 
       <!-- 需求管理 -->
-      <div class="menu-group">
+      <div v-if="canAccessGroup(['/requirement/book', '/requirement/change', '/requirement/customer-supplied'])" class="menu-group">
         <button class="menu-item menu-button" @click="toggleMenu('requirement')">
           <span class="menu-left">
             <span class="menu-icon">▤</span>
@@ -40,6 +42,7 @@
 
         <div v-show="openedMenus.requirement" class="submenu">
           <router-link
+            v-if="canAccess('/requirement/book')"
             to="/requirement/book"
             class="submenu-item"
             :class="{ active: isActive('/requirement/book') }"
@@ -48,6 +51,7 @@
           </router-link>
 
           <router-link
+            v-if="canAccess('/requirement/change')"
             to="/requirement/change"
             class="submenu-item"
             :class="{ active: isActive('/requirement/change') }"
@@ -56,6 +60,7 @@
           </router-link>
 
           <router-link
+            v-if="canAccess('/requirement/customer-supplied')"
             to="/requirement/customer-supplied"  
             class="submenu-item"
             :class="{ active: isActive('/requirement/customer-supplied') }"
@@ -66,7 +71,7 @@
       </div>
 
       <!-- 硬件管理 -->
-      <div class="menu-group">
+      <div v-if="canAccessGroup(['/hardware/version', '/hardware/test'])" class="menu-group">
         <button class="menu-item menu-button" @click="toggleMenu('hardware')">
           <span class="menu-left">
             <span class="menu-icon">⚙</span>
@@ -77,6 +82,7 @@
 
         <div v-show="openedMenus.hardware" class="submenu">
           <router-link
+            v-if="canAccess('/hardware/version')"
             to="/hardware/version"
             class="submenu-item"
             :class="{ active: isActive('/hardware/version') }"
@@ -85,6 +91,7 @@
           </router-link>
 
           <router-link
+            v-if="canAccess('/hardware/test')"
             to="/hardware/test"
             class="submenu-item"
             :class="{ active: isActive('/hardware/test') }"
@@ -95,7 +102,7 @@
       </div>
 
       <!-- 软件管理 -->
-      <div class="menu-group">
+      <div v-if="canAccessGroup(['/software/version', '/software/branch'])" class="menu-group">
         <button class="menu-item menu-button" @click="toggleMenu('software')">
           <span class="menu-left">
             <span class="menu-icon">&lt;/&gt;</span>
@@ -106,6 +113,7 @@
 
         <div v-show="openedMenus.software" class="submenu">
           <router-link
+            v-if="canAccess('/software/version')"
             to="/software/version"
             class="submenu-item"
             :class="{ active: isActive('/software/version') }"
@@ -114,6 +122,7 @@
           </router-link>
 
           <router-link
+            v-if="canAccess('/software/branch')"
             to="/software/branch"
             class="submenu-item"
             :class="{ active: isActive('/software/branch') }"
@@ -133,7 +142,7 @@
       </div>
 
       <!-- 测试管理 -->
-      <div class="menu-group">
+      <div v-if="canAccessGroup(['/test/case', '/test/issue'])" class="menu-group">
         <button class="menu-item menu-button" @click="toggleMenu('test')">
           <span class="menu-left">
             <span class="menu-icon">◇</span>
@@ -144,6 +153,7 @@
 
         <div v-show="openedMenus.test" class="submenu">
           <router-link
+            v-if="canAccess('/test/case')"
             to="/test/case"
             class="submenu-item"
             :class="{ active: isActive('/test/case') }"
@@ -160,6 +170,7 @@
           </router-link> -->
 
           <router-link
+            v-if="canAccess('/test/issue')"
             to="/test/issue"
             class="submenu-item"
             :class="{ active: isActive('/test/issue') }"
@@ -170,7 +181,7 @@
       </div>
 
       <!-- 生产管理 -->
-      <div class="menu-group">
+      <div v-if="canAccessGroup(['/production/burn', '/production/factory-test', '/production/inventory'])" class="menu-group">
         <button class="menu-item menu-button" @click="toggleMenu('production')">
           <span class="menu-left">
             <span class="menu-icon">▥</span>
@@ -181,6 +192,7 @@
 
         <div v-show="openedMenus.production" class="submenu">
           <router-link
+            v-if="canAccess('/production/burn')"
             to="/production/burn"
             class="submenu-item"
             :class="{ active: isActive('/production/burn') }"
@@ -189,6 +201,7 @@
           </router-link>
 
           <router-link
+            v-if="canAccess('/production/factory-test')"
             to="/production/factory-test"
             class="submenu-item"
             :class="{ active: isActive('/production/factory-test') }"
@@ -197,6 +210,7 @@
           </router-link>
 
           <router-link
+            v-if="canAccess('/production/inventory')"
             to="/production/inventory"
             class="submenu-item"
             :class="{ active: isActive('/production/inventory') }"
@@ -207,7 +221,7 @@
       </div>
 
       <!-- 发货管理 -->
-      <div class="menu-group">
+      <div v-if="canAccessGroup(['/shipping/out', '/shipping/batch'])" class="menu-group">
         <button class="menu-item menu-button" @click="toggleMenu('shipping')">
           <span class="menu-left">
             <span class="menu-icon">◈</span>
@@ -235,6 +249,7 @@
           </router-link> -->
 
           <router-link
+            v-if="canAccess('/shipping/out')"
             to="/shipping/out"
             class="submenu-item"
             :class="{ active: isActive('/shipping/out') }"
@@ -242,6 +257,7 @@
             出库记录
           </router-link>
             <router-link
+                  v-if="canAccess('/shipping/batch')"
                   to="/shipping/batch"
                   class="submenu-item"
                   :class="{ active: isActive('/shipping/batch') }"
@@ -252,7 +268,7 @@
       </div>
  
       <!-- 售后管理 -->
-      <div class="menu-group">
+      <div v-if="canAccessGroup(['/aftersales/repair', '/aftersales/fault-analysis'])" class="menu-group">
         <button class="menu-item menu-button" @click="toggleMenu('aftersales')">
           <span class="menu-left">
             <span class="menu-icon">⚒</span>
@@ -271,6 +287,7 @@
           </router-link> -->
 
           <router-link
+            v-if="canAccess('/aftersales/repair')"
             to="/aftersales/repair"
             class="submenu-item"
             :class="{ active: isActive('/aftersales/repair') }"
@@ -279,6 +296,7 @@
           </router-link>
 
           <router-link
+            v-if="canAccess('/aftersales/fault-analysis')"
             to="/aftersales/fault-analysis"
             class="submenu-item"
             :class="{ active: isActive('/aftersales/fault-analysis') }"
@@ -289,7 +307,7 @@
       </div>
 
       <!-- 统计报表 -->
-      <div class="menu-group">
+      <div v-if="canAccessGroup(['/report/project-progress', '/report/version-matrix', '/report/issue-statistics'])" class="menu-group">
         <button class="menu-item menu-button" @click="toggleMenu('report')">
           <span class="menu-left">
             <span class="menu-icon">▥</span>
@@ -300,6 +318,7 @@
 
         <div v-show="openedMenus.report" class="submenu">
           <router-link
+            v-if="canAccess('/report/project-progress')"
             to="/report/project-progress"
             class="submenu-item"
             :class="{ active: isActive('/report/project-progress') }"
@@ -308,6 +327,7 @@
           </router-link>
 
           <router-link
+            v-if="canAccess('/report/version-matrix')"
             to="/report/version-matrix"
             class="submenu-item"
             :class="{ active: isActive('/report/version-matrix') }"
@@ -316,6 +336,7 @@
           </router-link>
 
           <router-link
+            v-if="canAccess('/report/issue-statistics')"
             to="/report/issue-statistics"
             class="submenu-item"
             :class="{ active: isActive('/report/issue-statistics') }"
@@ -343,6 +364,7 @@
 <script setup>
 import { computed, reactive } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { canAccessPage } from '@/utils/permission'
 
 const route = useRoute()
 const router = useRouter()
@@ -397,6 +419,14 @@ function toggleMenu(name) {
 
 function isActive(path) {
   return route.path === path
+}
+
+function canAccess(path) {
+  return canAccessPage(path)
+}
+
+function canAccessGroup(paths) {
+  return paths.some(path => canAccessPage(path))
 }
 
 function handleLogout() {

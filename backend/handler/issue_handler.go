@@ -45,6 +45,11 @@ func IssueActionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(parts) == 2 && r.Method == http.MethodPost && parts[1] == "confirm" {
+		ConfirmIssueHandler(w, r, id)
+		return
+	}
+
 	if len(parts) == 2 && r.Method == http.MethodPost && parts[1] == "close" {
 		CloseIssueHandler(w, r, id)
 		return
@@ -61,6 +66,77 @@ func IssueActionHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.NotFound(w, r)
+}
+
+func ensureIssueConfirmationTable() error {
+	_, err := config.DB.Exec(`
+		CREATE TABLE IF NOT EXISTS issue_confirmations (
+			id BIGINT PRIMARY KEY AUTO_INCREMENT,
+			issue_id BIGINT NOT NULL,
+			confirm_user_id BIGINT NOT NULL DEFAULT 0,
+			confirm_user_name VARCHAR(64) NOT NULL DEFAULT '',
+			confirm_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE KEY uk_issue_confirm_user (issue_id, confirm_user_id, confirm_user_name)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+	`)
+	return err
+}
+
+func ConfirmIssueHandler(w http.ResponseWriter, r *http.Request, id int64) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if err := ensureIssueConfirmationTable(); err != nil {
+		http.Error(w, "初始化问题确认表失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var req struct {
+		ConfirmUserID   int64  `json:"confirmUserId"`
+		ConfirmUserName string `json:"confirmUserName"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "参数解析失败: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	req.ConfirmUserName = strings.TrimSpace(req.ConfirmUserName)
+	if req.ConfirmUserID == 0 && req.ConfirmUserName == "" {
+		http.Error(w, "确认人不能为空", http.StatusBadRequest)
+		return
+	}
+
+	var exists int
+	err := config.DB.QueryRow(`
+		SELECT COUNT(*)
+		FROM issues
+		WHERE id = ?
+		  AND IFNULL(is_deleted, 0) = 0
+		  AND IFNULL(close_status, '打开') NOT IN ('关闭', '已关闭', 'closed')
+	`, id).Scan(&exists)
+	if err != nil {
+		http.Error(w, "查询问题失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if exists == 0 {
+		http.Error(w, "问题不存在或已关闭", http.StatusBadRequest)
+		return
+	}
+
+	_, err = config.DB.Exec(`
+		INSERT INTO issue_confirmations (issue_id, confirm_user_id, confirm_user_name, confirm_time)
+		VALUES (?, ?, ?, NOW())
+		ON DUPLICATE KEY UPDATE confirm_time = NOW()
+	`, id, req.ConfirmUserID, req.ConfirmUserName)
+	if err != nil {
+		http.Error(w, "确认问题失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"code": 200,
+		"msg":  "确认成功",
+	})
 }
 
 func GetIssuesHandler(w http.ResponseWriter, r *http.Request) {
@@ -236,6 +312,23 @@ func CreateIssueHandler(w http.ResponseWriter, r *http.Request) {
 		req.OwnerName = req.Owner
 	}
 
+	var projectOwnerName string
+	err := config.DB.QueryRow(`
+		SELECT IFNULL(owner_id, 0), IFNULL(owner_name, '')
+		FROM projects
+		WHERE id = ? AND is_deleted = 0
+	`, req.ProjectID).Scan(&req.OwnerID, &projectOwnerName)
+	if err != nil {
+		http.Error(w, "所选项目不存在或已删除", http.StatusBadRequest)
+		return
+	}
+
+	req.OwnerName = projectOwnerName
+	if req.OwnerID == 0 || req.OwnerName == "" {
+		http.Error(w, "所选项目未绑定软件负责人", http.StatusBadRequest)
+		return
+	}
+
 	if req.CreatorName == "" {
 		req.CreatorName = req.Creator
 	}
@@ -288,6 +381,11 @@ func CreateIssueHandler(w http.ResponseWriter, r *http.Request) {
 
 func UpdateIssueHandler(w http.ResponseWriter, r *http.Request, id int64) {
 	w.Header().Set("Content-Type", "application/json")
+
+	if !hasRequestRole(r, "project_assistant") {
+		http.Error(w, "无修改权限：问题闭环仅项目助理可修改", http.StatusForbidden)
+		return
+	}
 
 	var req model.Issue
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

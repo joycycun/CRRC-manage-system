@@ -35,6 +35,164 @@ type ShippingAuditRequest struct {
 	RejectReason string `json:"rejectReason"`
 }
 
+func ensureProductionRequestTable() error {
+	_, err := config.DB.Exec(`
+		CREATE TABLE IF NOT EXISTS production_requests (
+			id BIGINT PRIMARY KEY AUTO_INCREMENT,
+			requester_id BIGINT NOT NULL DEFAULT 0,
+			requester_name VARCHAR(64) NOT NULL DEFAULT '',
+			product_model VARCHAR(128) NOT NULL DEFAULT '',
+			device_type VARCHAR(64) NOT NULL DEFAULT '',
+			quantity INT NOT NULL DEFAULT 0,
+			detail TEXT,
+			status VARCHAR(32) NOT NULL DEFAULT 'pending',
+			confirmer_id BIGINT NOT NULL DEFAULT 0,
+			confirmer_name VARCHAR(64) NOT NULL DEFAULT '',
+			confirm_time DATETIME NULL,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+			is_deleted TINYINT NOT NULL DEFAULT 0
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+	`)
+	return err
+}
+
+func ProductionRequestsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "不支持该请求方法", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if err := ensureProductionRequestTable(); err != nil {
+		http.Error(w, "初始化生产请求表失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var req struct {
+		RequesterID   int64  `json:"requesterId"`
+		RequesterName string `json:"requesterName"`
+		ProductModel  string `json:"productModel"`
+		DeviceType    string `json:"deviceType"`
+		Quantity      int64  `json:"quantity"`
+		Detail        string `json:"detail"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "参数解析失败: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	req.RequesterName = strings.TrimSpace(req.RequesterName)
+	req.ProductModel = strings.TrimSpace(req.ProductModel)
+	req.DeviceType = strings.TrimSpace(req.DeviceType)
+	req.Detail = strings.TrimSpace(req.Detail)
+
+	if req.RequesterName == "" {
+		http.Error(w, "请求人不能为空", http.StatusBadRequest)
+		return
+	}
+	if req.ProductModel == "" {
+		http.Error(w, "产品型号不能为空", http.StatusBadRequest)
+		return
+	}
+	if req.Quantity <= 0 {
+		http.Error(w, "生产数量必须大于0", http.StatusBadRequest)
+		return
+	}
+
+	result, err := config.DB.Exec(`
+		INSERT INTO production_requests (
+			requester_id,
+			requester_name,
+			product_model,
+			device_type,
+			quantity,
+			detail,
+			status,
+			created_at,
+			updated_at,
+			is_deleted
+		) VALUES (?, ?, ?, ?, ?, ?, 'pending', NOW(), NOW(), 0)
+	`, req.RequesterID, req.RequesterName, req.ProductModel, req.DeviceType, req.Quantity, req.Detail)
+	if err != nil {
+		http.Error(w, "发送生产请求失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	id, _ := result.LastInsertId()
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"code": 200,
+		"msg":  "生产请求已发送",
+		"data": map[string]interface{}{"id": id},
+	})
+}
+
+func ProductionRequestActionHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if err := ensureProductionRequestTable(); err != nil {
+		http.Error(w, "初始化生产请求表失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	path := strings.TrimPrefix(r.URL.Path, "/api/production-requests/")
+	path = strings.Trim(path, "/")
+	parts := strings.Split(path, "/")
+	if len(parts) != 2 || parts[1] != "confirm" || r.Method != http.MethodPost {
+		http.Error(w, "接口不存在", http.StatusNotFound)
+		return
+	}
+
+	id, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		http.Error(w, "生产请求ID错误", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		ConfirmerID   int64  `json:"confirmerId"`
+		ConfirmerName string `json:"confirmerName"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "参数解析失败: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	req.ConfirmerName = strings.TrimSpace(req.ConfirmerName)
+	if req.ConfirmerName == "" {
+		req.ConfirmerName = "生产人员"
+	}
+
+	result, err := config.DB.Exec(`
+		UPDATE production_requests
+		SET status = 'confirmed',
+			confirmer_id = ?,
+			confirmer_name = ?,
+			confirm_time = NOW(),
+			updated_at = NOW()
+		WHERE id = ?
+		  AND IFNULL(is_deleted, 0) = 0
+		  AND status = 'pending'
+	`, req.ConfirmerID, req.ConfirmerName, id)
+	if err != nil {
+		http.Error(w, "确认生产请求失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	affected, _ := result.RowsAffected()
+	if affected == 0 {
+		http.Error(w, "生产请求不存在或已确认", http.StatusBadRequest)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"code": 200,
+		"msg":  "确认成功",
+	})
+}
+
 // ============================================================
 // 发货批次入口
 // GET  /api/shipping-batches
@@ -408,6 +566,10 @@ func SubmitShippingBatchHandler(w http.ResponseWriter, r *http.Request, id int64
 // ============================================================
 
 func AuditShippingBatchHandler(w http.ResponseWriter, r *http.Request, id int64) {
+	if !requireLeaderPermission(w, r) {
+		return
+	}
+
 	var req ShippingAuditRequest
 
 	err := json.NewDecoder(r.Body).Decode(&req)

@@ -195,6 +195,11 @@ func CreateCustomerSuppliedFileHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func DeleteCustomerSuppliedFileHandler(w http.ResponseWriter, r *http.Request, id int64) {
+	if !hasRequestRole(r, "project_assistant") {
+		http.Error(w, "无删除权限：客供资料仅项目助理可删除", http.StatusForbidden)
+		return
+	}
+
 	result, err := config.DB.Exec(`
 		UPDATE customer_supplied_files
 		SET

@@ -6,7 +6,7 @@
         <h1>硬件测试管理</h1>
       </div>
 
-      <button class="primary-btn" @click="openUploadDialog">
+      <button v-if="canUseAction('hardware:upload')" class="primary-btn" @click="openUploadDialog">
         上传测试记录
       </button>
     </div>
@@ -111,7 +111,7 @@
                   </button>
 
                   <button
-                    v-if="item.auditStatus === 'draft' || item.auditStatus === 'rejected'"
+                    v-if="canUseAction('hardware:submit') && (item.auditStatus === 'draft' || item.auditStatus === 'rejected')"
                     class="text-btn blue"
                     @click="submitTest(item)"
                   >
@@ -119,7 +119,7 @@
                   </button>
 
                   <button
-                    v-if="item.auditStatus === 'submitted'"
+                    v-if="canUseAction('hardware:audit') && item.auditStatus === 'submitted'"
                     class="text-btn green"
                     @click="auditTest(item)"
                   >
@@ -127,7 +127,7 @@
                   </button>
 
                   <button
-                    v-if="item.auditStatus === 'draft' || item.auditStatus === 'rejected'"
+                    v-if="canUseAction('hardware:delete') && (item.auditStatus === 'draft' || item.auditStatus === 'rejected')"
                     class="text-btn red"
                     @click="deleteTest(item)"
                   >
@@ -317,7 +317,7 @@
 
         <div class="dialog-footer">
           <button
-            v-if="selectedTest.auditStatus === 'submitted'"
+            v-if="canUseAction('hardware:audit') && selectedTest.auditStatus === 'submitted'"
             class="green-btn"
             @click="approveTest(selectedTest)"
           >
@@ -325,7 +325,7 @@
           </button>
 
           <button
-            v-if="selectedTest.auditStatus === 'submitted'"
+            v-if="canUseAction('hardware:audit') && selectedTest.auditStatus === 'submitted'"
             class="red-btn"
             @click="openRejectDialog(selectedTest)"
           >
@@ -416,6 +416,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import { canUseAction } from '@/utils/permission'
 
 import { getProjects } from '@/api/project'
 

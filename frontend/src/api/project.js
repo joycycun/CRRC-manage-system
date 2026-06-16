@@ -15,6 +15,13 @@ export function getProjectDetail(id) {
   })
 }
 
+export function getSoftwareOwners() {
+  return request({
+    url: '/users/software-owners',
+    method: 'get'
+  })
+}
+
 export function createProject(data) {
   return request({
     url: '/projects',

@@ -6,7 +6,7 @@
         <h1>需求书管理</h1>
       </div>
 
-      <button class="primary-btn" @click="openUploadDialog">
+      <button v-if="canUseAction('requirement:upload')" class="primary-btn" @click="openUploadDialog">
         上传需求书
       </button>
     </div>
@@ -90,7 +90,7 @@
                 </button>
 
                 <button
-                  v-if="item.status === 'draft' || item.status === 'rejected'"
+                  v-if="canUseAction('requirement:submit') && (item.status === 'draft' || item.status === 'rejected')"
                   class="text-btn blue"
                   @click="submitBook(item)"
                 >
@@ -98,7 +98,7 @@
                 </button>
 
                 <button
-                  v-if="item.status === 'submitted'"
+                  v-if="canUseAction('requirement:audit') && item.status === 'submitted'"
                   class="text-btn green"
                   @click="auditBook(item)"
                 >
@@ -106,7 +106,7 @@
                 </button>
 
                 <button
-                  v-if="item.status === 'draft' || item.status === 'rejected'"
+                  v-if="canUseAction('requirement:delete') && (item.status === 'draft' || item.status === 'rejected')"
                   class="text-btn red"
                   @click="deleteBook(item)"
                 >
@@ -239,7 +239,7 @@
 
         <div class="dialog-footer">
           <button
-            v-if="selectedBook.status === 'submitted'"
+            v-if="canUseAction('requirement:audit') && selectedBook.status === 'submitted'"
             class="green-btn"
             @click="approveBook(selectedBook)"
           >
@@ -247,7 +247,7 @@
           </button>
 
           <button
-            v-if="selectedBook.status === 'submitted'"
+            v-if="canUseAction('requirement:audit') && selectedBook.status === 'submitted'"
             class="red-btn"
             @click="rejectBook(selectedBook)"
           >
@@ -265,6 +265,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import { canUseAction } from '@/utils/permission'
 
 import { getProjects } from '@/api/project'
 

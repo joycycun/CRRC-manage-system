@@ -299,9 +299,11 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { getOutboundRecords } from '@/api/outbound'
 
+const route = useRoute()
 const filters = reactive({ keyword: '', deviceType: '' })
 const selectedOutbound = ref(null)
 const outboundList = ref([])
@@ -310,8 +312,21 @@ const pageSize = ref(10)
 const pageSizeOptions = [10, 20, 50, 100]
 
 onMounted(async () => {
+  syncKeywordFromRoute()
   await loadOutboundRecords()
 })
+
+watch(
+  () => route.query.keyword,
+  () => {
+    syncKeywordFromRoute()
+    currentPage.value = 1
+  }
+)
+
+function syncKeywordFromRoute() {
+  filters.keyword = String(route.query.keyword || '')
+}
 
 function getResponseData(res) {
   return res && res.data ? res.data : res

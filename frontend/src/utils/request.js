@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { getStoredRoles } from '@/utils/permission'
 
 // 创建 axios 实例
 const request = axios.create({
@@ -13,6 +14,20 @@ request.interceptors.request.use(
     if (token) {
       config.headers.Authorization = 'Bearer ' + token
     }
+
+    const userText = localStorage.getItem('user')
+    if (userText) {
+      try {
+        const user = JSON.parse(userText)
+        config.headers['X-User-Id'] = user.id || ''
+        config.headers['X-User-Name'] = encodeURIComponent(user.realName || user.username || '')
+      } catch (err) {
+        console.warn('读取请求用户信息失败：', err)
+      }
+    }
+
+    config.headers['X-User-Roles'] = getStoredRoles().join(',')
+
     return config
   },
   error => Promise.reject(error)

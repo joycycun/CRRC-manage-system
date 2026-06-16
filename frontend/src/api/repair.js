@@ -30,3 +30,34 @@ export function deleteRepairRecord(id) {
     method: 'delete'
   })
 }
+
+export function getFaultAnalysis(params) {
+  return request({
+    url: '/fault-analysis',
+    method: 'get',
+    params
+  })
+}
+
+export function createFaultAnalysis(data) {
+  return request({
+    url: '/fault-analysis',
+    method: 'post',
+    data
+  })
+}
+
+export function auditFaultAnalysis(id, data) {
+  return request({
+    url: `/fault-analysis/${id}/audit`,
+    method: 'post',
+    data
+  })
+}
+
+export function deleteFaultAnalysis(id) {
+  return request({
+    url: `/fault-analysis/${id}`,
+    method: 'delete'
+  })
+}

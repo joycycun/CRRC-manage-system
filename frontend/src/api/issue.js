@@ -36,6 +36,14 @@ export function replyIssue(id, data) {
   })
 }
 
+export function confirmIssue(id, data) {
+  return request({
+    url: `/issues/${id}/confirm`,
+    method: 'post',
+    data
+  })
+}
+
 // 关闭问题
 export function closeIssueApi(id, data) {
   return request({

@@ -554,6 +554,10 @@ type HardwareTestAuditRequest struct {
 }
 
 func AuditHardwareTestHandler(w http.ResponseWriter, r *http.Request, id int64) {
+	if !requireLeaderPermission(w, r) {
+		return
+	}
+
 	var req HardwareTestAuditRequest
 
 	err := json.NewDecoder(r.Body).Decode(&req)

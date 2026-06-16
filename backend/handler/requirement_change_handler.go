@@ -277,6 +277,10 @@ type RequirementChangeAuditRequest struct {
 
 // POST /api/requirement-changes/{id}/audit
 func AuditRequirementChangeHandler(w http.ResponseWriter, r *http.Request, id int64) {
+	if !requireLeaderPermission(w, r) {
+		return
+	}
+
 	var req RequirementChangeAuditRequest
 
 	err := json.NewDecoder(r.Body).Decode(&req)
@@ -337,6 +341,11 @@ type RequirementChangeCloseRequest struct {
 
 // POST /api/requirement-changes/{id}/close
 func CloseRequirementChangeHandler(w http.ResponseWriter, r *http.Request, id int64) {
+	if !hasRequestRole(r, "project_assistant") {
+		http.Error(w, "无关闭权限：需求变更仅项目助理可关闭", http.StatusForbidden)
+		return
+	}
+
 	var req RequirementChangeCloseRequest
 
 	err := json.NewDecoder(r.Body).Decode(&req)

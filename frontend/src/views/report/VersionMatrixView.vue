@@ -106,9 +106,11 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { getVersionMatrixReport } from '@/api/report'
 
+const route = useRoute()
 const filters = reactive({
   keyword: '',
   projectName: '',
@@ -118,8 +120,20 @@ const filters = reactive({
 const matrixList = ref([])
 
 onMounted(() => {
+  syncKeywordFromRoute()
   loadVersionMatrix()
 })
+
+watch(
+  () => route.query.keyword,
+  () => {
+    syncKeywordFromRoute()
+  }
+)
+
+function syncKeywordFromRoute() {
+  filters.keyword = String(route.query.keyword || '')
+}
 
 function getResponseData(res) {
   return res && res.data ? res.data : res

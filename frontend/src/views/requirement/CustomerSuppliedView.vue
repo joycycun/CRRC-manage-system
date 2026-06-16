@@ -6,7 +6,7 @@
         <h1>客供资料</h1>
       </div>
 
-      <button class="primary-btn" @click="openUploadDialog">
+      <button v-if="canUseAction('customer:upload')" class="primary-btn" @click="openUploadDialog">
         上传资料
       </button>
     </div>
@@ -142,7 +142,7 @@
                                 下载
                               </button>
 
-                              <button class="text-btn red" @click="deleteConfig(item)">
+                              <button v-if="canUseAction('customer:delete')" class="text-btn red" @click="deleteConfig(item)">
                                 删除
                               </button>
                             </div>
@@ -318,6 +318,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import { canUseAction } from '@/utils/permission'
 
 import { getProjects } from '@/api/project'
 

@@ -6,7 +6,7 @@
         <h1>测试用例管理</h1>
       </div>
 
-      <button class="primary-btn" @click="openUploadDialog">
+      <button v-if="canUseAction('testcase:upload')" class="primary-btn" @click="openUploadDialog">
         上传测试用例
       </button>
     </div>
@@ -80,6 +80,7 @@
               <td class="report-operation-col">
                 <div class="report-action-group">
                   <button
+                    v-if="canUseAction('testcase:uploadReport')"
                     class="text-btn green"
                     @click="openReportUploadDialog(item)"
                   >
@@ -111,7 +112,7 @@
                   </button>
 
                   <button
-                    v-if="item.auditStatus === 'draft' || item.auditStatus === 'rejected'"
+                    v-if="canUseAction('testcase:submit') && (item.auditStatus === 'draft' || item.auditStatus === 'rejected')"
                     class="text-btn blue"
                     @click="submitTestCase(item)"
                   >
@@ -119,7 +120,7 @@
                   </button>
 
                   <button
-                    v-if="item.auditStatus === 'submitted'"
+                    v-if="canUseAction('testcase:audit') && item.auditStatus === 'submitted'"
                     class="text-btn green"
                     @click="auditTestCase(item)"
                   >
@@ -127,7 +128,7 @@
                   </button>
 
                   <button
-                    v-if="item.auditStatus === 'draft' || item.auditStatus === 'rejected'"
+                    v-if="canUseAction('testcase:delete') && (item.auditStatus === 'draft' || item.auditStatus === 'rejected')"
                     class="text-btn red"
                     @click="deleteTestCase(item)"
                   >
@@ -348,6 +349,7 @@
             </div>
 
             <button
+              v-if="canUseAction('testcase:uploadReport')"
               class="primary-btn small-btn"
               @click="openReportUploadDialog(selectedTestCase)"
             >
@@ -391,7 +393,7 @@
 
         <div class="dialog-footer">
           <button
-            v-if="selectedTestCase.auditStatus === 'submitted'"
+            v-if="canUseAction('testcase:audit') && selectedTestCase.auditStatus === 'submitted'"
             class="green-btn"
             @click="approveTestCase(selectedTestCase)"
           >
@@ -399,7 +401,7 @@
           </button>
 
           <button
-            v-if="selectedTestCase.auditStatus === 'submitted'"
+            v-if="canUseAction('testcase:audit') && selectedTestCase.auditStatus === 'submitted'"
             class="red-btn"
             @click="rejectTestCase(selectedTestCase)"
           >
@@ -429,6 +431,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import { canUseAction } from '@/utils/permission'
 
 import { getProjects } from '@/api/project'
 

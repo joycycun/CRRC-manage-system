@@ -6,7 +6,7 @@
         <h1>项目立项管理</h1>
       </div>
 
-      <button class="primary-btn" @click="openCreateDialog">
+      <button v-if="canUseAction('project:create')" class="primary-btn" @click="openCreateDialog">
         新增项目
       </button>
     </div>
@@ -51,7 +51,7 @@
           <tr>
             <th>项目名称</th>
             <th>当前阶段</th>
-            <th>项目负责人</th>
+            <th>软件负责人</th>
             <th>项目状态</th>
             <th>创建时间</th>
             <th class="operation-col">操作</th>
@@ -89,7 +89,7 @@
               </button>
 
               <button
-                v-if="item.status === 'draft'"
+                v-if="canUseAction('project:submit') && item.status === 'draft'"
                 class="text-btn blue"
                 @click="submitProject(item)"
               >
@@ -97,7 +97,7 @@
               </button>
 
               <button
-                v-if="item.status === 'submitted'"
+                v-if="canUseAction('project:audit') && item.status === 'submitted'"
                 class="text-btn green"
                 @click="auditProject(item)"
               >
@@ -105,7 +105,7 @@
               </button>
 
               <button
-                v-if="item.status === 'running' || item.status === 'approved'"
+                v-if="canUseAction('project:update') && (item.status === 'running' || item.status === 'approved')"
                 class="text-btn yellow"
                 @click="viewStage(item)"
               >
@@ -113,7 +113,7 @@
               </button>
 
               <button
-                v-if="item.status === 'running' || item.status === 'approved'"
+                v-if="canUseAction('project:close') && (item.status === 'running' || item.status === 'approved')"
                 class="text-btn red"
                 @click="closeProject(item)"
               >
@@ -121,7 +121,7 @@
               </button>
 
               <button
-                v-if="item.status === 'closed'"
+                v-if="canUseAction('project:archive') && item.status === 'closed'"
                 class="text-btn gray"
                 @click="archiveProject(item)"
               >
@@ -129,6 +129,7 @@
               </button>
 
               <button
+                v-if="canDeleteProject(item)"
                 class="text-btn red"
                 @click="deleteProject(item)"
               >
@@ -164,30 +165,16 @@
           </label>
 
           <label>
-            项目负责人
-            <input v-model="projectForm.owner" placeholder="请输入负责人" />
-          </label>
-
-          <label>
-            当前阶段
-            <select v-model="projectForm.stage">
+            软件负责人
+            <select v-model="projectForm.ownerId" @change="syncProjectOwner">
+              <option value="">请选择软件负责人</option>
               <option
-                v-for="stage in projectStages"
-                :key="stage"
-                :value="stage"
+                v-for="owner in softwareOwnerOptions"
+                :key="owner.id"
+                :value="owner.id"
               >
-                {{ stage }}
+                {{ owner.name }}
               </option>
-            </select>
-          </label>
-
-          <label>
-            项目状态
-            <select v-model="projectForm.status">
-              <option value="draft">草稿</option>
-              <option value="submitted">待审核</option>
-              <option value="approved">已立项</option>
-              <option value="running">进行中</option>
             </select>
           </label>
         </div>
@@ -251,7 +238,7 @@
                 active: stage === selectedProject.stage,
                 passed: isStagePassed(stage, selectedProject.stage)
               }"
-              @click="changeProjectStage(stage)"
+              @click="canUseAction('project:update') && changeProjectStage(stage)"
             >
               <div class="stage-dot"></div>
               <span>{{ stage }}</span>
@@ -261,7 +248,7 @@
 
         <div class="dialog-footer">
           <button
-            v-if="selectedProject.status !== 'closed'"
+            v-if="canUseAction('project:close') && selectedProject.status !== 'closed'"
             class="red-btn"
             @click="closeProject(selectedProject)"
           >
@@ -281,9 +268,11 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import { canUseAction } from '@/utils/permission'
 
 import {
   getProjects,
+  getSoftwareOwners,
   createProject as createProjectApi,
   updateProject as updateProjectApi,
   submitProject as submitProjectApi,
@@ -306,12 +295,14 @@ const selectedProject = ref(null)
 const projectForm = reactive({
   projectName: '',
   projectCode: '',
-  ownerId: 1,
+  ownerId: '',
   owner: '',
   stage: '立项',
   status: 'draft',
   remark: ''
 })
+
+const softwareOwnerOptions = ref([])
 
 const projectStages = [
   '立项',
@@ -328,6 +319,7 @@ const projectStages = [
 const projectList = ref([])
 
 onMounted(() => {
+  loadSoftwareOwners()
   loadProjects()
 })
 
@@ -491,13 +483,30 @@ function resetFilters() {
 function openCreateDialog() {
   projectForm.projectName = ''
   projectForm.projectCode = ''
-  projectForm.ownerId = 1
+  projectForm.ownerId = ''
   projectForm.owner = ''
   projectForm.stage = '立项'
   projectForm.status = 'draft'
   projectForm.remark = ''
 
+  loadSoftwareOwners()
   showCreateDialog.value = true
+}
+
+function syncProjectOwner() {
+  const owner = softwareOwnerOptions.value.find(item => String(item.id) === String(projectForm.ownerId))
+  projectForm.owner = owner ? owner.name : ''
+}
+
+async function loadSoftwareOwners() {
+  try {
+    const res = await getSoftwareOwners()
+    const result = res?.data || res
+    if (result.code !== 200) return
+    softwareOwnerOptions.value = result.data || []
+  } catch (err) {
+    console.error('加载软件负责人失败：', err)
+  }
 }
 
 async function createProject() {
@@ -506,14 +515,21 @@ async function createProject() {
     return
   }
 
+  if (!projectForm.ownerId) {
+    alert('请选择软件负责人')
+    return
+  }
+
+  syncProjectOwner()
+
   const payload = {
     projectName: projectForm.projectName,
     projectCode: projectForm.projectCode || '未填写',
-    ownerId: projectForm.ownerId || 1,
-    owner: projectForm.owner || '未分配',
-    ownerName: projectForm.owner || '未分配',
-    stage: projectForm.stage,
-    status: frontendStatusToBackend(projectForm.status),
+    ownerId: Number(projectForm.ownerId),
+    owner: projectForm.owner,
+    ownerName: projectForm.owner,
+    stage: '立项',
+    status: frontendStatusToBackend('draft'),
     remark: projectForm.remark || ''
   }
 
@@ -534,6 +550,10 @@ async function createProject() {
     console.error('新增项目失败：', err)
     alert('新增项目失败，请检查后端接口')
   }
+}
+
+function canDeleteProject(item) {
+  return canUseAction('project:delete') && !['approved', 'running', 'closed', 'archived'].includes(item.status)
 }
 
 function viewProject(item) {

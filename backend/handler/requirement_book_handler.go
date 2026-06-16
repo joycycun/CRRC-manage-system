@@ -57,31 +57,33 @@ func RequirementBookActionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-// POST /api/requirement-books/1/submit
-if len(parts) == 2 && r.Method == http.MethodPost && parts[1] == "submit" {
-	SubmitRequirementBookHandler(w, r, id)
-	return
+	// POST /api/requirement-books/1/submit
+	if len(parts) == 2 && r.Method == http.MethodPost && parts[1] == "submit" {
+		SubmitRequirementBookHandler(w, r, id)
+		return
+	}
+
+	// POST /api/requirement-books/1/approve
+	if len(parts) == 2 && r.Method == http.MethodPost && parts[1] == "approve" {
+		ApproveRequirementBookHandler(w, r, id)
+		return
+	}
+
+	// POST /api/requirement-books/1/reject
+	if len(parts) == 2 && r.Method == http.MethodPost && parts[1] == "reject" {
+		RejectRequirementBookHandler(w, r, id)
+		return
+	}
+
+	// POST /api/requirement-books/1/audit
+	if len(parts) == 2 && r.Method == http.MethodPost && parts[1] == "audit" {
+		AuditRequirementBookHandler(w, r, id)
+		return
+	}
+
+	http.Error(w, "接口不存在", http.StatusNotFound)
 }
 
-// POST /api/requirement-books/1/approve
-if len(parts) == 2 && r.Method == http.MethodPost && parts[1] == "approve" {
-	ApproveRequirementBookHandler(w, r, id)
-	return
-}
-
-// POST /api/requirement-books/1/reject
-if len(parts) == 2 && r.Method == http.MethodPost && parts[1] == "reject" {
-	RejectRequirementBookHandler(w, r, id)
-	return
-}
-
-// POST /api/requirement-books/1/audit
-if len(parts) == 2 && r.Method == http.MethodPost && parts[1] == "audit" {
-	AuditRequirementBookHandler(w, r, id)
-	return
-}
-
-http.Error(w, "接口不存在", http.StatusNotFound)}
 // 返回给前端的需求书结构
 // 注意：这里把时间字段转成 string，避免前端处理 time.Time 麻烦
 type RequirementBookVO struct {
@@ -294,7 +296,7 @@ type RequirementBookAuditRequest struct {
 	AuditStatus   string `json:"auditStatus"`
 	AuditUserID   int64  `json:"auditUserId"`
 	AuditUserName string `json:"auditUserName"`
-	RejectReason string `json:"rejectReason"`
+	RejectReason  string `json:"rejectReason"`
 }
 
 // 审核通过
@@ -387,6 +389,10 @@ func RejectRequirementBookHandler(w http.ResponseWriter, r *http.Request, id int
 
 // 通用审核接口：支持已通过 / 已驳回
 func AuditRequirementBookHandler(w http.ResponseWriter, r *http.Request, id int64) {
+	if !requireLeaderPermission(w, r) {
+		return
+	}
+
 	var req RequirementBookAuditRequest
 	err := json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {

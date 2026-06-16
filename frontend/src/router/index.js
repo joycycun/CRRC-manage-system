@@ -35,6 +35,7 @@ import FaultAnalysisView from "@/views/aftersales/FaultAnalysisView.vue";
 import ProjectProgressReportView from "@/views/report/ProjectProgressReportView.vue";
 import VersionMatrixView from "@/views/report/VersionMatrixView.vue";
 import IssueStatisticsView from "@/views/report/IssueStatisticsView.vue";
+import { canAccessPage, getDefaultAccessiblePage } from "@/utils/permission";
 
 const routes = [
   { path: "/login", component: LoginView },
@@ -101,7 +102,12 @@ router.beforeEach((to, from, next) => {
   }
 
   if (to.path === '/login' && token) {
-    next('/dashboard')
+    next(getDefaultAccessiblePage())
+    return
+  }
+
+  if (token && !canAccessPage(to.path)) {
+    next(getDefaultAccessiblePage())
     return
   }
 

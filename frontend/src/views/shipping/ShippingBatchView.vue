@@ -109,7 +109,7 @@
                   </button>
 
                   <button
-                    v-if="item.auditStatus === 'submitted'"
+                    v-if="canUseAction('shipping:audit') && item.auditStatus === 'submitted'"
                     class="text-btn green"
                     @click="auditBatch(item)"
                   >
@@ -180,7 +180,7 @@
               <input
                 v-model="inventoryFilters.keyword"
                 class="mac-search-input"
-                placeholder="搜索 SN / MAC / 终端类型 / 软件版本 / 硬件版本"
+                placeholder="搜索 SN / MAC / 终端类型 / 终端型号"
               />
 
               <select v-model="inventoryFilters.deviceType" class="mac-search-input">
@@ -218,10 +218,9 @@
                       />
                     </th>
                     <th>终端类型</th>
+                    <th>终端型号</th>
                     <th>SN序列号</th>
                     <th>MAC地址</th>
-                    <th>软件版本</th>
-                    <th>硬件版本</th>
                   </tr>
                 </thead>
 
@@ -235,14 +234,13 @@
                       />
                     </td>
                     <td>{{ item.deviceType || '-' }}</td>
+                    <td>{{ item.productModel || '-' }}</td>
                     <td>{{ item.sn || '-' }}</td>
                     <td>{{ item.macAddress || '-' }}</td>
-                    <td>{{ item.softwareVersion || '-' }}</td>
-                    <td>{{ item.hardwareVersion || '-' }}</td>
                   </tr>
 
                   <tr v-if="paginatedInventoryList.length === 0">
-                    <td colspan="6" class="empty-table">
+                    <td colspan="5" class="empty-table">
                       暂无可选择的在库设备
                     </td>
                   </tr>
@@ -286,10 +284,9 @@
                 class="mac-check-item"
               >
                 <span>{{ device.deviceType || '-' }}</span>
+                <em>{{ device.productModel || '-' }}</em>
                 <em>{{ device.sn || '-' }}</em>
                 <em>{{ device.macAddress || '-' }}</em>
-                <em>{{ device.softwareVersion || '-' }}</em>
-                <em>{{ device.hardwareVersion || '-' }}</em>
               </div>
               <div v-if="selectedInventoryDevices.length > selectedInventoryPreview.length" class="empty-dialog-data">
                 还有 {{ selectedInventoryDevices.length - selectedInventoryPreview.length }} 台已选择设备未展开显示。
@@ -305,6 +302,55 @@
 
           <button class="primary-btn" @click="createBatch">
             保存批次
+          </button>
+
+          <button class="query-btn" @click="openProductionRequestDialog">
+            生产请求
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showProductionRequestDialog" class="dialog-mask">
+      <div class="dialog">
+        <div class="dialog-header">
+          <h3>新增生产请求</h3>
+          <button @click="showProductionRequestDialog = false">×</button>
+        </div>
+
+        <div class="form-grid">
+          <label>
+            产品型号
+            <input v-model="productionRequestForm.productModel" placeholder="请输入需要生产的产品型号" />
+          </label>
+
+          <label>
+            终端类型
+            <input v-model="productionRequestForm.deviceType" placeholder="请输入终端类型" />
+          </label>
+
+          <label>
+            需求数量
+            <input v-model.number="productionRequestForm.quantity" type="number" min="1" placeholder="请输入数量" />
+          </label>
+
+          <label>
+            请求人
+            <input v-model="productionRequestForm.requesterName" disabled />
+          </label>
+
+          <label class="full-row">
+            生产详情
+            <textarea v-model="productionRequestForm.detail" placeholder="请填写缺少产品原因、期望交付时间、版本要求等"></textarea>
+          </label>
+        </div>
+
+        <div class="dialog-footer">
+          <button class="reset-btn" @click="showProductionRequestDialog = false">
+            取消
+          </button>
+          <button class="primary-btn" @click="sendProductionRequest">
+            发送
           </button>
         </div>
       </div>
@@ -434,7 +480,7 @@
 
         <div class="dialog-footer">
           <button
-            v-if="selectedBatch.auditStatus === 'submitted'"
+            v-if="canUseAction('shipping:audit') && selectedBatch.auditStatus === 'submitted'"
             class="green-btn"
             @click="approveBatch(selectedBatch)"
           >
@@ -442,7 +488,7 @@
           </button>
 
           <button
-            v-if="selectedBatch.auditStatus === 'submitted'"
+            v-if="canUseAction('shipping:audit') && selectedBatch.auditStatus === 'submitted'"
             class="red-btn"
             @click="rejectBatch(selectedBatch)"
           >
@@ -468,20 +514,24 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import { canUseAction } from '@/utils/permission'
 import { getInventory } from '@/api/inventory'
 import {
   getShippingBatches,
   createShippingBatch,
   submitShippingBatch,
   auditShippingBatch,
-  deleteShippingBatch
+  deleteShippingBatch,
+  createProductionRequest
 } from '@/api/shippingBatch'
+import { getCurrentUser } from '@/utils/currentUser'
 
 const filters = reactive({ keyword: '', auditStatus: '' })
 const inventoryFilters = reactive({ keyword: '', deviceType: '' })
 const macSelectForm = reactive({ macText: '', startMac: '', endMac: '' })
 
 const showCreateDialog = ref(false)
+const showProductionRequestDialog = ref(false)
 const selectedBatch = ref(null)
 const selectedInventoryIds = ref([])
 const inventoryList = ref([])
@@ -500,6 +550,15 @@ const batchForm = reactive({
   file: null,
   fileUrl: '',
   remark: ''
+})
+
+const productionRequestForm = reactive({
+  requesterId: 0,
+  requesterName: '',
+  productModel: '',
+  deviceType: '',
+  quantity: 1,
+  detail: ''
 })
 
 onMounted(async () => {
@@ -672,6 +731,7 @@ const filteredInventoryList = computed(() => {
       String(item.sn || '').toLowerCase().includes(keyword) ||
       String(item.macAddress || '').toLowerCase().includes(keyword) ||
       String(item.deviceType || '').toLowerCase().includes(keyword) ||
+      String(item.productModel || '').toLowerCase().includes(keyword) ||
       String(item.softwareVersion || '').toLowerCase().includes(keyword) ||
       String(item.hardwareVersion || '').toLowerCase().includes(keyword)
 
@@ -743,6 +803,11 @@ const batchDevicePageEndIndex = computed(() => Math.min(batchDeviceCurrentPage.v
 
 function getCurrentUserName() {
   return localStorage.getItem('username') || localStorage.getItem('accountName') || localStorage.getItem('realName') || '当前用户'
+}
+
+function getCurrentUserId() {
+  const user = getCurrentUser()
+  return Number(user.id || 0)
 }
 
 function getAuditStatusText(status) {
@@ -920,6 +985,49 @@ async function createBatch() {
   } catch (err) {
     console.error('新增发货批次失败：', err)
     alert(err.response?.data || '新增发货批次失败，请检查后端接口')
+  }
+}
+
+function openProductionRequestDialog() {
+  const selectedTypes = [...new Set(selectedInventoryDevices.value.map(item => item.deviceType).filter(Boolean))]
+  productionRequestForm.requesterId = getCurrentUserId()
+  productionRequestForm.requesterName = batchForm.uploader || getCurrentUserName()
+  productionRequestForm.productModel = inventoryFilters.keyword || ''
+  productionRequestForm.deviceType = selectedTypes.length === 1 ? selectedTypes[0] : ''
+  productionRequestForm.quantity = 1
+  productionRequestForm.detail = batchForm.remark || ''
+  showProductionRequestDialog.value = true
+}
+
+async function sendProductionRequest() {
+  if (!productionRequestForm.productModel) {
+    alert('请输入产品型号')
+    return
+  }
+  if (!productionRequestForm.quantity || productionRequestForm.quantity <= 0) {
+    alert('请输入正确的需求数量')
+    return
+  }
+
+  try {
+    const res = await createProductionRequest({
+      requesterId: productionRequestForm.requesterId,
+      requesterName: productionRequestForm.requesterName,
+      productModel: productionRequestForm.productModel,
+      deviceType: productionRequestForm.deviceType,
+      quantity: productionRequestForm.quantity,
+      detail: productionRequestForm.detail
+    })
+    const result = getResponseData(res)
+    if (result.code !== 200) {
+      alert(result.msg || '发送生产请求失败')
+      return
+    }
+    showProductionRequestDialog.value = false
+    alert('生产请求已发送给生产人员')
+  } catch (err) {
+    console.error('发送生产请求失败：', err)
+    alert(err.response?.data || '发送生产请求失败，请检查后端接口')
   }
 }
 
@@ -1555,7 +1663,7 @@ async function deleteBatch(item) {
 
 .mac-check-item {
   display: grid !important;
-  grid-template-columns: 18px 180px 130px 1fr 70px;
+  grid-template-columns: 160px 180px minmax(150px, 1fr) minmax(160px, 1fr);
   align-items: center;
   gap: 8px !important;
   padding: 8px;
@@ -1622,7 +1730,7 @@ async function deleteBatch(item) {
 
 .mac-dialog-table {
   width: 100%;
-  min-width: 760px;
+  min-width: 640px;
   border-collapse: collapse;
   table-layout: fixed;
   border: 1px solid #1e293b;
@@ -1654,17 +1762,17 @@ async function deleteBatch(item) {
 
 .mac-dialog-table th:nth-child(1),
 .mac-dialog-table td:nth-child(1) {
-  width: 70px;
+  width: 52px;
 }
 
 .mac-dialog-table th:nth-child(2),
 .mac-dialog-table td:nth-child(2) {
-  width: 160px;
+  width: 140px;
 }
 
 .mac-dialog-table th:nth-child(3),
 .mac-dialog-table td:nth-child(3) {
-  width: 190px;
+  width: 170px;
 }
 
 .mac-dialog-table th:nth-child(4),
@@ -1674,7 +1782,7 @@ async function deleteBatch(item) {
 
 .mac-dialog-table th:nth-child(5),
 .mac-dialog-table td:nth-child(5) {
-  width: 180px;
+  width: 200px;
 }
 
 /* 弹窗 */

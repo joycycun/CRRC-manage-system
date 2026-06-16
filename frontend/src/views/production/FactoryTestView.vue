@@ -130,11 +130,11 @@
                   </button>
 
                   <button
-                    v-if="group.auditStatus === 'submitted'"
+                    v-if="canUseAction('production:audit') && group.auditStatus === 'submitted'"
                     class="text-btn green"
                     @click="auditModelGroup(group)"
                   >
-                    审核
+                    审核通过
                   </button>
                   <button
                     v-if="canDeleteModelGroup(group)"
@@ -440,7 +440,7 @@
 
         <div class="dialog-footer">
           <button
-            v-if="selectedFactoryTest.auditStatus === 'submitted'"
+            v-if="canUseAction('production:audit') && selectedFactoryTest.auditStatus === 'submitted'"
             class="green-btn"
             @click="approveFactoryTest(selectedFactoryTest)"
           >
@@ -448,7 +448,7 @@
           </button>
 
           <button
-            v-if="selectedFactoryTest.auditStatus === 'submitted'"
+            v-if="canUseAction('production:audit') && selectedFactoryTest.auditStatus === 'submitted'"
             class="red-btn"
             @click="rejectFactoryTest(selectedFactoryTest)"
           >
@@ -470,6 +470,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import { canUseAction } from '@/utils/permission'
 
 import {
   getBurnRecords
@@ -1007,12 +1008,22 @@ async function submitModelGroup(group) {
   }
 }
 
-function auditModelGroup(group) {
-  const first = group.records[0]
+async function auditModelGroup(group) {
+  const submittedRecords = factoryTestList.value.filter(item => {
+    return item.productModel === group.productModel && item.auditStatus === 'submitted'
+  })
 
-  if (!first) return
+  if (submittedRecords.length === 0) {
+    alert(`产品型号【${group.productModel}】暂无待审核记录`)
+    return
+  }
 
-  selectedFactoryTest.value = first
+  const ok = confirm(
+    `确认审核通过产品型号【${group.productModel}】下的 ${submittedRecords.length} 条出厂测试记录吗？\n审核通过后会自动进入库存情况。`
+  )
+  if (!ok) return
+
+  await approveFactoryTestGroup(group.productModel, submittedRecords)
 }
 
 async function approveFactoryTest(item) {
@@ -1041,6 +1052,35 @@ async function approveFactoryTest(item) {
     await loadFactoryTests()
   } catch (err) {
     console.error('审核通过失败：', err)
+    alert(err.response?.data || '审核通过失败，请检查 /api/factory-tests/audit 接口')
+  }
+}
+
+async function approveFactoryTestGroup(productModel, records) {
+  const ids = records.map(record => record.id)
+
+  try {
+    const res = await auditFactoryTests({
+      ids,
+      status: 'approved',
+      auditorId: 1,
+      auditorName: currentUserName.value || '领导'
+    })
+
+    const result = getResponseData(res)
+
+    if (result.code !== 200) {
+      alert(result.msg || '审核通过失败')
+      return
+    }
+
+    selectedFactoryTest.value = null
+    selectedModelGroup.value = null
+    alert(`产品型号【${productModel}】共 ${ids.length} 条出厂测试记录已审核通过，并自动入库`)
+
+    await loadFactoryTests()
+  } catch (err) {
+    console.error('按型号审核通过失败：', err)
     alert(err.response?.data || '审核通过失败，请检查 /api/factory-tests/audit 接口')
   }
 }

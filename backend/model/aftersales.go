@@ -29,11 +29,14 @@ type RepairRecord struct {
 type FaultAnalysis struct {
 	ID             int64        `json:"id"`
 	ProjectID      int64        `json:"projectId"`
+	ProjectName    string       `json:"projectName"`
 	IssueID        int64        `json:"issueId"`
 	RepairID       int64        `json:"repairId"`
 	BoardType      string       `json:"boardType"`
 	AnalysisName   string       `json:"analysisName"`
 	FileID         int64        `json:"fileId"`
+	FileName       string       `json:"fileName"`
+	FileURL        string       `json:"fileUrl"`
 	SubmitUserID   int64        `json:"submitUserId"`
 	SubmitUserName string       `json:"submitUserName"`
 	SubmitTime     sql.NullTime `json:"submitTime"`

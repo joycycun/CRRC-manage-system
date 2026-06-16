@@ -247,6 +247,10 @@ func SubmitTestCaseHandler(w http.ResponseWriter, r *http.Request, id int64) {
 func AuditTestCaseHandler(w http.ResponseWriter, r *http.Request, id int64) {
 	w.Header().Set("Content-Type", "application/json")
 
+	if !requireLeaderPermission(w, r) {
+		return
+	}
+
 	var req model.TestCase
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "参数解析失败: "+err.Error(), http.StatusBadRequest)

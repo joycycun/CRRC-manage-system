@@ -77,6 +77,7 @@
 import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { loginApi } from '@/api/auth'
+import { getDefaultAccessiblePage } from '@/utils/permission'
 
 const router = useRouter()
 
@@ -139,7 +140,7 @@ async function handleLogin() {
     localStorage.setItem('realName', user.realName || user.username || loginForm.username)
     localStorage.setItem('department', user.department || '')
 
-    router.push('/dashboard')
+    router.push(getDefaultAccessiblePage())
   } catch (err) {
     console.error('登录失败：', err)
     errorMessage.value = err.response?.data?.msg || err.response?.data?.message || '登录失败，请检查网络或后端服务'

@@ -6,7 +6,7 @@
         <h1>需求变更管理</h1>
       </div>
 
-      <button class="primary-btn" @click="openUploadDialog">
+      <button v-if="canUseAction('requirement:upload')" class="primary-btn" @click="openUploadDialog">
         上传需求变更
       </button>
     </div>
@@ -103,7 +103,7 @@
                 </button>
 
                 <button
-                  v-if="item.auditStatus === 'draft' || item.auditStatus === 'rejected'"
+                  v-if="canUseAction('requirement:submit') && (item.auditStatus === 'draft' || item.auditStatus === 'rejected')"
                   class="text-btn blue"
                   @click="submitChange(item)"
                 >
@@ -111,7 +111,7 @@
                 </button>
 
                 <button
-                  v-if="item.auditStatus === 'submitted'"
+                  v-if="canUseAction('requirement:audit') && item.auditStatus === 'submitted'"
                   class="text-btn green"
                   @click="auditChange(item)"
                 >
@@ -119,7 +119,7 @@
                 </button>
 
                 <button
-                  v-if="item.auditStatus === 'approved' && item.closeStatus === 'open'"
+                  v-if="canUseAction('requirement:close') && item.auditStatus === 'approved' && item.closeStatus === 'open'"
                   class="text-btn purple"
                   @click="closeChange(item)"
                 >
@@ -127,7 +127,7 @@
                 </button>
 
                 <button
-                  v-if="item.auditStatus === 'draft' || item.auditStatus === 'rejected'"
+                  v-if="canUseAction('requirement:delete') && (item.auditStatus === 'draft' || item.auditStatus === 'rejected')"
                   class="text-btn red"
                   @click="deleteChange(item)"
                 >
@@ -280,7 +280,7 @@
 
         <div class="dialog-footer">
           <button
-            v-if="selectedChange.auditStatus === 'submitted'"
+            v-if="canUseAction('requirement:audit') && selectedChange.auditStatus === 'submitted'"
             class="green-btn"
             @click="approveChange(selectedChange)"
           >
@@ -288,7 +288,7 @@
           </button>
 
           <button
-            v-if="selectedChange.auditStatus === 'submitted'"
+            v-if="canUseAction('requirement:audit') && selectedChange.auditStatus === 'submitted'"
             class="red-btn"
             @click="rejectChange(selectedChange)"
           >
@@ -296,7 +296,7 @@
           </button>
 
           <button
-            v-if="selectedChange.auditStatus === 'approved' && selectedChange.closeStatus === 'open'"
+            v-if="canUseAction('requirement:close') && selectedChange.auditStatus === 'approved' && selectedChange.closeStatus === 'open'"
             class="purple-btn"
             @click="closeChange(selectedChange)"
           >
@@ -314,6 +314,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import { canUseAction } from '@/utils/permission'
 
 import { getProjects } from '@/api/project'
 

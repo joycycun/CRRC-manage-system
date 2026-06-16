@@ -7,7 +7,7 @@
       </div>
 
       <div class="header-actions">
-        <button class="primary-btn" @click="openCreateDialog">
+        <button v-if="canUseAction('aftersales:create')" class="primary-btn" @click="openCreateDialog">
           提交故障分析方案
         </button>
       </div>
@@ -88,7 +88,7 @@
 
               <td>
                 <span class="file-tag" :title="item.fileName">
-                  {{ item.fileName }}
+                  {{ item.fileName || '未记录文件名' }}
                 </span>
               </td>
 
@@ -124,12 +124,12 @@
                     查看
                   </button>
 
-                  <button class="text-btn blue" @click="downloadFile(item)">
+                  <button v-if="canUseAction('aftersales:download')" class="text-btn blue" @click="downloadFile(item)">
                     下载
                   </button>
 
                   <button
-                    v-if="item.auditStatus === 'draft' || item.auditStatus === 'rejected'"
+                    v-if="canUseAction('aftersales:submit') && (item.auditStatus === 'draft' || item.auditStatus === 'rejected')"
                     class="text-btn blue"
                     @click="submitAnalysis(item)"
                   >
@@ -137,7 +137,7 @@
                   </button>
 
                   <button
-                    v-if="item.auditStatus === 'submitted'"
+                    v-if="canUseAction('aftersales:audit') && item.auditStatus === 'submitted'"
                     class="text-btn green"
                     @click="auditAnalysis(item)"
                   >
@@ -145,7 +145,7 @@
                   </button>
 
                   <button
-                    v-if="item.auditStatus === 'draft' || item.auditStatus === 'rejected'"
+                    v-if="canUseAction('aftersales:delete') && (item.auditStatus === 'draft' || item.auditStatus === 'rejected')"
                     class="text-btn red"
                     @click="deleteAnalysis(item)"
                   >
@@ -171,6 +171,20 @@
         </div>
 
         <div class="form-grid">
+          <label>
+            绑定项目
+            <select v-model.number="analysisForm.projectId">
+              <option value="">请选择已关闭项目</option>
+              <option
+                v-for="project in projectOptions"
+                :key="project.id"
+                :value="project.id"
+              >
+                {{ project.projectName }}
+              </option>
+            </select>
+          </label>
+
           <label>
             板卡类型
             <select v-model="analysisForm.boardType">
@@ -261,7 +275,7 @@
 
           <div>
             <span>方案文件</span>
-            <strong>{{ selectedAnalysis.fileName }}</strong>
+            <strong>{{ selectedAnalysis.fileName || '未记录文件名' }}</strong>
           </div>
 
           <div>
@@ -304,7 +318,7 @@
 
         <div class="dialog-footer">
           <button
-            v-if="selectedAnalysis.auditStatus === 'submitted'"
+            v-if="canUseAction('aftersales:audit') && selectedAnalysis.auditStatus === 'submitted'"
             class="green-btn"
             @click="approveAnalysis(selectedAnalysis)"
           >
@@ -312,14 +326,14 @@
           </button>
 
           <button
-            v-if="selectedAnalysis.auditStatus === 'submitted'"
+            v-if="canUseAction('aftersales:audit') && selectedAnalysis.auditStatus === 'submitted'"
             class="red-btn"
             @click="rejectAnalysis(selectedAnalysis)"
           >
             审核驳回
           </button>
 
-          <button class="reset-btn" @click="downloadFile(selectedAnalysis)">
+          <button v-if="canUseAction('aftersales:download')" class="reset-btn" @click="downloadFile(selectedAnalysis)">
             下载文件
           </button>
 
@@ -334,6 +348,15 @@
 
 <script setup>
 import { computed, reactive, ref } from 'vue'
+import { onMounted } from 'vue'
+import { canUseAction } from '@/utils/permission'
+import { getProjects } from '@/api/project'
+import {
+  auditFaultAnalysis,
+  createFaultAnalysis,
+  deleteFaultAnalysis,
+  getFaultAnalysis
+} from '@/api/repair'
 
 const currentUserName = ref(
   localStorage.getItem('username') ||
@@ -362,6 +385,7 @@ const boardTypeOptions = [
 ]
 
 const analysisForm = reactive({
+  projectId: '',
   boardType: '',
   analysisName: '',
   fileName: '',
@@ -371,6 +395,12 @@ const analysisForm = reactive({
 })
 
 const analysisList = ref([])
+const projectOptions = ref([])
+
+onMounted(() => {
+  loadProjects()
+  loadFaultAnalysis()
+})
 
 const filteredAnalysisList = computed(() => {
   return analysisList.value.filter(item => {
@@ -412,6 +442,7 @@ function resetFilters() {
 }
 
 function openCreateDialog() {
+  analysisForm.projectId = ''
   analysisForm.boardType = ''
   analysisForm.analysisName = ''
   analysisForm.fileName = ''
@@ -431,7 +462,92 @@ function handleFileChange(event) {
   analysisForm.fileUrl = URL.createObjectURL(file)
 }
 
-function createAnalysis() {
+function getResponseData(res) {
+  return res?.data || res
+}
+
+function formatDate(value) {
+  if (!value) return ''
+  if (typeof value === 'string') return value.slice(0, 10)
+  if (value.Time) return String(value.Time).slice(0, 10)
+  return ''
+}
+
+function normalizeAuditStatus(status) {
+  const map = {
+    待审核: 'submitted',
+    已通过: 'approved',
+    已驳回: 'rejected',
+    草稿: 'draft',
+    submitted: 'submitted',
+    approved: 'approved',
+    rejected: 'rejected',
+    draft: 'draft'
+  }
+  return map[status] || 'submitted'
+}
+
+function backendAuditStatus(status) {
+  const map = {
+    submitted: '待审核',
+    approved: '已通过',
+    rejected: '已驳回',
+    draft: '草稿'
+  }
+  return map[status] || status
+}
+
+async function loadProjects() {
+  try {
+    const res = await getProjects()
+    const result = getResponseData(res)
+    if (result.code !== 200) return
+    projectOptions.value = (result.data || []).filter(project => project.status === '已关闭')
+  } catch (err) {
+    console.error('加载已关闭项目失败：', err)
+  }
+}
+
+function normalizeAnalysis(item) {
+  return {
+    id: item.id,
+    projectId: item.projectId || 0,
+    projectName: item.projectName || '',
+    boardType: item.boardType || '',
+    analysisName: item.analysisName || '',
+    fileName: item.fileName || '',
+    fileUrl: item.fileUrl || '',
+    submitUser: item.submitUserName || item.submitUser || '',
+    submitTime: formatDate(item.submitTime),
+    auditStatus: normalizeAuditStatus(item.auditStatus),
+    auditor: item.auditorName || item.auditor || '',
+    auditTime: formatDate(item.auditTime),
+    rejectReason: item.rejectReason || '',
+    remark: item.analysisDesc || item.remark || ''
+  }
+}
+
+async function loadFaultAnalysis() {
+  try {
+    const res = await getFaultAnalysis()
+    const result = getResponseData(res)
+    if (result.code !== 200) {
+      alert(result.msg || '加载故障分析方案失败')
+      return
+    }
+    analysisList.value = (result.data || []).map(normalizeAnalysis)
+  } catch (err) {
+    console.error('加载故障分析方案失败：', err)
+    alert(err.response?.data || '加载故障分析方案失败')
+  }
+}
+
+async function createAnalysis() {
+  if (!analysisForm.projectId) {
+    alert('请选择已关闭项目')
+    return
+  }
+
   if (!analysisForm.boardType) {
     alert('请选择板卡类型')
     return
@@ -447,21 +563,32 @@ function createAnalysis() {
     return
   }
 
-  analysisList.value.unshift({
-    id: Date.now(),
+  const payload = {
+    projectId: Number(analysisForm.projectId),
     boardType: analysisForm.boardType,
     analysisName: analysisForm.analysisName,
     fileName: analysisForm.fileName,
     fileUrl: analysisForm.fileUrl,
-    submitUser: currentUserName.value,
-    submitTime: new Date().toISOString().slice(0, 10),
-    auditStatus: 'draft',
-    auditor: '',
-    auditTime: '',
-    remark: analysisForm.remark
-  })
+    submitUserId: 1,
+    submitUserName: currentUserName.value,
+    auditStatus: '待审核',
+    analysisDesc: analysisForm.remark || ''
+  }
 
-  showCreateDialog.value = false
+  try {
+    const res = await createFaultAnalysis(payload)
+    const result = getResponseData(res)
+    if (result.code !== 200) {
+      alert(result.msg || '保存失败')
+      return
+    }
+    alert('故障分析方案已保存')
+    showCreateDialog.value = false
+    await loadFaultAnalysis()
+  } catch (err) {
+    console.error('保存故障分析方案失败：', err)
+    alert(err.response?.data || '保存故障分析方案失败')
+  }
 }
 
 function viewAnalysis(item) {
@@ -473,29 +600,37 @@ function auditAnalysis(item) {
 }
 
 function submitAnalysis(item) {
-  item.auditStatus = 'submitted'
-  item.auditor = ''
-  item.auditTime = ''
-
-  alert(`故障分析方案【${item.analysisName}】已提交领导审核`)
+  alert(`故障分析方案【${item.analysisName}】当前已是待审核状态`)
 }
 
-function approveAnalysis(item) {
-  item.auditStatus = 'approved'
-  item.auditor = '领导'
-  item.auditTime = new Date().toISOString().slice(0, 10)
-  selectedAnalysis.value = null
-
-  alert(`故障分析方案【${item.analysisName}】审核通过`)
+async function approveAnalysis(item) {
+  await auditAnalysisStatus(item, 'approved')
 }
 
-function rejectAnalysis(item) {
-  item.auditStatus = 'rejected'
-  item.auditor = '领导'
-  item.auditTime = new Date().toISOString().slice(0, 10)
-  selectedAnalysis.value = null
+async function rejectAnalysis(item) {
+  await auditAnalysisStatus(item, 'rejected')
+}
 
-  alert(`故障分析方案【${item.analysisName}】已驳回`)
+async function auditAnalysisStatus(item, status) {
+  try {
+    const res = await auditFaultAnalysis(item.id, {
+      auditorId: 1,
+      auditorName: currentUserName.value,
+      auditStatus: backendAuditStatus(status),
+      rejectReason: status === 'rejected' ? '审核驳回' : ''
+    })
+    const result = getResponseData(res)
+    if (result.code !== 200) {
+      alert(result.msg || '审核失败')
+      return
+    }
+    alert(status === 'approved' ? '审核通过' : '已驳回')
+    selectedAnalysis.value = null
+    await loadFaultAnalysis()
+  } catch (err) {
+    console.error('审核故障分析失败：', err)
+    alert(err.response?.data || '审核失败')
+  }
 }
 
 function openFile(item) {
@@ -521,11 +656,22 @@ function downloadFile(item) {
   document.body.removeChild(link)
 }
 
-function deleteAnalysis(item) {
+async function deleteAnalysis(item) {
   const ok = confirm(`确认删除故障分析方案【${item.analysisName}】吗？`)
   if (!ok) return
 
-  analysisList.value = analysisList.value.filter(record => record.id !== item.id)
+  try {
+    const res = await deleteFaultAnalysis(item.id)
+    const result = getResponseData(res)
+    if (result.code !== 200) {
+      alert(result.msg || '删除失败')
+      return
+    }
+    await loadFaultAnalysis()
+  } catch (err) {
+    console.error('删除故障分析失败：', err)
+    alert(err.response?.data || '删除失败')
+  }
 }
 </script>
 

@@ -11,6 +11,7 @@ func InitRouter() http.Handler {
 
 	// 登录
 	mux.HandleFunc("/api/login", handler.LoginHandler)
+	mux.HandleFunc("/api/users/software-owners", handler.SoftwareOwnersHandler)
 
 	// 项目管理
 	mux.HandleFunc("/api/projects", handler.ProjectsHandler)
@@ -63,7 +64,7 @@ func InitRouter() http.Handler {
 	// mux.HandleFunc("/api/factory-tests/import", handler.ImportFactoryTestsHandler)
 	// mux.HandleFunc("/api/factory-tests/delete", handler.DeleteFactoryTestsHandler)
 	// mux.HandleFunc("/api/factory-tests/submit", handler.SubmitFactoryTestsHandler)
-	// mux.HandleFunc("/api/factory-tests/audit", handler.AuditFactoryTestsHandler)	
+	// mux.HandleFunc("/api/factory-tests/audit", handler.AuditFactoryTestsHandler)
 	mux.HandleFunc("/api/factory-tests/", handler.FactoryTestActionHandler)
 
 	// 库存
@@ -73,6 +74,8 @@ func InitRouter() http.Handler {
 	// 发货批次
 	mux.HandleFunc("/api/shipping-batches", handler.ShippingBatchesHandler)
 	mux.HandleFunc("/api/shipping-batches/", handler.ShippingBatchActionHandler)
+	mux.HandleFunc("/api/production-requests", handler.ProductionRequestsHandler)
+	mux.HandleFunc("/api/production-requests/", handler.ProductionRequestActionHandler)
 
 	// 发货批次设备明细
 	mux.HandleFunc("/api/shipping-batch-devices", handler.ShippingBatchDevicesHandler)
@@ -91,6 +94,8 @@ func InitRouter() http.Handler {
 
 	// 首页统计
 	mux.HandleFunc("/api/dashboard/summary", handler.DashboardSummaryHandler)
+	mux.HandleFunc("/api/notifications/read", handler.MarkNotificationReadHandler)
+	mux.HandleFunc("/api/global-search", handler.GlobalSearchHandler)
 
 	// 报表
 	mux.HandleFunc("/api/reports/project-progress", handler.ProjectProgressReportHandler)

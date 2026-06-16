@@ -37,3 +37,19 @@ export function deleteShippingBatch(id) {
     method: 'delete'
   })
 }
+
+export function createProductionRequest(data) {
+  return request({
+    url: '/production-requests',
+    method: 'post',
+    data
+  })
+}
+
+export function confirmProductionRequest(id, data) {
+  return request({
+    url: `/production-requests/${id}/confirm`,
+    method: 'post',
+    data
+  })
+}

@@ -130,6 +130,61 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func SoftwareOwnersHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != http.MethodGet {
+		http.Error(w, "请求方法错误", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if !authTableExists("roles") || !authTableExists("user_roles") {
+		http.Error(w, "角色表未初始化", http.StatusInternalServerError)
+		return
+	}
+
+	rows, err := config.DB.Query(`
+		SELECT
+			u.id,
+			u.username,
+			u.real_name
+		FROM users u
+		JOIN user_roles ur ON ur.user_id = u.id
+		JOIN roles r ON r.id = ur.role_id
+		WHERE r.role_code = 'software_owner'
+		  AND IFNULL(u.status, '启用') = '启用'
+		ORDER BY u.id ASC
+	`)
+	if err != nil {
+		http.Error(w, "查询软件负责人失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	list := make([]map[string]interface{}, 0)
+	for rows.Next() {
+		var id int64
+		var username string
+		var realName string
+		if err := rows.Scan(&id, &username, &realName); err != nil {
+			http.Error(w, "解析软件负责人失败: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		list = append(list, map[string]interface{}{
+			"id":       id,
+			"username": username,
+			"name":     realName,
+			"realName": realName,
+		})
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"code": 200,
+		"msg":  "查询成功",
+		"data": list,
+	})
+}
+
 func authTableExists(tableName string) bool {
 	var count int
 	err := config.DB.QueryRow(`

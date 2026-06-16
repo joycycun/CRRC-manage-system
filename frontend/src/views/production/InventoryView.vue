@@ -267,8 +267,10 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { getInventory } from '@/api/inventory'
 
+const route = useRoute()
 const filters = reactive({
   keyword: '',
   deviceType: ''
@@ -284,8 +286,20 @@ const pageSizeOptions = [10, 20, 50, 100]
 const inventoryList = ref([])
 
 onMounted(async () => {
+  syncKeywordFromRoute()
   await loadInventory()
 })
+
+watch(
+  () => route.query.keyword,
+  () => {
+    syncKeywordFromRoute()
+  }
+)
+
+function syncKeywordFromRoute() {
+  filters.keyword = String(route.query.keyword || '')
+}
 
 function getResponseData(res) {
   if (res && res.data) return res.data

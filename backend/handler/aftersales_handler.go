@@ -607,11 +607,14 @@ func GetFaultAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 		SELECT
 			fa.id,
 			IFNULL(fa.project_id, 0),
+			IFNULL(p.project_name, ''),
 			IFNULL(fa.issue_id, 0),
 			IFNULL(fa.repair_id, 0),
 			IFNULL(fa.board_type, ''),
 			fa.analysis_name,
 			IFNULL(fa.file_id, 0),
+			IFNULL(fa.file_name, ''),
+			IFNULL(fa.file_url, ''),
 			IFNULL(fa.submit_user_id, 0),
 			IFNULL(fa.submit_user_name, ''),
 			fa.submit_time,
@@ -646,11 +649,14 @@ func GetFaultAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 		err := rows.Scan(
 			&item.ID,
 			&item.ProjectID,
+			&item.ProjectName,
 			&item.IssueID,
 			&item.RepairID,
 			&item.BoardType,
 			&item.AnalysisName,
 			&item.FileID,
+			&item.FileName,
+			&item.FileURL,
 			&item.SubmitUserID,
 			&item.SubmitUserName,
 			&item.SubmitTime,
@@ -693,6 +699,11 @@ func CreateFaultAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if item.FileName == "" {
+		http.Error(w, "请上传故障分析方案文件", http.StatusBadRequest)
+		return
+	}
+
 	projectID, err := resolveAfterSalesProjectID(item.ProjectID, "")
 	if err != nil {
 		http.Error(w, "请选择项目立项中已关闭的项目", http.StatusBadRequest)
@@ -713,6 +724,8 @@ func CreateFaultAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 			board_type,
 			analysis_name,
 			file_id,
+			file_name,
+			file_url,
 			submit_user_id,
 			submit_user_name,
 			submit_time,
@@ -722,7 +735,7 @@ func CreateFaultAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 			is_deleted,
 			created_at,
 			updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
 	`,
 		projectID,
 		item.IssueID,
@@ -730,6 +743,8 @@ func CreateFaultAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 		item.BoardType,
 		item.AnalysisName,
 		item.FileID,
+		item.FileName,
+		item.FileURL,
 		item.SubmitUserID,
 		item.SubmitUserName,
 		now,
@@ -764,6 +779,10 @@ type FaultAnalysisAuditRequest struct {
 }
 
 func AuditFaultAnalysisHandler(w http.ResponseWriter, r *http.Request, id int64) {
+	if !requireLeaderPermission(w, r) {
+		return
+	}
+
 	var req FaultAnalysisAuditRequest
 
 	err := json.NewDecoder(r.Body).Decode(&req)

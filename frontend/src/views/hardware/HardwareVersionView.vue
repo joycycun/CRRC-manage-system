@@ -11,7 +11,7 @@
           导出硬件版本
         </button>
 
-        <button class="primary-btn" @click="openCreateDialog">
+        <button v-if="canUseAction('hardware:create')" class="primary-btn" @click="openCreateDialog">
           新增硬件版本
         </button>
       </div>
@@ -112,15 +112,15 @@
                   查看
                 </button>
 
-                <button class="text-btn blue" @click="openEditDialog(item)">
+                <button v-if="canUseAction('hardware:update')" class="text-btn blue" @click="openEditDialog(item)">
                   修改
                 </button>
 
-                <button class="text-btn yellow" @click="openZipUploadDialog(item)">
+                <button v-if="canUseAction('hardware:upload')" class="text-btn yellow" @click="openZipUploadDialog(item)">
                   上传ZIP
                 </button>
 
-                <button class="text-btn green" @click="downloadZip(item)">
+                <button v-if="canUseAction('hardware:download')" class="text-btn green" @click="downloadZip(item)">
                   下载
                 </button>
               </div>
@@ -359,7 +359,7 @@
         </div>
 
         <div class="dialog-footer">
-          <button class="reset-btn" @click="downloadZip(selectedHardware)">
+          <button v-if="canUseAction('hardware:download')" class="reset-btn" @click="downloadZip(selectedHardware)">
             下载 ZIP
           </button>
 
@@ -374,6 +374,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import { canUseAction } from '@/utils/permission'
 
 import { getProjects } from '@/api/project'
 

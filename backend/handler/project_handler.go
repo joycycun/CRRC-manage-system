@@ -257,6 +257,21 @@ func CreateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if p.OwnerID == 0 || !isSoftwareOwner(p.OwnerID) {
+		http.Error(w, "请选择已注册的软件负责人", http.StatusBadRequest)
+		return
+	}
+
+	var ownerName string
+	if err := config.DB.QueryRow(`
+		SELECT real_name
+		FROM users
+		WHERE id = ?
+		  AND IFNULL(status, '启用') = '启用'
+	`, p.OwnerID).Scan(&ownerName); err == nil && ownerName != "" {
+		p.OwnerName = ownerName
+	}
+
 	if p.Status == "" {
 		p.Status = "立项中"
 	}
@@ -307,6 +322,20 @@ func CreateProject(w http.ResponseWriter, r *http.Request) {
 			"id": id,
 		},
 	})
+}
+
+func isSoftwareOwner(userID int64) bool {
+	var count int
+	err := config.DB.QueryRow(`
+		SELECT COUNT(*)
+		FROM users u
+		JOIN user_roles ur ON ur.user_id = u.id
+		JOIN roles r ON r.id = ur.role_id
+		WHERE u.id = ?
+		  AND r.role_code = 'software_owner'
+		  AND IFNULL(u.status, '启用') = '启用'
+	`, userID).Scan(&count)
+	return err == nil && count > 0
 }
 
 // ============================================================
@@ -416,6 +445,10 @@ type ProjectAuditRequest struct {
 }
 
 func AuditProject(w http.ResponseWriter, r *http.Request, id int64) {
+	if !requireLeaderPermission(w, r) {
+		return
+	}
+
 	var req ProjectAuditRequest
 
 	err := json.NewDecoder(r.Body).Decode(&req)
@@ -552,6 +585,9 @@ func DeleteProject(w http.ResponseWriter, r *http.Request, id int64) {
 			is_deleted = 1,
 			updated_at = NOW()
 		WHERE id = ?
+		  AND IFNULL(is_deleted, 0) = 0
+		  AND IFNULL(audit_status, '未提交') <> '已通过'
+		  AND IFNULL(status, '') NOT IN ('进行中', '已关闭', '归档')
 	`, id)
 
 	if err != nil {
@@ -561,7 +597,7 @@ func DeleteProject(w http.ResponseWriter, r *http.Request, id int64) {
 
 	affected, _ := result.RowsAffected()
 	if affected == 0 {
-		http.Error(w, "项目不存在", http.StatusNotFound)
+		http.Error(w, "项目不存在，或审核通过后的项目不允许删除", http.StatusBadRequest)
 		return
 	}
 

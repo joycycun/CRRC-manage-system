@@ -928,6 +928,10 @@ type FactoryTestAuditRequest struct {
 }
 
 func AuditFactoryTestHandler(w http.ResponseWriter, r *http.Request, id int64) {
+	if !requireLeaderPermission(w, r) {
+		return
+	}
+
 	var req FactoryTestAuditRequest
 
 	err := json.NewDecoder(r.Body).Decode(&req)
@@ -1482,6 +1486,11 @@ func ImportBurnRecordsHandler(w http.ResponseWriter, r *http.Request) {
 func DeleteBurnBatchHandler(w http.ResponseWriter, r *http.Request, batchNo string) {
 	w.Header().Set("Content-Type", "application/json")
 
+	if !hasRequestRole(r, "production_staff") {
+		http.Error(w, "无删除权限：生产烧录批次仅生产人员可删除", http.StatusForbidden)
+		return
+	}
+
 	batchNo = strings.TrimSpace(batchNo)
 
 	if batchNo == "" {
@@ -1489,10 +1498,46 @@ func DeleteBurnBatchHandler(w http.ResponseWriter, r *http.Request, batchNo stri
 		return
 	}
 
-	result, err := config.DB.Exec(`
-		UPDATE burn_records
-		SET is_deleted = 1
-		WHERE batch_no = ? AND IFNULL(is_deleted, 0) = 0
+	tx, err := config.DB.Begin()
+	if err != nil {
+		http.Error(w, "开启删除事务失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
+	inventoryResult, err := tx.Exec(`
+		DELETE inv
+		FROM inventory_devices inv
+		JOIN burn_records br ON (
+			inv.source_burn_record_id = br.id
+			OR (inv.mac_address <> '' AND br.mac_address <> '' AND inv.mac_address = br.mac_address)
+			OR (inv.sn <> '' AND br.sn <> '' AND inv.sn = br.sn)
+		)
+		WHERE br.batch_no = ?
+	`, batchNo)
+	if err != nil {
+		http.Error(w, "删除关联库存信息失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	factoryResult, err := tx.Exec(`
+		DELETE ft
+		FROM factory_tests ft
+		JOIN burn_records br ON (
+			ft.burn_record_id = br.id
+			OR (ft.mac_address <> '' AND br.mac_address <> '' AND ft.mac_address = br.mac_address)
+			OR (ft.sn <> '' AND br.sn <> '' AND ft.sn = br.sn)
+		)
+		WHERE br.batch_no = ?
+	`, batchNo)
+	if err != nil {
+		http.Error(w, "删除关联出厂测试失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	result, err := tx.Exec(`
+		DELETE FROM burn_records
+		WHERE batch_no = ?
 	`, batchNo)
 	if err != nil {
 		http.Error(w, "删除批次失败: "+err.Error(), http.StatusInternalServerError)
@@ -1500,12 +1545,21 @@ func DeleteBurnBatchHandler(w http.ResponseWriter, r *http.Request, batchNo stri
 	}
 
 	affected, _ := result.RowsAffected()
+	factoryAffected, _ := factoryResult.RowsAffected()
+	inventoryAffected, _ := inventoryResult.RowsAffected()
+
+	if err := tx.Commit(); err != nil {
+		http.Error(w, "提交删除事务失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"code": 200,
 		"msg":  "删除批次成功",
 		"data": map[string]interface{}{
-			"count": affected,
+			"count":                affected,
+			"factoryTestCount":     factoryAffected,
+			"inventoryDeviceCount": inventoryAffected,
 		},
 	})
 }
@@ -1513,10 +1567,51 @@ func DeleteBurnBatchHandler(w http.ResponseWriter, r *http.Request, batchNo stri
 func DeleteBurnRecordHandler(w http.ResponseWriter, r *http.Request, id int64) {
 	w.Header().Set("Content-Type", "application/json")
 
-	result, err := config.DB.Exec(`
-		UPDATE burn_records
-		SET is_deleted = 1
-		WHERE id = ? AND IFNULL(is_deleted, 0) = 0
+	if !hasRequestRole(r, "production_staff") {
+		http.Error(w, "无删除权限：生产烧录记录仅生产人员可删除", http.StatusForbidden)
+		return
+	}
+
+	tx, err := config.DB.Begin()
+	if err != nil {
+		http.Error(w, "开启删除事务失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
+	_, err = tx.Exec(`
+		DELETE inv
+		FROM inventory_devices inv
+		JOIN burn_records br ON (
+			inv.source_burn_record_id = br.id
+			OR (inv.mac_address <> '' AND br.mac_address <> '' AND inv.mac_address = br.mac_address)
+			OR (inv.sn <> '' AND br.sn <> '' AND inv.sn = br.sn)
+		)
+		WHERE br.id = ?
+	`, id)
+	if err != nil {
+		http.Error(w, "删除关联库存信息失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	_, err = tx.Exec(`
+		DELETE ft
+		FROM factory_tests ft
+		JOIN burn_records br ON (
+			ft.burn_record_id = br.id
+			OR (ft.mac_address <> '' AND br.mac_address <> '' AND ft.mac_address = br.mac_address)
+			OR (ft.sn <> '' AND br.sn <> '' AND ft.sn = br.sn)
+		)
+		WHERE br.id = ?
+	`, id)
+	if err != nil {
+		http.Error(w, "删除关联出厂测试失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	result, err := tx.Exec(`
+		DELETE FROM burn_records
+		WHERE id = ?
 	`, id)
 	if err != nil {
 		http.Error(w, "删除失败: "+err.Error(), http.StatusInternalServerError)
@@ -1526,6 +1621,11 @@ func DeleteBurnRecordHandler(w http.ResponseWriter, r *http.Request, id int64) {
 	affected, _ := result.RowsAffected()
 	if affected == 0 {
 		http.Error(w, "烧录记录不存在或已删除", http.StatusNotFound)
+		return
+	}
+
+	if err := tx.Commit(); err != nil {
+		http.Error(w, "提交删除事务失败: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -1571,6 +1671,7 @@ func ImportFactoryTestsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	count := 0
+	skipCount := 0
 
 	for _, item := range req.Records {
 		productModel := strings.TrimSpace(item.ProductModel)
@@ -1628,6 +1729,57 @@ func ImportFactoryTestsHandler(w http.ResponseWriter, r *http.Request) {
 			auditStatus = "draft"
 		}
 
+		var existingID int64
+		var existingStatus string
+		err = tx.QueryRow(`
+			SELECT id, IFNULL(audit_status, 'draft')
+			FROM factory_tests
+			WHERE IFNULL(is_deleted, 0) = 0
+			  AND (
+				burn_record_id = ?
+				OR (? <> '' AND mac_address = ?)
+				OR (? <> '' AND sn = ?)
+			  )
+			ORDER BY id DESC
+			LIMIT 1
+		`, burnRecordID, macAddress, macAddress, sn, sn).Scan(&existingID, &existingStatus)
+		if err != nil && err != sql.ErrNoRows {
+			tx.Rollback()
+			http.Error(w, "检查重复出厂测试失败: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		if existingID > 0 {
+			if existingStatus == "draft" || existingStatus == "rejected" || existingStatus == "草稿" || existingStatus == "审核驳回" || existingStatus == "已驳回" {
+				_, err = tx.Exec(`
+					UPDATE factory_tests
+					SET product_model = ?,
+						device_type = ?,
+						file_id = ?,
+						uploader_id = ?,
+						uploader_name = ?,
+						upload_time = NOW(),
+						audit_status = ?,
+						reject_reason = '',
+						auditor_id = 0,
+						auditor_name = '',
+						audit_time = NULL,
+						remark = ?,
+						updated_at = NOW()
+					WHERE id = ?
+				`, productModel, deviceType, item.FileID, item.UploaderID, item.UploaderName, auditStatus, item.Remark, existingID)
+				if err != nil {
+					tx.Rollback()
+					http.Error(w, "更新重复出厂测试失败: "+err.Error(), http.StatusInternalServerError)
+					return
+				}
+				count++
+			} else {
+				skipCount++
+			}
+			continue
+		}
+
 		_, err = tx.Exec(`
 			INSERT INTO factory_tests (
 				burn_record_id,
@@ -1682,7 +1834,8 @@ func ImportFactoryTestsHandler(w http.ResponseWriter, r *http.Request) {
 		"code": 200,
 		"msg":  "保存成功",
 		"data": map[string]interface{}{
-			"count": count,
+			"count":     count,
+			"skipCount": skipCount,
 		},
 	})
 }
@@ -1803,6 +1956,10 @@ func SubmitFactoryTestsHandler(w http.ResponseWriter, r *http.Request) {
 func AuditFactoryTestsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
+	if !requireLeaderPermission(w, r) {
+		return
+	}
+
 	var req struct {
 		IDs          []int64 `json:"ids"`
 		Status       string  `json:"status"`
@@ -1836,6 +1993,7 @@ func AuditFactoryTestsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	auditCount := int64(0)
 	for _, id := range req.IDs {
 		result, err := tx.Exec(`
 			UPDATE factory_tests
@@ -1868,6 +2026,7 @@ func AuditFactoryTestsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "审核失败：记录不存在，或当前状态不是待审核", http.StatusBadRequest)
 			return
 		}
+		auditCount += affected
 
 		if req.Status == "approved" {
 			err = SyncFactoryTestToInventoryTx(tx, id)
@@ -1887,6 +2046,9 @@ func AuditFactoryTestsHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"code": 200,
 		"msg":  "审核成功",
+		"data": map[string]interface{}{
+			"count": auditCount,
+		},
 	})
 }
 func DeleteFactoryTestByIDHandler(w http.ResponseWriter, r *http.Request, id int64) {
@@ -2025,7 +2187,7 @@ func SyncFactoryTestToInventoryTx(tx *sql.Tx, factoryTestID int64) error {
 		WHERE ft.id = ?
 		  AND IFNULL(ft.is_deleted, 0) = 0
 		  AND IFNULL(br.is_deleted, 0) = 0
-		  AND ft.audit_status IN ('approved', '审核通过')
+		  AND ft.audit_status IN ('approved', '审核通过', '已通过')
 		ON DUPLICATE KEY UPDATE
 			project_id = VALUES(project_id),
 			device_type = VALUES(device_type),

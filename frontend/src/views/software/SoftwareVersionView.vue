@@ -6,7 +6,7 @@
         <h1>软件版本管理</h1>
       </div>
 
-      <button class="primary-btn" @click="openCreateDialog">
+      <button v-if="canUseAction('software:create')" class="primary-btn" @click="openCreateDialog">
         新增软件版本
       </button>
     </div>
@@ -118,31 +118,23 @@
                     查看
                   </button>
 
-                  <button class="text-btn blue" @click="openEditDialog(item)">
+                  <button v-if="canUseAction('software:update')" class="text-btn blue" @click="openEditDialog(item)">
                     修改
                   </button>
 
                   <button
-                    v-if="item.softwareStatus !== 'released'"
+                    v-if="canUseAction('software:release') && item.softwareStatus !== 'released'"
                     class="text-btn green"
                     @click="releaseSoftware(item)"
                   >
                     发布
                   </button>
 
-                  <button
-                    v-if="item.softwareStatus !== 'discarded'"
-                    class="text-btn yellow"
-                    @click="discardSoftware(item)"
-                  >
-                    废弃
-                  </button>
-
-                  <button class="text-btn green" @click="openDownloadPage(item)">
+                  <button v-if="canUseAction('software:download')" class="text-btn green" @click="openDownloadPage(item)">
                     下载
                   </button>
 
-                  <button class="text-btn red" @click="deleteSoftware(item)">
+                  <button v-if="canUseAction('software:delete')" class="text-btn red" @click="deleteSoftware(item)">
                     删除
                   </button>
                 </div>
@@ -340,6 +332,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import { canUseAction } from '@/utils/permission'
 
 import { getProjects } from '@/api/project'
 import { getHardwareVersions } from '@/api/hardware'

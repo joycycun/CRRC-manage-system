@@ -1,7 +1,7 @@
 <template>
   <div class="kpi-grid">
     <div class="kpi-card" v-for="item in cards" :key="item.title">
-      <div class="kpi-icon">
+      <div class="kpi-icon" :class="getIconClass(item)">
         {{ item.icon }}
       </div>
 
@@ -39,6 +39,14 @@ async function loadKpis() {
     console.error('加载看板KPI失败：', err)
   }
 }
+
+function getIconClass(item) {
+  const title = item.title || ''
+  if (title.includes('项目')) return 'project-icon'
+  if (title.includes('问题')) return 'issue-icon'
+  if (title.includes('版本')) return 'version-icon'
+  return ''
+}
 </script>
 
 <style scoped>
@@ -63,10 +71,30 @@ async function loadKpis() {
   height: 46px;
   border-radius: 12px;
   background: #1e293b;
+  color: #e2e8f0;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 20px;
+  font-weight: 800;
+}
+
+.kpi-icon.project-icon {
+  background: rgba(37, 99, 235, 0.18);
+  color: #60a5fa;
+  border: 1px solid rgba(96, 165, 250, 0.35);
+}
+
+.kpi-icon.issue-icon {
+  background: rgba(234, 179, 8, 0.18);
+  color: #facc15;
+  border: 1px solid rgba(250, 204, 21, 0.35);
+}
+
+.kpi-icon.version-icon {
+  background: rgba(147, 51, 234, 0.18);
+  color: #c084fc;
+  border: 1px solid rgba(192, 132, 252, 0.35);
 }
 
 .kpi-content p {

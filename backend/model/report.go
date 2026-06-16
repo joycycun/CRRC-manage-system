@@ -53,6 +53,7 @@ type DashboardSummary struct {
 	RepairPending        int64                  `json:"repairPending"`
 	Kpis                 []DashboardKpiItem     `json:"kpis"`
 	Todos                []DashboardTodoItem    `json:"todos"`
+	Notifications        []DashboardTodoItem    `json:"notifications"`
 	RecentReleases       []DashboardReleaseItem `json:"recentReleases"`
 }
 

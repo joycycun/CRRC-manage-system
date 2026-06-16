@@ -106,6 +106,7 @@
                     </button>
 
                     <button
+                      v-if="canUseAction('burn:deleteBatch')"
                       class="text-btn red"
                       @click="deleteBatch(batch)"
                     >
@@ -140,7 +141,7 @@
 
                       <tbody>
                         <tr
-                          v-for="item in batch.products"
+                          v-for="item in getPaginatedBatchProducts(batch)"
                           :key="item.id"
                         >
                           <td>
@@ -211,6 +212,31 @@
                         </tr>
                       </tbody>
                     </table>
+
+                    <div class="child-pagination">
+                      <span>
+                        共 {{ batch.products.length }} 条，
+                        第 {{ getBatchDetailCurrentPage(batch.batchNo) }} / {{ getBatchDetailTotalPage(batch) }} 页，
+                        当前显示 {{ getBatchDetailPageStart(batch) }} - {{ getBatchDetailPageEnd(batch) }} 条
+                      </span>
+
+                      <div class="pagination-actions">
+                        <button
+                          class="reset-btn"
+                          :disabled="getBatchDetailCurrentPage(batch.batchNo) === 1"
+                          @click="goPrevBatchDetailPage(batch.batchNo)"
+                        >
+                          上一页
+                        </button>
+                        <button
+                          class="reset-btn"
+                          :disabled="getBatchDetailCurrentPage(batch.batchNo) === getBatchDetailTotalPage(batch)"
+                          @click="goNextBatchDetailPage(batch)"
+                        >
+                          下一页
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </td>
               </tr>
@@ -284,7 +310,7 @@
             烧录说明
             <textarea
               v-model="uploadForm.remark"
-              placeholder="例如：本次上传为某批次产品烧录记录，系统会自动读取 Excel 第 3 行表头后的所有产品信息"
+              placeholder="例如：本次上传为某批次产品烧录记录，为新增批次"
             ></textarea>
           </label>
         </div>
@@ -461,6 +487,7 @@ import {
   deleteBurnRecordApi,
   deleteBurnBatchApi
 } from '@/api/burn'
+import { canUseAction } from '@/utils/permission'
 
 const currentUserName = ref(
   localStorage.getItem('username') ||
@@ -478,6 +505,8 @@ const showUploadDialog = ref(false)
 const selectedBurnRecord = ref(null)
 const excelPreviewList = ref([])
 const expandedBatchNo = ref('')
+const batchDetailPageMap = reactive({})
+const batchDetailPageSize = 20
 
 const uploadForm = reactive({
   batchNo: '',
@@ -668,6 +697,9 @@ function resetFilters() {
   filters.keyword = ''
   filters.batchNo = ''
   expandedBatchNo.value = ''
+  Object.keys(batchDetailPageMap).forEach(key => {
+    delete batchDetailPageMap[key]
+  })
 }
 
 function toggleBatch(batchNo) {
@@ -675,6 +707,47 @@ function toggleBatch(batchNo) {
     expandedBatchNo.value = ''
   } else {
     expandedBatchNo.value = batchNo
+    batchDetailPageMap[batchNo] = 1
+  }
+}
+
+function getBatchDetailCurrentPage(batchNo) {
+  return batchDetailPageMap[batchNo] || 1
+}
+
+function getBatchDetailTotalPage(batch) {
+  return Math.max(1, Math.ceil(batch.products.length / batchDetailPageSize))
+}
+
+function getPaginatedBatchProducts(batch) {
+  const totalPage = getBatchDetailTotalPage(batch)
+  const currentPage = Math.min(getBatchDetailCurrentPage(batch.batchNo), totalPage)
+  batchDetailPageMap[batch.batchNo] = currentPage
+  const start = (currentPage - 1) * batchDetailPageSize
+  return batch.products.slice(start, start + batchDetailPageSize)
+}
+
+function getBatchDetailPageStart(batch) {
+  if (batch.products.length === 0) return 0
+  return (getBatchDetailCurrentPage(batch.batchNo) - 1) * batchDetailPageSize + 1
+}
+
+function getBatchDetailPageEnd(batch) {
+  return Math.min(getBatchDetailCurrentPage(batch.batchNo) * batchDetailPageSize, batch.products.length)
+}
+
+function goPrevBatchDetailPage(batchNo) {
+  const currentPage = getBatchDetailCurrentPage(batchNo)
+  if (currentPage > 1) {
+    batchDetailPageMap[batchNo] = currentPage - 1
+  }
+}
+
+function goNextBatchDetailPage(batch) {
+  const currentPage = getBatchDetailCurrentPage(batch.batchNo)
+  const totalPage = getBatchDetailTotalPage(batch)
+  if (currentPage < totalPage) {
+    batchDetailPageMap[batch.batchNo] = currentPage + 1
   }
 }
 
@@ -882,14 +955,34 @@ async function saveExcelBurnRecords() {
 
   const uploader = currentUserName.value
 
-  const records = excelPreviewList.value.flatMap(item => {
+  const seenSerialNumbers = new Set()
+  const seenMacAddresses = new Set()
+  let duplicateSkipCount = 0
+
+  const records = []
+
+  excelPreviewList.value.forEach(item => {
     const serialNumbers =
       item.serialNumbers.length > 0
         ? item.serialNumbers
         : []
 
-    return serialNumbers.map(serialNumber => {
-      return {
+    serialNumbers.forEach(serialNumber => {
+      const normalizedSN = String(serialNumber || '').trim().toUpperCase()
+      const normalizedMac = String(item.macAddress || '').trim().toUpperCase()
+
+      if (
+        (normalizedSN && seenSerialNumbers.has(normalizedSN)) ||
+        (normalizedMac && seenMacAddresses.has(normalizedMac))
+      ) {
+        duplicateSkipCount += 1
+        return
+      }
+
+      if (normalizedSN) seenSerialNumbers.add(normalizedSN)
+      if (normalizedMac) seenMacAddresses.add(normalizedMac)
+
+      records.push({
         batchNo: getFinalBatchNo(item.batchNo),
         productName: item.productName || '-',
         productModel: item.productModel || '-',
@@ -914,7 +1007,7 @@ async function saveExcelBurnRecords() {
 
         burnDesc: uploadForm.remark || '',
         importRemark: uploadForm.remark || ''
-      }
+      })
     })
   })
 
@@ -933,7 +1026,8 @@ async function saveExcelBurnRecords() {
     console.log('导入烧录记录返回：', result)
 
     if (result.code === 200) {
-      alert(`导入成功，共导入 ${result.data?.count || records.length} 条记录`)
+      const duplicateText = duplicateSkipCount > 0 ? `，已跳过重复 SN/MAC ${duplicateSkipCount} 条` : ''
+      alert(`导入成功，共导入 ${result.data?.count || records.length} 条记录${duplicateText}`)
 
       const firstBatchNo = records[0]?.batchNo
       if (firstBatchNo) {
@@ -1363,6 +1457,26 @@ async function deleteBatch(batch) {
 
 .child-table tbody tr:hover {
   background: #1e293b80;
+}
+
+.child-pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 14px 4px;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.pagination-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.pagination-actions .reset-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .child-table th:nth-child(1),

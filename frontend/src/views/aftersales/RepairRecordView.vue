@@ -7,11 +7,11 @@
       </div>
 
       <div class="header-actions">
-        <button class="reset-btn" @click="exportRepairRecords">
+        <button v-if="canUseAction('aftersales:export')" class="reset-btn" @click="exportRepairRecords">
           导出维修记录
         </button>
 
-        <button class="primary-btn" @click="openCreateDialog">
+        <button v-if="canUseAction('aftersales:create')" class="primary-btn" @click="openCreateDialog">
           新增维修记录
         </button>
       </div>
@@ -115,11 +115,11 @@
                     查看
                   </button>
 
-                  <button class="text-btn blue" @click="openEditDialog(item)">
+                  <button v-if="canUseAction('aftersales:update')" class="text-btn blue" @click="openEditDialog(item)">
                     修改
                   </button>
 
-                  <button class="text-btn red" @click="deleteRepair(item)">
+                  <button v-if="canUseAction('aftersales:delete')" class="text-btn red" @click="deleteRepair(item)">
                     删除
                   </button>
                 </div>
@@ -327,7 +327,7 @@
         </div>
 
         <div class="dialog-footer">
-          <button class="reset-btn" @click="openEditDialog(selectedRepair)">
+          <button v-if="canUseAction('aftersales:update')" class="reset-btn" @click="openEditDialog(selectedRepair)">
             修改记录
           </button>
 
@@ -342,6 +342,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import { canUseAction } from '@/utils/permission'
 import { getProjects } from '@/api/project'
 import {
   createRepairRecord,
