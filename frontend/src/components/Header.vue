@@ -71,6 +71,10 @@
     </div>
 
     <div class="header-right">
+      <button class="password-btn" type="button" @click="openPasswordDialog">
+        修改密码
+      </button>
+
       <div class="notify-wrap">
         <button class="notify-btn" type="button" @click="toggleNotifications">
           🔔
@@ -130,6 +134,58 @@
       </div>
     </div>
   </header>
+
+  <div v-if="showPasswordDialog" class="dialog-mask">
+    <div class="password-dialog">
+      <div class="dialog-header">
+        <h3>修改密码</h3>
+        <button type="button" @click="closePasswordDialog">×</button>
+      </div>
+
+      <div class="password-form">
+        <label>
+          原密码
+          <input
+            v-model="passwordForm.oldPassword"
+            type="password"
+            autocomplete="current-password"
+            placeholder="请输入当前密码"
+          />
+        </label>
+
+        <label>
+          新密码
+          <input
+            v-model="passwordForm.newPassword"
+            type="password"
+            autocomplete="new-password"
+            placeholder="至少6位"
+          />
+        </label>
+
+        <label>
+          确认新密码
+          <input
+            v-model="passwordForm.confirmPassword"
+            type="password"
+            autocomplete="new-password"
+            placeholder="再次输入新密码"
+          />
+        </label>
+
+        <p v-if="passwordError" class="password-error">{{ passwordError }}</p>
+      </div>
+
+      <div class="dialog-footer">
+        <button class="cancel-btn" type="button" @click="closePasswordDialog">
+          取消
+        </button>
+        <button class="save-btn" type="button" :disabled="passwordSaving" @click="submitPasswordChange">
+          {{ passwordSaving ? '保存中...' : '保存' }}
+        </button>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup>
@@ -139,6 +195,7 @@ import { useRouter } from 'vue-router'
 import { getDashboardSummary, globalSearch, markNotificationRead } from '@/api/report'
 import { confirmProductionRequest } from '@/api/shippingBatch'
 import { confirmIssue } from '@/api/issue'
+import { changePasswordApi } from '@/api/auth'
 import { getCurrentUserParams } from '@/utils/currentUser'
 
 const router = useRouter()
@@ -149,10 +206,18 @@ const showSearchPanel = ref(false)
 const searching = ref(false)
 const hasSearched = ref(false)
 const headerRef = ref(null)
+const showPasswordDialog = ref(false)
+const passwordSaving = ref(false)
+const passwordError = ref('')
 const searchResults = reactive({
   projects: [],
   versions: [],
   devices: []
+})
+const passwordForm = reactive({
+  oldPassword: '',
+  newPassword: '',
+  confirmPassword: ''
 })
 
 const notificationCount = computed(() => notifications.value.length)
@@ -278,6 +343,64 @@ function handleDocumentClick(event) {
   if (!headerRef.value?.contains(event.target)) {
     showNotifications.value = false
     showSearchPanel.value = false
+  }
+}
+
+function openPasswordDialog() {
+  passwordError.value = ''
+  passwordForm.oldPassword = ''
+  passwordForm.newPassword = ''
+  passwordForm.confirmPassword = ''
+  showPasswordDialog.value = true
+}
+
+function closePasswordDialog() {
+  if (passwordSaving.value) return
+  showPasswordDialog.value = false
+}
+
+async function submitPasswordChange() {
+  passwordError.value = ''
+
+  if (!passwordForm.oldPassword) {
+    passwordError.value = '请输入原密码'
+    return
+  }
+
+  if (passwordForm.newPassword.length < 6) {
+    passwordError.value = '新密码至少需要6位'
+    return
+  }
+
+  if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+    passwordError.value = '两次输入的新密码不一致'
+    return
+  }
+
+  try {
+    passwordSaving.value = true
+    const user = getCurrentUserParams()
+    const res = await changePasswordApi({
+      userId: user.userId,
+      username: user.username,
+      oldPassword: passwordForm.oldPassword,
+      newPassword: passwordForm.newPassword
+    })
+    const result = res?.data || res
+
+    if (result.code !== 200) {
+      passwordError.value = result.msg || '修改密码失败'
+      return
+    }
+
+    alert(result.msg || '密码修改成功，请重新登录')
+    localStorage.clear()
+    router.push('/login')
+  } catch (err) {
+    console.error('修改密码失败：', err)
+    passwordError.value = err.response?.data?.msg || err.response?.data || '修改密码失败，请检查后端接口'
+  } finally {
+    passwordSaving.value = false
   }
 }
 
@@ -483,6 +606,23 @@ function goSearchResult(type, item) {
   gap: 16px;
 }
 
+.password-btn {
+  height: 34px;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  background: #111827;
+  color: #cbd5e1;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 0 12px;
+}
+
+.password-btn:hover {
+  border-color: #38bdf8;
+  color: #f8fafc;
+}
+
 .notify-btn {
   position: relative;
   width: 36px;
@@ -647,5 +787,129 @@ function goSearchResult(type, item) {
 .calendar-icon {
   color: #64748b;
   font-size: 15px;
+}
+
+.dialog-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(2, 6, 23, 0.68);
+  padding: 24px;
+}
+
+.password-dialog {
+  width: min(420px, calc(100vw - 32px));
+  border: 1px solid #263244;
+  border-radius: 8px;
+  background: #0b1220;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.38);
+  color: #e2e8f0;
+}
+
+.dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  border-bottom: 1px solid #1e293b;
+}
+
+.dialog-header h3 {
+  margin: 0;
+  color: #f8fafc;
+  font-size: 17px;
+}
+
+.dialog-header button {
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: 20px;
+}
+
+.dialog-header button:hover {
+  background: #1e293b;
+  color: #f8fafc;
+}
+
+.password-form {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+}
+
+.password-form label {
+  display: grid;
+  gap: 7px;
+  color: #cbd5e1;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.password-form input {
+  width: 100%;
+  height: 38px;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  background: #020617;
+  color: #f8fafc;
+  outline: none;
+  padding: 0 11px;
+}
+
+.password-form input:focus {
+  border-color: #38bdf8;
+}
+
+.password-error {
+  margin: 0;
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  border-radius: 6px;
+  background: rgba(127, 29, 29, 0.24);
+  color: #fecaca;
+  font-size: 13px;
+  padding: 9px 10px;
+}
+
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 18px 18px;
+  border-top: 1px solid #1e293b;
+}
+
+.cancel-btn,
+.save-btn {
+  height: 34px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 0 16px;
+}
+
+.cancel-btn {
+  border: 1px solid #334155;
+  background: transparent;
+  color: #cbd5e1;
+}
+
+.save-btn {
+  border: 1px solid #0ea5e9;
+  background: #0ea5e9;
+  color: #ffffff;
+}
+
+.save-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
 }
 </style>

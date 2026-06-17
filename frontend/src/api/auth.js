@@ -1,4 +1,5 @@
 import axios from "axios";
+import request from "@/utils/request";
 
 export const loginApi = (username, password) => {
   return axios.post(
@@ -10,4 +11,8 @@ export const loginApi = (username, password) => {
       }
     }
   );
+};
+
+export const changePasswordApi = data => {
+  return request.post("/change-password", data);
 };

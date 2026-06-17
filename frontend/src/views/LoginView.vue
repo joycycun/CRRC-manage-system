@@ -28,7 +28,7 @@
           <h2>欢迎回来</h2>
         </div>
 
-        <form class="login-form" @submit.prevent="handleLogin">
+        <form class="login-form" autocomplete="off" @submit.prevent="handleLogin">
           <label>
             <span>登录账号</span>
             <input
@@ -44,7 +44,7 @@
             <input
               v-model="loginForm.password"
               type="password"
-              autocomplete="current-password"
+              autocomplete="new-password"
               placeholder="请输入密码"
             />
           </label>
@@ -145,6 +145,7 @@ async function handleLogin() {
     console.error('登录失败：', err)
     errorMessage.value = err.response?.data?.msg || err.response?.data?.message || '登录失败，请检查网络或后端服务'
   } finally {
+    loginForm.password = ''
     loading.value = false
   }
 }

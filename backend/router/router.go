@@ -11,6 +11,7 @@ func InitRouter() http.Handler {
 
 	// 登录
 	mux.HandleFunc("/api/login", handler.LoginHandler)
+	mux.HandleFunc("/api/change-password", handler.ChangePasswordHandler)
 	mux.HandleFunc("/api/users/software-owners", handler.SoftwareOwnersHandler)
 
 	// 项目管理
