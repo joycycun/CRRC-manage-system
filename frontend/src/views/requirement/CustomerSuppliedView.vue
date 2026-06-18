@@ -319,6 +319,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { canUseAction } from '@/utils/permission'
+import { buildUploadFilePayload, downloadLocalFile, getFilePreviewUrl, openLocalFilePreview } from '@/utils/filePreview'
 
 import { getProjects } from '@/api/project'
 
@@ -353,7 +354,10 @@ const uploadForm = reactive({
   fileName: '',
   fileSize: '',
   file: null,
+  fileId: 0,
   fileUrl: '',
+  fileContentType: '',
+  fileData: '',
   description: '',
   previewContent: ''
 })
@@ -462,7 +466,8 @@ function normalizeCustomerSupply(item) {
       item.fileName ||
       (item.fileId ? `文件ID-${item.fileId}` : '暂无文件'),
     fileSize: item.fileSize || '-',
-    fileUrl: item.fileUrl || '',
+    fileUrl: item.fileUrl || getFilePreviewUrl(item.fileId),
+    downloadUrl: item.downloadUrl || '',
     uploaderId: item.uploadUserId || item.uploaderId || 0,
     uploader:
       item.uploadUserName ||
@@ -546,21 +551,29 @@ function openUploadDialog() {
   uploadForm.fileName = ''
   uploadForm.fileSize = ''
   uploadForm.file = null
+  uploadForm.fileId = 0
   uploadForm.fileUrl = ''
+  uploadForm.fileContentType = ''
+  uploadForm.fileData = ''
   uploadForm.description = ''
   uploadForm.previewContent = ''
 
   showUploadDialog.value = true
 }
 
-function handleFileChange(event) {
+async function handleFileChange(event) {
   const file = event.target.files[0]
   if (!file) return
 
   uploadForm.file = file
   uploadForm.fileName = file.name
   uploadForm.fileSize = formatFileSize(file.size)
-  uploadForm.fileUrl = URL.createObjectURL(file)
+  try {
+    Object.assign(uploadForm, await buildUploadFilePayload(file))
+  } catch (err) {
+    alert('读取客供资料文件失败，请重新选择')
+    return
+  }
 
   const isTextFile =
     file.name.endsWith('.txt') ||
@@ -610,7 +623,10 @@ async function uploadConfig() {
 
   const payload = {
     projectId,
-    fileId: 1,
+    fileId: uploadForm.fileId,
+    fileName: uploadForm.fileName,
+    fileContentType: uploadForm.fileContentType,
+    fileData: uploadForm.fileData,
     materialName: uploadForm.configName,
     fileDisplayName: uploadForm.fileName,
     materialDesc: uploadForm.description || '',
@@ -648,27 +664,11 @@ function viewConfig(item) {
 }
 
 function openConfigFile(item) {
-  if (!item.fileUrl) {
-    selectedConfig.value = item
-    alert('当前还没有接真实文件预览，后面做 project_files 文件上传下载时再接')
-    return
-  }
-
-  window.open(item.fileUrl, '_blank')
+  openLocalFilePreview(item)
 }
 
 function downloadConfig(item) {
-  if (!item.fileUrl) {
-    alert('当前还没有接真实文件下载，后面做 project_files 文件上传下载时再接')
-    return
-  }
-
-  const link = document.createElement('a')
-  link.href = item.fileUrl
-  link.download = item.fileName || '资料文件'
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
+  downloadLocalFile(item, '资料文件')
 }
 
 async function deleteConfig(item) {

@@ -380,35 +380,38 @@ func BurnRecordActionHandler(w http.ResponseWriter, r *http.Request) {
 }
 func GetBurnRecordsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	ensureUploadedFilesTable()
 
 	rows, err := config.DB.Query(`
 		SELECT
-			id,
-			IFNULL(batch_no, ''),
-			IFNULL(project_id, 0),
-			IFNULL(production_order_id, 0),
-			IFNULL(product_name, ''),
-			IFNULL(product_model, ''),
-			IFNULL(product_code, ''),
-			IFNULL(device_type, ''),
-			IFNULL(sn, ''),
-			IFNULL(mac_address, ''),
-			IFNULL(hardware_id, 0),
-			IFNULL(hardware_version, ''),
-			IFNULL(software_id, 0),
-			IFNULL(software_version, ''),
-			IFNULL(pcb_qr_code, ''),
-			IFNULL(note, ''),
-			IFNULL(source_file_id, 0),
-			IFNULL(uploader_id, 0),
-			IFNULL(uploader_name, ''),
-			IFNULL(DATE_FORMAT(upload_time, '%Y-%m-%d'), ''),
-			IFNULL(burn_desc, ''),
-			IFNULL(DATE_FORMAT(created_at, '%Y-%m-%d %H:%i:%s'), ''),
-			IFNULL(DATE_FORMAT(updated_at, '%Y-%m-%d %H:%i:%s'), '')
-		FROM burn_records
-		WHERE IFNULL(is_deleted, 0) = 0
-		ORDER BY id DESC
+			br.id,
+			IFNULL(br.batch_no, ''),
+			IFNULL(br.project_id, 0),
+			IFNULL(br.production_order_id, 0),
+			IFNULL(br.product_name, ''),
+			IFNULL(br.product_model, ''),
+			IFNULL(br.product_code, ''),
+			IFNULL(br.device_type, ''),
+			IFNULL(br.sn, ''),
+			IFNULL(br.mac_address, ''),
+			IFNULL(br.hardware_id, 0),
+			IFNULL(br.hardware_version, ''),
+			IFNULL(br.software_id, 0),
+			IFNULL(br.software_version, ''),
+			IFNULL(br.pcb_qr_code, ''),
+			IFNULL(br.note, ''),
+			IFNULL(br.source_file_id, 0),
+			IFNULL(uf.file_name, ''),
+			IFNULL(br.uploader_id, 0),
+			IFNULL(br.uploader_name, ''),
+			IFNULL(DATE_FORMAT(br.upload_time, '%Y-%m-%d'), ''),
+			IFNULL(br.burn_desc, ''),
+			IFNULL(DATE_FORMAT(br.created_at, '%Y-%m-%d %H:%i:%s'), ''),
+			IFNULL(DATE_FORMAT(br.updated_at, '%Y-%m-%d %H:%i:%s'), '')
+		FROM burn_records br
+		LEFT JOIN uploaded_files uf ON uf.id = br.source_file_id
+		WHERE IFNULL(br.is_deleted, 0) = 0
+		ORDER BY br.id DESC
 	`)
 	if err != nil {
 		http.Error(w, "查询失败: "+err.Error(), http.StatusInternalServerError)
@@ -485,6 +488,7 @@ func GetBurnRecordsHandler(w http.ResponseWriter, r *http.Request) {
 			&item.PcbQrCode,
 			&item.Note,
 			&item.SourceFileID,
+			&item.FileName,
 			&item.UploaderID,
 			&item.UploaderName,
 			&item.UploadTime,
@@ -502,9 +506,10 @@ func GetBurnRecordsHandler(w http.ResponseWriter, r *http.Request) {
 		item.Uploader = item.UploaderName
 		item.ImportRemark = item.BurnDesc
 
-		// 现在还没有真实文件上传表，所以这里先给前端占位
-		item.FileName = "暂无源文件名称"
-		item.FileURL = ""
+		if item.FileName == "" && item.SourceFileID > 0 {
+			item.FileName = "文件ID-" + strconv.FormatInt(item.SourceFileID, 10)
+		}
+		item.FileURL = filePreviewURL(item.SourceFileID)
 
 		if item.MacAddress == "" {
 			item.MacAddress = "-"
@@ -706,35 +711,38 @@ func FactoryTestActionHandler(w http.ResponseWriter, r *http.Request) {
 }
 func GetFactoryTestsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	ensureUploadedFilesTable()
 
 	rows, err := config.DB.Query(`
 		SELECT
-			id,
-			IFNULL(burn_record_id, 0),
-			IFNULL(project_id, 0),
-			IFNULL(product_model, ''),
-			IFNULL(device_type, ''),
-			IFNULL(mac_address, ''),
-			IFNULL(sn, ''),
-			IFNULL(file_id, 0),
-			IFNULL(uploader_id, 0),
-			IFNULL(uploader_name, ''),
-			IFNULL(DATE_FORMAT(upload_time, '%Y-%m-%d'), ''),
+			ft.id,
+			IFNULL(ft.burn_record_id, 0),
+			IFNULL(ft.project_id, 0),
+			IFNULL(ft.product_model, ''),
+			IFNULL(ft.device_type, ''),
+			IFNULL(ft.mac_address, ''),
+			IFNULL(ft.sn, ''),
+			IFNULL(ft.file_id, 0),
+			IFNULL(uf.file_name, ''),
+			IFNULL(ft.uploader_id, 0),
+			IFNULL(ft.uploader_name, ''),
+			IFNULL(DATE_FORMAT(ft.upload_time, '%Y-%m-%d'), ''),
 			CASE
-				WHEN audit_status IN ('草稿', 'draft') THEN 'draft'
-				WHEN audit_status IN ('待审核', 'submitted') THEN 'submitted'
-				WHEN audit_status IN ('审核通过', '已通过', 'approved') THEN 'approved'
-				WHEN audit_status IN ('审核驳回', '已驳回', 'rejected') THEN 'rejected'
-				ELSE IFNULL(audit_status, 'draft')
+				WHEN ft.audit_status IN ('草稿', 'draft') THEN 'draft'
+				WHEN ft.audit_status IN ('待审核', 'submitted') THEN 'submitted'
+				WHEN ft.audit_status IN ('审核通过', '已通过', 'approved') THEN 'approved'
+				WHEN ft.audit_status IN ('审核驳回', '已驳回', 'rejected') THEN 'rejected'
+				ELSE IFNULL(ft.audit_status, 'draft')
 			END,
-			IFNULL(reject_reason, ''),
-			IFNULL(auditor_id, 0),
-			IFNULL(auditor_name, ''),
-			IFNULL(DATE_FORMAT(audit_time, '%Y-%m-%d'), ''),
-			IFNULL(remark, '')
-		FROM factory_tests
-		WHERE IFNULL(is_deleted, 0) = 0
-		ORDER BY id DESC
+			IFNULL(ft.reject_reason, ''),
+			IFNULL(ft.auditor_id, 0),
+			IFNULL(ft.auditor_name, ''),
+			IFNULL(DATE_FORMAT(ft.audit_time, '%Y-%m-%d'), ''),
+			IFNULL(ft.remark, '')
+		FROM factory_tests ft
+		LEFT JOIN uploaded_files uf ON uf.id = ft.file_id
+		WHERE IFNULL(ft.is_deleted, 0) = 0
+		ORDER BY ft.id DESC
 	`)
 
 	if err != nil {
@@ -791,6 +799,7 @@ func GetFactoryTestsHandler(w http.ResponseWriter, r *http.Request) {
 			&item.MacAddress,
 			&item.SN,
 			&item.FileID,
+			&item.FileName,
 			&item.UploaderID,
 			&item.UploaderName,
 			&item.UploadTime,
@@ -810,10 +819,11 @@ func GetFactoryTestsHandler(w http.ResponseWriter, r *http.Request) {
 		item.Uploader = item.UploaderName
 		item.Auditor = item.AuditorName
 
-		// 当前 factory_tests 表没有 file_name/file_url 字段，只能给前端占位
 		item.RecordName = "出厂测试文档"
-		item.FileName = "出厂测试文档"
-		item.FileURL = ""
+		if item.FileName == "" && item.FileID > 0 {
+			item.FileName = "出厂测试文档"
+		}
+		item.FileURL = filePreviewURL(item.FileID)
 
 		list = append(list, item)
 	}
@@ -826,11 +836,27 @@ func GetFactoryTestsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func CreateFactoryTestHandler(w http.ResponseWriter, r *http.Request) {
-	var item model.FactoryTest
+	var req struct {
+		model.FactoryTest
+		FileName        string `json:"fileName"`
+		FileContentType string `json:"fileContentType"`
+		FileData        string `json:"fileData"`
+	}
 
-	err := json.NewDecoder(r.Body).Decode(&item)
+	err := json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {
 		http.Error(w, "参数解析失败: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	item := req.FactoryTest
+	if err := saveUploadedFile(UploadedFilePayload{
+		FileID:          item.FileID,
+		FileName:        req.FileName,
+		FileContentType: req.FileContentType,
+		FileData:        req.FileData,
+	}); err != nil {
+		http.Error(w, "保存出厂测试文件失败: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -928,7 +954,7 @@ type FactoryTestAuditRequest struct {
 }
 
 func AuditFactoryTestHandler(w http.ResponseWriter, r *http.Request, id int64) {
-	if !requireLeaderPermission(w, r) {
+	if !requireProductionAuditPermission(w, r) {
 		return
 	}
 
@@ -1313,7 +1339,11 @@ func ImportBurnRecordsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	var req struct {
-		Records []struct {
+		SourceFileID    int64  `json:"sourceFileId"`
+		FileName        string `json:"fileName"`
+		FileContentType string `json:"fileContentType"`
+		FileData        string `json:"fileData"`
+		Records         []struct {
 			BatchNo string `json:"batchNo"`
 
 			ProjectID         int64 `json:"projectId"`
@@ -1358,6 +1388,16 @@ func ImportBurnRecordsHandler(w http.ResponseWriter, r *http.Request) {
 
 	if len(req.Records) == 0 {
 		http.Error(w, "导入数据不能为空", http.StatusBadRequest)
+		return
+	}
+
+	if err := saveUploadedFile(UploadedFilePayload{
+		FileID:          req.SourceFileID,
+		FileName:        req.FileName,
+		FileContentType: req.FileContentType,
+		FileData:        req.FileData,
+	}); err != nil {
+		http.Error(w, "保存烧录源文件失败: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -1413,6 +1453,11 @@ func ImportBurnRecordsHandler(w http.ResponseWriter, r *http.Request) {
 			macAddress = ""
 		}
 
+		sourceFileID := item.SourceFileID
+		if sourceFileID == 0 {
+			sourceFileID = req.SourceFileID
+		}
+
 		_, err := tx.Exec(`
 			INSERT INTO burn_records (
 				batch_no,
@@ -1455,7 +1500,7 @@ func ImportBurnRecordsHandler(w http.ResponseWriter, r *http.Request) {
 			item.SoftwareVersion,
 			pcbQrCode,
 			item.Note,
-			item.SourceFileID,
+			sourceFileID,
 			item.UploaderID,
 			uploaderName,
 			burnDesc,
@@ -1639,7 +1684,11 @@ func ImportFactoryTestsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	var req struct {
-		Records []struct {
+		FileID          int64  `json:"fileId"`
+		FileName        string `json:"fileName"`
+		FileContentType string `json:"fileContentType"`
+		FileData        string `json:"fileData"`
+		Records         []struct {
 			ProductModel string `json:"productModel"`
 			MacAddress   string `json:"macAddress"`
 			SN           string `json:"sn"`
@@ -1661,6 +1710,16 @@ func ImportFactoryTestsHandler(w http.ResponseWriter, r *http.Request) {
 
 	if len(req.Records) == 0 {
 		http.Error(w, "出厂测试记录不能为空", http.StatusBadRequest)
+		return
+	}
+
+	if err := saveUploadedFile(UploadedFilePayload{
+		FileID:          req.FileID,
+		FileName:        req.FileName,
+		FileContentType: req.FileContentType,
+		FileData:        req.FileData,
+	}); err != nil {
+		http.Error(w, "保存出厂测试文件失败: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -1729,6 +1788,11 @@ func ImportFactoryTestsHandler(w http.ResponseWriter, r *http.Request) {
 			auditStatus = "draft"
 		}
 
+		fileID := item.FileID
+		if fileID == 0 {
+			fileID = req.FileID
+		}
+
 		var existingID int64
 		var existingStatus string
 		err = tx.QueryRow(`
@@ -1767,7 +1831,7 @@ func ImportFactoryTestsHandler(w http.ResponseWriter, r *http.Request) {
 						remark = ?,
 						updated_at = NOW()
 					WHERE id = ?
-				`, productModel, deviceType, item.FileID, item.UploaderID, item.UploaderName, auditStatus, item.Remark, existingID)
+				`, productModel, deviceType, fileID, item.UploaderID, item.UploaderName, auditStatus, item.Remark, existingID)
 				if err != nil {
 					tx.Rollback()
 					http.Error(w, "更新重复出厂测试失败: "+err.Error(), http.StatusInternalServerError)
@@ -1809,7 +1873,7 @@ func ImportFactoryTestsHandler(w http.ResponseWriter, r *http.Request) {
 			deviceType,
 			macAddress,
 			sn,
-			item.FileID,
+			fileID,
 			item.UploaderID,
 			item.UploaderName,
 			auditStatus,
@@ -1984,7 +2048,7 @@ func AuditFactoryTestsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if strings.TrimSpace(req.AuditorName) == "" {
-		req.AuditorName = "领导"
+		req.AuditorName = "质量检查人员"
 	}
 
 	tx, err := config.DB.Begin()

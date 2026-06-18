@@ -471,6 +471,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { canUseAction } from '@/utils/permission'
+import { buildUploadFilePayload, downloadLocalFile, openLocalFilePreview } from '@/utils/filePreview'
 
 import {
   getBurnRecords
@@ -491,6 +492,15 @@ const currentUserName = ref(
   '当前用户'
 )
 
+function getCurrentUserId() {
+  try {
+    const user = JSON.parse(localStorage.getItem('user') || '{}')
+    return Number(user.id || 0)
+  } catch (err) {
+    return 0
+  }
+}
+
 const filters = reactive({
   keyword: '',
   productModel: '',
@@ -507,7 +517,10 @@ const uploadForm = reactive({
   macKeyword: '',
   fileName: '',
   file: null,
+  fileId: 0,
   fileUrl: '',
+  fileContentType: '',
+  fileData: '',
   remark: ''
 })
 
@@ -800,7 +813,10 @@ async function openUploadDialog() {
   uploadForm.macKeyword = ''
   uploadForm.fileName = ''
   uploadForm.file = null
+  uploadForm.fileId = 0
   uploadForm.fileUrl = ''
+  uploadForm.fileContentType = ''
+  uploadForm.fileData = ''
   uploadForm.remark = ''
 
 
@@ -812,13 +828,21 @@ function onProductModelChange() {
   uploadForm.macKeyword = ''
 }
 
-function handleFileChange(event) {
+async function handleFileChange(event) {
   const file = event.target.files[0]
   if (!file) return
 
   uploadForm.file = file
   uploadForm.fileName = file.name
-  uploadForm.fileUrl = URL.createObjectURL(file)
+  try {
+    const payload = await buildUploadFilePayload(file)
+    uploadForm.fileId = payload.fileId
+    uploadForm.fileUrl = payload.fileUrl
+    uploadForm.fileContentType = payload.fileContentType
+    uploadForm.fileData = payload.fileData
+  } catch (err) {
+    alert('读取出厂测试文档失败，请重新选择')
+  }
 }
 
 async function uploadFactoryTest() {
@@ -850,6 +874,7 @@ async function uploadFactoryTest() {
       productCode: macItem.productCode || '',
 
       recordName,
+      fileId: uploadForm.fileId,
       fileName: uploadForm.fileName,
       fileUrl: uploadForm.fileUrl,
 
@@ -868,6 +893,10 @@ async function uploadFactoryTest() {
 
   try {
     const res = await importFactoryTests({
+      fileId: uploadForm.fileId,
+      fileName: uploadForm.fileName,
+      fileContentType: uploadForm.fileContentType,
+      fileData: uploadForm.fileData,
       records
     })
 
@@ -888,26 +917,11 @@ async function uploadFactoryTest() {
   }
 }
 function openFactoryTestFile(item) {
-  if (!item.fileUrl) {
-    alert('当前是模拟数据，暂无可直接打开的原始文件')
-    return
-  }
-
-  window.open(item.fileUrl, '_blank')
+  openLocalFilePreview(item)
 }
 
 function downloadFactoryTest(item) {
-  if (!item.fileUrl) {
-    alert('当前是模拟数据，暂无可下载的原始文件')
-    return
-  }
-
-  const link = document.createElement('a')
-  link.href = item.fileUrl
-  link.download = item.fileName || '出厂测试记录文件'
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
+  downloadLocalFile(item, '出厂测试记录文件')
 }
 
 function canDeleteModelGroup(group) {
@@ -999,7 +1013,7 @@ async function submitModelGroup(group) {
       return
     }
 
-    alert(`产品型号【${group.productModel}】的出厂测试文档已提交领导审核`)
+    alert(`产品型号【${group.productModel}】的出厂测试文档已提交质量审核`)
 
     await loadFactoryTests()
   } catch (err) {
@@ -1035,8 +1049,8 @@ async function approveFactoryTest(item) {
     const res = await auditFactoryTests({
       ids,
       status: 'approved',
-      auditorId: 1,
-      auditorName: '领导'
+      auditorId: getCurrentUserId(),
+      auditorName: currentUserName.value || '质量检查人员'
     })
 
     const result = getResponseData(res)
@@ -1063,8 +1077,8 @@ async function approveFactoryTestGroup(productModel, records) {
     const res = await auditFactoryTests({
       ids,
       status: 'approved',
-      auditorId: 1,
-      auditorName: currentUserName.value || '领导'
+      auditorId: getCurrentUserId(),
+      auditorName: currentUserName.value || '质量检查人员'
     })
 
     const result = getResponseData(res)
@@ -1094,8 +1108,8 @@ async function rejectFactoryTest(item) {
     const res = await auditFactoryTests({
       ids,
       status: 'rejected',
-      auditorId: 1,
-      auditorName: '领导',
+      auditorId: getCurrentUserId(),
+      auditorName: currentUserName.value || '质量检查人员',
       rejectReason: '审核驳回'
     })
 

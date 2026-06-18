@@ -375,6 +375,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { canUseAction } from '@/utils/permission'
+import { buildUploadFilePayload, getFilePreviewUrl } from '@/utils/filePreview'
 
 import { getProjects } from '@/api/project'
 
@@ -428,14 +429,20 @@ const hardwareForm = reactive({
   bindProjects: [],
   description: '',
   zipFile: null,
+  zipFileId: 0,
   zipFileName: '',
-  zipFileUrl: ''
+  zipFileUrl: '',
+  zipFileContentType: '',
+  zipFileData: ''
 })
 
 const zipForm = reactive({
   file: null,
+  fileId: 0,
   fileName: '',
   fileUrl: '',
+  fileContentType: '',
+  fileData: '',
   remark: ''
 })
 
@@ -568,7 +575,8 @@ function normalizeHardware(item) {
       item.fileName ||
       item.fileDisplayName ||
       (item.zipFileId || item.zipFileID ? `文件ID-${item.zipFileId || item.zipFileID}.zip` : ''),
-    zipFileUrl: item.zipFileUrl || item.fileUrl || '',
+    zipFileUrl: item.zipFileUrl || item.fileUrl || getFilePreviewUrl(item.zipFileId || item.zipFileID),
+    zipDownloadUrl: item.zipDownloadUrl || '',
     description: item.description || ''
   }
 }
@@ -617,8 +625,11 @@ function resetHardwareForm() {
   hardwareForm.bindProjects = []
   hardwareForm.description = ''
   hardwareForm.zipFile = null
+  hardwareForm.zipFileId = 0
   hardwareForm.zipFileName = ''
   hardwareForm.zipFileUrl = ''
+  hardwareForm.zipFileContentType = ''
+  hardwareForm.zipFileData = ''
 }
 
 function openCreateDialog() {
@@ -647,7 +658,7 @@ function openEditDialog(item) {
   showEditDialog.value = true
 }
 
-function handleHardwareFileChange(event) {
+async function handleHardwareFileChange(event) {
   const file = event.target.files[0]
   if (!file) return
 
@@ -661,7 +672,15 @@ function handleHardwareFileChange(event) {
 
   hardwareForm.zipFile = file
   hardwareForm.zipFileName = file.name
-  hardwareForm.zipFileUrl = URL.createObjectURL(file)
+  try {
+    const payload = await buildUploadFilePayload(file)
+    hardwareForm.zipFileId = payload.fileId
+    hardwareForm.zipFileUrl = payload.fileUrl
+    hardwareForm.zipFileContentType = payload.fileContentType
+    hardwareForm.zipFileData = payload.fileData
+  } catch (err) {
+    alert('读取硬件 ZIP 文件失败，请重新选择')
+  }
 }
 
 async function saveHardwareVersion() {
@@ -701,8 +720,10 @@ async function saveHardwareVersion() {
     ownerName: editMode.value === 'create'
       ? currentUserName.value
       : (hardwareForm.owner || currentUserName.value),
-    zipFileId: hardwareForm.zipFileName ? 1 : 0,
+    zipFileId: hardwareForm.zipFileId,
     zipFileName: hardwareForm.zipFileName || '',
+    fileContentType: hardwareForm.zipFileContentType,
+    fileData: hardwareForm.zipFileData,
     description: hardwareForm.description || ''
   }
 
@@ -740,14 +761,17 @@ function openZipUploadDialog(item) {
   currentZipHardware.value = item
 
   zipForm.file = null
+  zipForm.fileId = 0
   zipForm.fileName = ''
   zipForm.fileUrl = ''
+  zipForm.fileContentType = ''
+  zipForm.fileData = ''
   zipForm.remark = ''
 
   showZipDialog.value = true
 }
 
-function handleZipFileChange(event) {
+async function handleZipFileChange(event) {
   const file = event.target.files[0]
   if (!file) return
 
@@ -761,7 +785,15 @@ function handleZipFileChange(event) {
 
   zipForm.file = file
   zipForm.fileName = file.name
-  zipForm.fileUrl = URL.createObjectURL(file)
+  try {
+    const payload = await buildUploadFilePayload(file)
+    zipForm.fileId = payload.fileId
+    zipForm.fileUrl = payload.fileUrl
+    zipForm.fileContentType = payload.fileContentType
+    zipForm.fileData = payload.fileData
+  } catch (err) {
+    alert('读取硬件 ZIP 文件失败，请重新选择')
+  }
 }
 
 async function saveZipFile() {
@@ -773,8 +805,10 @@ async function saveZipFile() {
   }
 
   const payload = {
-    zipFileId: 1,
+    zipFileId: zipForm.fileId,
     zipFileName: zipForm.fileName,
+    fileContentType: zipForm.fileContentType,
+    fileData: zipForm.fileData,
     remark: zipForm.remark || ''
   }
 
@@ -799,7 +833,7 @@ async function saveZipFile() {
 
 function downloadZip(item) {
   if (!item.zipFileUrl) {
-    alert('当前还没有接真实文件下载，后面做 project_files 文件上传下载时再接')
+    alert('当前文件暂无可下载内容')
     return
   }
 

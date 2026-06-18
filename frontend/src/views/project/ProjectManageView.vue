@@ -177,6 +177,19 @@
               </option>
             </select>
           </label>
+
+          <label class="file-field">
+            立项书
+            <input
+              ref="proposalFileInput"
+              type="file"
+              accept=".doc,.docx"
+              @change="handleProposalFileChange"
+            />
+            <span class="file-name">
+              {{ projectForm.proposalFileName || '请上传 Word 立项书' }}
+            </span>
+          </label>
         </div>
 
         <div class="dialog-footer">
@@ -224,6 +237,18 @@
             <span>创建时间</span>
             <strong>{{ selectedProject.createTime }}</strong>
           </div>
+
+          <div>
+            <span>立项书</span>
+            <button
+              v-if="selectedProject.proposalFileName"
+              class="inline-link"
+              @click="openProjectProposal(selectedProject)"
+            >
+              {{ selectedProject.proposalFileName }}
+            </button>
+            <strong v-else>未上传</strong>
+          </div>
         </div>
 
         <div class="stage-section">
@@ -263,6 +288,44 @@
         </div>
       </div>
     </div>
+
+    <!-- 项目审核弹窗 -->
+    <div v-if="showAuditDialog" class="dialog-mask">
+      <div class="dialog">
+        <div class="dialog-header">
+          <h3>项目立项审核</h3>
+          <button @click="closeAuditDialog">×</button>
+        </div>
+
+        <div class="audit-panel">
+          <div>
+            <span>项目名称</span>
+            <strong>{{ auditProjectItem?.projectName }}</strong>
+          </div>
+
+          <div>
+            <span>立项书</span>
+            <button class="inline-link" @click="openProjectProposal(auditProjectItem)">
+              {{ auditProjectItem?.proposalFileName || '未上传' }}
+            </button>
+          </div>
+
+          <label>
+            驳回原因
+            <textarea
+              v-model="auditRejectReason"
+              placeholder="审核驳回时填写原因"
+            ></textarea>
+          </label>
+        </div>
+
+        <div class="dialog-footer">
+          <button class="reset-btn" @click="closeAuditDialog">取消</button>
+          <button class="red-btn" @click="rejectProjectAudit">审核驳回</button>
+          <button class="primary-btn" @click="approveProjectAudit">审核通过</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -273,6 +336,7 @@ import { canUseAction } from '@/utils/permission'
 import {
   getProjects,
   getSoftwareOwners,
+  getProjectProposalUrl,
   createProject as createProjectApi,
   updateProject as updateProjectApi,
   submitProject as submitProjectApi,
@@ -291,6 +355,10 @@ const filters = reactive({
 const loading = ref(false)
 const showCreateDialog = ref(false)
 const selectedProject = ref(null)
+const proposalFileInput = ref(null)
+const showAuditDialog = ref(false)
+const auditProjectItem = ref(null)
+const auditRejectReason = ref('')
 
 const projectForm = reactive({
   projectName: '',
@@ -299,7 +367,10 @@ const projectForm = reactive({
   owner: '',
   stage: '立项',
   status: 'draft',
-  remark: ''
+  remark: '',
+  proposalFileName: '',
+  proposalContentType: '',
+  proposalFileData: ''
 })
 
 const softwareOwnerOptions = ref([])
@@ -397,6 +468,8 @@ function normalizeProject(item) {
     createTime: formatDate(item.createTime || item.createdAt),
     archiveTime: formatDate(item.archiveTime),
     closeTime: formatDate(item.closeTime),
+    proposalFileName: item.proposalFileName || '',
+    proposalContentType: item.proposalContentType || '',
     remark: item.remark || ''
   }
 }
@@ -488,6 +561,13 @@ function openCreateDialog() {
   projectForm.stage = '立项'
   projectForm.status = 'draft'
   projectForm.remark = ''
+  projectForm.proposalFileName = ''
+  projectForm.proposalContentType = ''
+  projectForm.proposalFileData = ''
+
+  if (proposalFileInput.value) {
+    proposalFileInput.value.value = ''
+  }
 
   loadSoftwareOwners()
   showCreateDialog.value = true
@@ -509,6 +589,40 @@ async function loadSoftwareOwners() {
   }
 }
 
+function handleProposalFileChange(event) {
+  const file = event.target.files?.[0]
+  if (!file) return
+
+  if (!/\.(doc|docx)$/i.test(file.name)) {
+    alert('立项书仅支持 Word 文档（.doc/.docx）')
+    event.target.value = ''
+    projectForm.proposalFileName = ''
+    projectForm.proposalContentType = ''
+    projectForm.proposalFileData = ''
+    return
+  }
+
+  const reader = new FileReader()
+  reader.onload = () => {
+    projectForm.proposalFileName = file.name
+    projectForm.proposalContentType = file.type || 'application/octet-stream'
+    projectForm.proposalFileData = String(reader.result || '')
+  }
+  reader.onerror = () => {
+    alert('读取立项书失败，请重新选择文件')
+  }
+  reader.readAsDataURL(file)
+}
+
+function openProjectProposal(item) {
+  if (!item?.id || !item.proposalFileName) {
+    alert('该项目未上传立项书')
+    return
+  }
+
+  window.open(getProjectProposalUrl(item.id), '_blank')
+}
+
 async function createProject() {
   if (!projectForm.projectName) {
     alert('请输入项目名称')
@@ -517,6 +631,11 @@ async function createProject() {
 
   if (!projectForm.ownerId) {
     alert('请选择软件负责人')
+    return
+  }
+
+  if (!projectForm.proposalFileName || !projectForm.proposalFileData) {
+    alert('请上传项目立项书 Word 文档')
     return
   }
 
@@ -530,6 +649,9 @@ async function createProject() {
     ownerName: projectForm.owner,
     stage: '立项',
     status: frontendStatusToBackend('draft'),
+    proposalFileName: projectForm.proposalFileName,
+    proposalContentType: projectForm.proposalContentType,
+    proposalFileData: projectForm.proposalFileData,
     remark: projectForm.remark || ''
   }
 
@@ -623,32 +745,53 @@ async function submitProject(item) {
   }
 }
 
-/**
- * 审核项目：这里用 confirm 简化
- * 点确定 = 审核通过
- * 点取消 = 驳回
- */
 async function auditProject(item) {
-  const pass = confirm(`是否审核通过项目【${item.projectName}】？\n确定=通过，取消=驳回`)
-
-  let rejectReason = ''
-
-  if (!pass) {
-    rejectReason = prompt('请输入驳回原因') || '未填写驳回原因'
+  if (!item.proposalFileName) {
+    alert('该项目未上传立项书，不能审核')
+    return
   }
+
+  auditProjectItem.value = item
+  auditRejectReason.value = ''
+  showAuditDialog.value = true
+}
+
+function closeAuditDialog() {
+  showAuditDialog.value = false
+  auditProjectItem.value = null
+  auditRejectReason.value = ''
+}
+
+async function approveProjectAudit() {
+  await submitProjectAudit('已通过', '')
+}
+
+async function rejectProjectAudit() {
+  const reason = auditRejectReason.value.trim()
+  if (!reason) {
+    alert('请输入驳回原因')
+    return
+  }
+  await submitProjectAudit('已驳回', reason)
+}
+
+async function submitProjectAudit(auditStatus, rejectReason) {
+  const item = auditProjectItem.value
+  if (!item) return
 
   try {
     const res = await auditProjectApi(item.id, {
       auditUserId: 1,
       auditUserName: '领导',
-      auditStatus: pass ? '已通过' : '已驳回',
+      auditStatus,
       rejectReason
     })
 
     const result = getResponseData(res)
 
     if (result.code === 200) {
-      alert(pass ? '审核通过' : '已驳回')
+      alert(auditStatus === '已通过' ? '审核通过' : '已驳回')
+      closeAuditDialog()
       await loadProjects()
     } else {
       alert(result.msg || '审核失败')
@@ -818,6 +961,37 @@ async function deleteProject(item) {
   color: #e2e8f0;
   padding: 0 12px;
   outline: none;
+}
+
+.form-grid input[type='file'] {
+  padding: 7px 12px;
+}
+
+.file-field {
+  gap: 8px;
+}
+
+.file-name {
+  min-height: 18px;
+  color: #94a3b8;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inline-link {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #60a5fa;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: left;
+}
+
+.inline-link:hover {
+  color: #93c5fd;
 }
 
 .filter-card input::placeholder {
@@ -1114,6 +1288,46 @@ async function deleteProject(item) {
 .detail-card strong {
   color: #f8fafc;
   font-size: 14px;
+}
+
+.audit-panel {
+  padding: 20px;
+  display: grid;
+  gap: 14px;
+}
+
+.audit-panel > div {
+  background: #020617;
+  border: 1px solid #1e293b;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.audit-panel span,
+.audit-panel label {
+  display: block;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.audit-panel strong {
+  display: block;
+  margin-top: 6px;
+  color: #f8fafc;
+  font-size: 14px;
+}
+
+.audit-panel textarea {
+  width: 100%;
+  min-height: 88px;
+  margin-top: 8px;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  background: #020617;
+  color: #e2e8f0;
+  padding: 10px 12px;
+  resize: vertical;
+  outline: none;
 }
 
 .stage-section {

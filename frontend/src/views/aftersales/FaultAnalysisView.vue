@@ -350,6 +350,7 @@
 import { computed, reactive, ref } from 'vue'
 import { onMounted } from 'vue'
 import { canUseAction } from '@/utils/permission'
+import { buildUploadFilePayload, downloadLocalFile, getFilePreviewUrl, openLocalFilePreview } from '@/utils/filePreview'
 import { getProjects } from '@/api/project'
 import {
   auditFaultAnalysis,
@@ -390,7 +391,10 @@ const analysisForm = reactive({
   analysisName: '',
   fileName: '',
   file: null,
+  fileId: 0,
   fileUrl: '',
+  fileContentType: '',
+  fileData: '',
   remark: ''
 })
 
@@ -447,19 +451,26 @@ function openCreateDialog() {
   analysisForm.analysisName = ''
   analysisForm.fileName = ''
   analysisForm.file = null
+  analysisForm.fileId = 0
   analysisForm.fileUrl = ''
+  analysisForm.fileContentType = ''
+  analysisForm.fileData = ''
   analysisForm.remark = ''
 
   showCreateDialog.value = true
 }
 
-function handleFileChange(event) {
+async function handleFileChange(event) {
   const file = event.target.files[0]
   if (!file) return
 
   analysisForm.file = file
   analysisForm.fileName = file.name
-  analysisForm.fileUrl = URL.createObjectURL(file)
+  try {
+    Object.assign(analysisForm, await buildUploadFilePayload(file))
+  } catch (err) {
+    alert('读取故障分析方案文件失败，请重新选择')
+  }
 }
 
 function getResponseData(res) {
@@ -515,8 +526,9 @@ function normalizeAnalysis(item) {
     projectName: item.projectName || '',
     boardType: item.boardType || '',
     analysisName: item.analysisName || '',
+    fileId: item.fileId || 0,
     fileName: item.fileName || '',
-    fileUrl: item.fileUrl || '',
+    fileUrl: item.fileUrl || getFilePreviewUrl(item.fileId),
     submitUser: item.submitUserName || item.submitUser || '',
     submitTime: formatDate(item.submitTime),
     auditStatus: normalizeAuditStatus(item.auditStatus),
@@ -567,8 +579,11 @@ async function createAnalysis() {
     projectId: Number(analysisForm.projectId),
     boardType: analysisForm.boardType,
     analysisName: analysisForm.analysisName,
+    fileId: analysisForm.fileId,
     fileName: analysisForm.fileName,
     fileUrl: analysisForm.fileUrl,
+    fileContentType: analysisForm.fileContentType,
+    fileData: analysisForm.fileData,
     submitUserId: 1,
     submitUserName: currentUserName.value,
     auditStatus: '待审核',
@@ -634,26 +649,11 @@ async function auditAnalysisStatus(item, status) {
 }
 
 function openFile(item) {
-  if (!item.fileUrl) {
-    alert('暂无可直接打开的原始文件')
-    return
-  }
-
-  window.open(item.fileUrl, '_blank')
+  openLocalFilePreview(item)
 }
 
 function downloadFile(item) {
-  if (!item.fileUrl) {
-    alert('暂无可下载的原始文件')
-    return
-  }
-
-  const link = document.createElement('a')
-  link.href = item.fileUrl
-  link.download = item.fileName || '故障分析方案文件'
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
+  downloadLocalFile(item, '故障分析方案文件')
 }
 
 async function deleteAnalysis(item) {

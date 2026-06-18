@@ -480,6 +480,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import * as XLSX from 'xlsx'
+import { buildUploadFilePayload, downloadLocalFile, getFilePreviewUrl, openLocalFilePreview } from '@/utils/filePreview'
 
 import {
   getBurnRecords,
@@ -512,7 +513,10 @@ const uploadForm = reactive({
   batchNo: '',
   fileName: '',
   file: null,
+  fileId: 0,
   fileUrl: '',
+  fileContentType: '',
+  fileData: '',
   remark: ''
 })
 
@@ -581,7 +585,8 @@ function normalizeBurnRecord(item) {
       item.source_file_name ||
       '暂无源文件名称',
 
-    fileUrl: item.fileUrl || item.sourceFileUrl || '',
+    fileId: item.sourceFileId || item.fileId || 0,
+    fileUrl: item.fileUrl || item.sourceFileUrl || getFilePreviewUrl(item.sourceFileId || item.fileId),
 
     uploader:
       item.uploader ||
@@ -755,7 +760,10 @@ function openUploadDialog() {
   uploadForm.batchNo = ''
   uploadForm.fileName = ''
   uploadForm.file = null
+  uploadForm.fileId = 0
   uploadForm.fileUrl = ''
+  uploadForm.fileContentType = ''
+  uploadForm.fileData = ''
   uploadForm.remark = ''
   excelPreviewList.value = []
   showUploadDialog.value = true
@@ -871,7 +879,7 @@ function normalizeExcelRow(row) {
   }
 }
 
-function handleExcelFileChange(event) {
+async function handleExcelFileChange(event) {
   const file = event.target.files[0]
   if (!file) return
 
@@ -887,7 +895,16 @@ function handleExcelFileChange(event) {
 
   uploadForm.file = file
   uploadForm.fileName = file.name
-  uploadForm.fileUrl = URL.createObjectURL(file)
+  try {
+    const payload = await buildUploadFilePayload(file)
+    uploadForm.fileId = payload.fileId
+    uploadForm.fileUrl = payload.fileUrl
+    uploadForm.fileContentType = payload.fileContentType
+    uploadForm.fileData = payload.fileData
+  } catch (err) {
+    alert('读取烧录 Excel 文件失败，请重新选择')
+    return
+  }
 
   const extractedBatchNo = extractBatchNoFromFileName(file.name)
   if (!uploadForm.batchNo && extractedBatchNo) {
@@ -999,6 +1016,7 @@ async function saveExcelBurnRecords() {
 
         fileName: uploadForm.fileName,
         sourceFileName: uploadForm.fileName,
+        sourceFileId: uploadForm.fileId,
         fileUrl: uploadForm.fileUrl,
 
         uploaderId: 1,
@@ -1018,6 +1036,10 @@ async function saveExcelBurnRecords() {
 
   try {
     const res = await importBurnRecords({
+      sourceFileId: uploadForm.fileId,
+      fileName: uploadForm.fileName,
+      fileContentType: uploadForm.fileContentType,
+      fileData: uploadForm.fileData,
       records
     })
 
@@ -1050,40 +1072,15 @@ function viewBurnRecord(item) {
 }
 
 function openBurnRecordFile(item) {
-  if (!item.fileUrl) {
-    alert('当前还没有接真实文件预览，后面做文件上传下载时再接')
-    return
-  }
-
-  window.open(item.fileUrl, '_blank')
+  openLocalFilePreview(item)
 }
 
 function downloadBurnRecord(item) {
-  if (!item.fileUrl) {
-    alert('当前还没有接真实文件下载，后面做文件上传下载时再接')
-    return
-  }
-
-  const link = document.createElement('a')
-  link.href = item.fileUrl
-  link.download = item.fileName || '烧录记录文件.xlsx'
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
+  downloadLocalFile(item, '烧录记录文件.xlsx')
 }
 
 function downloadBatchFile(batch) {
-  if (!batch.fileUrl) {
-    alert('当前批次暂无可下载的原始文件')
-    return
-  }
-
-  const link = document.createElement('a')
-  link.href = batch.fileUrl
-  link.download = batch.fileName || `${batch.batchNo}_烧录记录.xlsx`
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
+  downloadLocalFile(batch, `${batch.batchNo}_烧录记录.xlsx`)
 }
 
 async function deleteBurnRecord(item) {

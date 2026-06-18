@@ -15,6 +15,10 @@ export function getProjectDetail(id) {
   })
 }
 
+export function getProjectProposalUrl(id) {
+  return `/api/projects/${id}/proposal`
+}
+
 export function getSoftwareOwners() {
   return request({
     url: '/users/software-owners',

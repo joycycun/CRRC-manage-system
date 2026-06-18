@@ -81,32 +81,36 @@ func RequirementChangeActionHandler(w http.ResponseWriter, r *http.Request) {
 
 // GET /api/requirement-changes
 func GetRequirementChangesHandler(w http.ResponseWriter, r *http.Request) {
+	ensureUploadedFilesTable()
+
 	rows, err := config.DB.Query(`
 		SELECT
-			id,
-			project_id,
-			change_title,
-			IFNULL(change_type, ''),
-			file_id,
-			IFNULL(status, ''),
-			IFNULL(close_status, ''),
-			IFNULL(submit_user_id, 0),
-			IFNULL(submit_user_name, ''),
-			IFNULL(audit_user_id, 0),
-			IFNULL(audit_user_name, ''),
-			submit_time,
-			audit_time,
-			IFNULL(close_user_id, 0),
-			IFNULL(close_user_name, ''),
-			close_time,
-			IFNULL(reject_reason, ''),
-			IFNULL(remark, ''),
-			created_at,
-			updated_at,
-			is_deleted
-		FROM requirement_changes
-		WHERE is_deleted = 0
-		ORDER BY id DESC
+			rc.id,
+			rc.project_id,
+			rc.change_title,
+			IFNULL(rc.change_type, ''),
+			rc.file_id,
+			IFNULL(uf.file_name, ''),
+			IFNULL(rc.status, ''),
+			IFNULL(rc.close_status, ''),
+			IFNULL(rc.submit_user_id, 0),
+			IFNULL(rc.submit_user_name, ''),
+			IFNULL(rc.audit_user_id, 0),
+			IFNULL(rc.audit_user_name, ''),
+			rc.submit_time,
+			rc.audit_time,
+			IFNULL(rc.close_user_id, 0),
+			IFNULL(rc.close_user_name, ''),
+			rc.close_time,
+			IFNULL(rc.reject_reason, ''),
+			IFNULL(rc.remark, ''),
+			rc.created_at,
+			rc.updated_at,
+			rc.is_deleted
+		FROM requirement_changes rc
+		LEFT JOIN uploaded_files uf ON uf.id = rc.file_id
+		WHERE rc.is_deleted = 0
+		ORDER BY rc.id DESC
 	`)
 	if err != nil {
 		http.Error(w, "查询失败: "+err.Error(), http.StatusInternalServerError)
@@ -125,6 +129,7 @@ func GetRequirementChangesHandler(w http.ResponseWriter, r *http.Request) {
 			&item.ChangeTitle,
 			&item.ChangeType,
 			&item.FileID,
+			&item.FileName,
 			&item.Status,
 			&item.CloseStatus,
 			&item.SubmitUserID,
@@ -147,6 +152,8 @@ func GetRequirementChangesHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		item.FileURL = filePreviewURL(item.FileID)
+		item.DownloadURL = fileDownloadURL(item.FileID)
 		list = append(list, item)
 	}
 
@@ -159,11 +166,26 @@ func GetRequirementChangesHandler(w http.ResponseWriter, r *http.Request) {
 
 // POST /api/requirement-changes
 func CreateRequirementChangeHandler(w http.ResponseWriter, r *http.Request) {
-	var item model.RequirementChange
+	var req struct {
+		model.RequirementChange
+		FileContentType string `json:"fileContentType"`
+		FileData        string `json:"fileData"`
+	}
 
-	err := json.NewDecoder(r.Body).Decode(&item)
+	err := json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {
 		http.Error(w, "参数解析失败: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	item := req.RequirementChange
+	if err := saveUploadedFile(UploadedFilePayload{
+		FileID:          item.FileID,
+		FileName:        item.FileName,
+		FileContentType: req.FileContentType,
+		FileData:        req.FileData,
+	}); err != nil {
+		http.Error(w, "保存需求变更文件失败: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 

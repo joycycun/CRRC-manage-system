@@ -603,6 +603,8 @@ func FaultAnalysisActionHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetFaultAnalysisHandler(w http.ResponseWriter, r *http.Request) {
+	ensureUploadedFilesTable()
+
 	rows, err := config.DB.Query(`
 		SELECT
 			fa.id,
@@ -613,8 +615,8 @@ func GetFaultAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 			IFNULL(fa.board_type, ''),
 			fa.analysis_name,
 			IFNULL(fa.file_id, 0),
-			IFNULL(fa.file_name, ''),
-			IFNULL(fa.file_url, ''),
+			IFNULL(NULLIF(fa.file_name, ''), IFNULL(uf.file_name, '')),
+			IFNULL(NULLIF(fa.file_url, ''), ''),
 			IFNULL(fa.submit_user_id, 0),
 			IFNULL(fa.submit_user_name, ''),
 			fa.submit_time,
@@ -632,6 +634,7 @@ func GetFaultAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 			ON fa.project_id = p.id
 			AND IFNULL(p.is_deleted, 0) = 0
 			AND p.status = '已关闭'
+		LEFT JOIN uploaded_files uf ON uf.id = fa.file_id
 		WHERE fa.is_deleted = 0
 		ORDER BY fa.id DESC
 	`)
@@ -675,6 +678,9 @@ func GetFaultAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		if item.FileURL == "" {
+			item.FileURL = filePreviewURL(item.FileID)
+		}
 		list = append(list, item)
 	}
 
@@ -686,11 +692,26 @@ func GetFaultAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func CreateFaultAnalysisHandler(w http.ResponseWriter, r *http.Request) {
-	var item model.FaultAnalysis
+	var req struct {
+		model.FaultAnalysis
+		FileContentType string `json:"fileContentType"`
+		FileData        string `json:"fileData"`
+	}
 
-	err := json.NewDecoder(r.Body).Decode(&item)
+	err := json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {
 		http.Error(w, "参数解析失败: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	item := req.FaultAnalysis
+	if err := saveUploadedFile(UploadedFilePayload{
+		FileID:          item.FileID,
+		FileName:        item.FileName,
+		FileContentType: req.FileContentType,
+		FileData:        req.FileData,
+	}); err != nil {
+		http.Error(w, "保存故障分析方案文件失败: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 

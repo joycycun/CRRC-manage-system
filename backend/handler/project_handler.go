@@ -3,6 +3,7 @@ package handler
 import (
 	"crrc_pm_backend/config"
 	"crrc_pm_backend/model"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -93,7 +94,34 @@ func ProjectActionHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if len(parts) == 2 && r.Method == http.MethodGet && parts[1] == "proposal" {
+		DownloadProjectProposal(w, r, id)
+		return
+	}
+
 	http.Error(w, "接口不存在", http.StatusNotFound)
+}
+
+func ensureProjectProposalColumns() {
+	ensureProjectColumn("proposal_file_name", "proposal_file_name VARCHAR(255) DEFAULT ''")
+	ensureProjectColumn("proposal_content_type", "proposal_content_type VARCHAR(128) DEFAULT ''")
+	ensureProjectColumn("proposal_file_data", "proposal_file_data LONGBLOB NULL")
+}
+
+func ensureProjectColumn(columnName string, definition string) {
+	var count int
+	err := config.DB.QueryRow(`
+		SELECT COUNT(*)
+		FROM information_schema.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE()
+		  AND TABLE_NAME = 'projects'
+		  AND COLUMN_NAME = ?
+	`, columnName).Scan(&count)
+	if err != nil || count > 0 {
+		return
+	}
+
+	_, _ = config.DB.Exec("ALTER TABLE projects ADD COLUMN " + definition)
 }
 
 // ============================================================
@@ -101,6 +129,8 @@ func ProjectActionHandler(w http.ResponseWriter, r *http.Request) {
 // ============================================================
 
 func GetProjects(w http.ResponseWriter, r *http.Request) {
+	ensureProjectProposalColumns()
+
 	rows, err := config.DB.Query(`
 		SELECT 
 			id,
@@ -116,6 +146,8 @@ func GetProjects(w http.ResponseWriter, r *http.Request) {
 			IFNULL(audit_user_name, ''),
 			audit_time,
 			archive_time,
+			IFNULL(proposal_file_name, ''),
+			IFNULL(proposal_content_type, ''),
 			IFNULL(remark, ''),
 			created_at,
 			updated_at,
@@ -150,6 +182,8 @@ func GetProjects(w http.ResponseWriter, r *http.Request) {
 			&p.AuditUserName,
 			&p.AuditTime,
 			&p.ArchiveTime,
+			&p.ProposalFileName,
+			&p.ProposalContentType,
 			&p.Remark,
 			&p.CreatedAt,
 			&p.UpdatedAt,
@@ -176,6 +210,8 @@ func GetProjects(w http.ResponseWriter, r *http.Request) {
 // ============================================================
 
 func GetProjectDetail(w http.ResponseWriter, r *http.Request, id int64) {
+	ensureProjectProposalColumns()
+
 	var p model.Project
 
 	err := config.DB.QueryRow(`
@@ -193,6 +229,8 @@ func GetProjectDetail(w http.ResponseWriter, r *http.Request, id int64) {
 			IFNULL(audit_user_name, ''),
 			audit_time,
 			archive_time,
+			IFNULL(proposal_file_name, ''),
+			IFNULL(proposal_content_type, ''),
 			IFNULL(remark, ''),
 			created_at,
 			updated_at,
@@ -215,6 +253,8 @@ func GetProjectDetail(w http.ResponseWriter, r *http.Request, id int64) {
 		&p.AuditUserName,
 		&p.AuditTime,
 		&p.ArchiveTime,
+		&p.ProposalFileName,
+		&p.ProposalContentType,
 		&p.Remark,
 		&p.CreatedAt,
 		&p.UpdatedAt,
@@ -239,26 +279,47 @@ func GetProjectDetail(w http.ResponseWriter, r *http.Request, id int64) {
 // ============================================================
 
 func CreateProject(w http.ResponseWriter, r *http.Request) {
-	var p model.Project
+	ensureProjectProposalColumns()
 
-	err := json.NewDecoder(r.Body).Decode(&p)
-	if err != nil {
+	var req struct {
+		model.Project
+		ProposalFileData string `json:"proposalFileData"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "参数解析失败: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	if p.ProjectName == "" {
+	p := req.Project
+
+	if strings.TrimSpace(p.ProjectName) == "" {
 		http.Error(w, "项目名称不能为空", http.StatusBadRequest)
 		return
 	}
 
-	if p.ProjectCode == "" {
+	if strings.TrimSpace(p.ProjectCode) == "" {
 		http.Error(w, "项目编号不能为空", http.StatusBadRequest)
 		return
 	}
 
 	if p.OwnerID == 0 || !isSoftwareOwner(p.OwnerID) {
 		http.Error(w, "请选择已注册的软件负责人", http.StatusBadRequest)
+		return
+	}
+
+	if strings.TrimSpace(p.ProposalFileName) == "" || strings.TrimSpace(req.ProposalFileData) == "" {
+		http.Error(w, "请上传项目立项书Word文档", http.StatusBadRequest)
+		return
+	}
+
+	if !strings.HasSuffix(strings.ToLower(p.ProposalFileName), ".doc") && !strings.HasSuffix(strings.ToLower(p.ProposalFileName), ".docx") {
+		http.Error(w, "立项书仅支持Word文档（.doc/.docx）", http.StatusBadRequest)
+		return
+	}
+
+	proposalData, err := decodeBase64File(req.ProposalFileData)
+	if err != nil {
+		http.Error(w, "立项书文件解析失败: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -291,11 +352,14 @@ func CreateProject(w http.ResponseWriter, r *http.Request) {
 			stage,
 			status,
 			audit_status,
+			proposal_file_name,
+			proposal_content_type,
+			proposal_file_data,
 			remark,
 			created_at,
 			updated_at,
 			is_deleted
-		) VALUES (?, ?, ?, ?, ?, ?, '未提交', ?, ?, ?, 0)
+		) VALUES (?, ?, ?, ?, ?, ?, '未提交', ?, ?, ?, ?, ?, ?, 0)
 	`,
 		p.ProjectName,
 		p.ProjectCode,
@@ -303,6 +367,9 @@ func CreateProject(w http.ResponseWriter, r *http.Request) {
 		p.OwnerName,
 		p.Stage,
 		p.Status,
+		p.ProposalFileName,
+		p.ProposalContentType,
+		proposalData,
 		p.Remark,
 		now,
 		now,
@@ -322,6 +389,50 @@ func CreateProject(w http.ResponseWriter, r *http.Request) {
 			"id": id,
 		},
 	})
+}
+
+func decodeBase64File(value string) ([]byte, error) {
+	value = strings.TrimSpace(value)
+	if idx := strings.Index(value, ","); idx >= 0 {
+		value = value[idx+1:]
+	}
+	return base64.StdEncoding.DecodeString(value)
+}
+
+func DownloadProjectProposal(w http.ResponseWriter, r *http.Request, id int64) {
+	ensureProjectProposalColumns()
+
+	var fileName string
+	var contentType string
+	var data []byte
+
+	err := config.DB.QueryRow(`
+		SELECT
+			IFNULL(proposal_file_name, ''),
+			IFNULL(proposal_content_type, ''),
+			proposal_file_data
+		FROM projects
+		WHERE id = ? AND IFNULL(is_deleted, 0) = 0
+		LIMIT 1
+	`, id).Scan(&fileName, &contentType, &data)
+	if err != nil {
+		http.Error(w, "立项书不存在: "+err.Error(), http.StatusNotFound)
+		return
+	}
+
+	if fileName == "" || len(data) == 0 {
+		http.Error(w, "该项目未上传立项书", http.StatusNotFound)
+		return
+	}
+
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", `inline; filename="`+fileName+`"`)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
 }
 
 func isSoftwareOwner(userID int64) bool {

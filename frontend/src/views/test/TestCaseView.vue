@@ -432,6 +432,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { canUseAction } from '@/utils/permission'
+import { buildUploadFilePayload, downloadLocalFile, getFilePreviewUrl, openLocalFilePreview } from '@/utils/filePreview'
 
 import { getProjects } from '@/api/project'
 
@@ -471,7 +472,10 @@ const uploadForm = reactive({
   caseName: '',
   fileName: '',
   file: null,
+  fileId: 0,
   fileUrl: '',
+  fileContentType: '',
+  fileData: '',
   remark: ''
 })
 
@@ -479,7 +483,10 @@ const reportForm = reactive({
   reportName: '',
   reportFileName: '',
   reportFile: null,
+  reportFileId: 0,
   reportFileUrl: '',
+  reportFileContentType: '',
+  reportFileData: '',
   reportRemark: ''
 })
 
@@ -600,7 +607,7 @@ function normalizeTestCase(item) {
       item.caseFileName ||
       item.testCaseFileName ||
       (item.fileId ? `文件ID-${item.fileId}` : ''),
-    fileUrl: item.fileUrl || item.caseFileUrl || '',
+    fileUrl: item.fileUrl || item.caseFileUrl || getFilePreviewUrl(item.fileId),
     uploaderId: item.uploaderId || item.submitUserId || item.creatorId || 1,
     uploader:
       item.uploaderName ||
@@ -621,7 +628,7 @@ function normalizeTestCase(item) {
     reportName: item.reportName || item.testReportName || '',
     reportFileId: item.reportFileId || 0,
     reportFileName: item.reportFileName || item.testReportFileName || '',
-    reportFileUrl: item.reportFileUrl || item.testReportFileUrl || '',
+    reportFileUrl: item.reportFileUrl || item.testReportFileUrl || getFilePreviewUrl(item.reportFileId),
     reportUploaderId: item.reportUploaderId || 0,
     reportUploader: item.reportUploaderName || item.reportUploader || '',
     reportUploadTime: formatDate(item.reportUploadTime),
@@ -675,19 +682,31 @@ function openUploadDialog() {
   uploadForm.caseName = ''
   uploadForm.fileName = ''
   uploadForm.file = null
+  uploadForm.fileId = 0
   uploadForm.fileUrl = ''
+  uploadForm.fileContentType = ''
+  uploadForm.fileData = ''
   uploadForm.remark = ''
 
   showUploadDialog.value = true
 }
 
-function handleFileChange(event) {
+async function handleFileChange(event) {
   const file = event.target.files[0]
   if (!file) return
 
   uploadForm.file = file
   uploadForm.fileName = file.name
-  uploadForm.fileUrl = URL.createObjectURL(file)
+  try {
+    const payload = await buildUploadFilePayload(file)
+    uploadForm.fileId = payload.fileId
+    uploadForm.fileUrl = payload.fileUrl
+    uploadForm.fileContentType = payload.fileContentType
+    uploadForm.fileData = payload.fileData
+  } catch (err) {
+    alert('读取测试用例文件失败，请重新选择')
+    return
+  }
 
   if (!uploadForm.caseName) {
     uploadForm.caseName = file.name.replace(/\.[^/.]+$/, '')
@@ -722,9 +741,11 @@ async function uploadTestCase() {
     projectName: uploadForm.projectName,
     caseName: uploadForm.caseName,
     testCaseName: uploadForm.caseName,
-    fileId: 1,
+    fileId: uploadForm.fileId,
     fileName: uploadForm.fileName,
     caseFileName: uploadForm.fileName,
+    fileContentType: uploadForm.fileContentType,
+    fileData: uploadForm.fileData,
     uploaderId: 1,
     uploaderName: currentUserName.value,
     uploadUserName: currentUserName.value,
@@ -757,26 +778,11 @@ function viewTestCase(item) {
 }
 
 function openTestCaseFile(item) {
-  if (!item.fileUrl) {
-    alert('当前还没有接真实文件预览，后面做 project_files 文件上传下载时再接')
-    return
-  }
-
-  window.open(item.fileUrl, '_blank')
+  openLocalFilePreview(item)
 }
 
 function downloadTestCase(item) {
-  if (!item.fileUrl) {
-    alert('当前还没有接真实文件下载，后面做 project_files 文件上传下载时再接')
-    return
-  }
-
-  const link = document.createElement('a')
-  link.href = item.fileUrl
-  link.download = item.fileName || '测试用例文件'
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
+  downloadLocalFile(item, '测试用例文件')
 }
 
 function openReportUploadDialog(item) {
@@ -785,19 +791,31 @@ function openReportUploadDialog(item) {
   reportForm.reportName = item.reportName || `${item.projectName}测试报告`
   reportForm.reportFileName = ''
   reportForm.reportFile = null
+  reportForm.reportFileId = 0
   reportForm.reportFileUrl = ''
+  reportForm.reportFileContentType = ''
+  reportForm.reportFileData = ''
   reportForm.reportRemark = item.reportRemark || ''
 
   showReportUploadDialog.value = true
 }
 
-function handleReportFileChange(event) {
+async function handleReportFileChange(event) {
   const file = event.target.files[0]
   if (!file) return
 
   reportForm.reportFile = file
   reportForm.reportFileName = file.name
-  reportForm.reportFileUrl = URL.createObjectURL(file)
+  try {
+    const payload = await buildUploadFilePayload(file)
+    reportForm.reportFileId = payload.fileId
+    reportForm.reportFileUrl = payload.fileUrl
+    reportForm.reportFileContentType = payload.fileContentType
+    reportForm.reportFileData = payload.fileData
+  } catch (err) {
+    alert('读取测试报告文件失败，请重新选择')
+    return
+  }
 
   if (!reportForm.reportName) {
     reportForm.reportName = file.name.replace(/\.[^/.]+$/, '')
@@ -823,10 +841,12 @@ async function uploadTestReport() {
     projectName: currentReportCase.value.projectName,
     reportName: reportForm.reportName,
     testReportName: reportForm.reportName,
-    reportFileId: 1,
+    reportFileId: reportForm.reportFileId,
     reportFileName: reportForm.reportFileName,
-    fileId: 1,
+    fileId: reportForm.reportFileId,
     fileName: reportForm.reportFileName,
+    fileContentType: reportForm.reportFileContentType,
+    fileData: reportForm.reportFileData,
     reportUploaderId: 1,
     reportUploaderName: currentUserName.value,
     uploaderId: 1,
@@ -856,12 +876,11 @@ async function uploadTestReport() {
 }
 
 function openTestReportFile(item) {
-  if (!item.reportFileUrl) {
-    alert('当前还没有接真实文件预览，后面做 project_files 文件上传下载时再接')
-    return
-  }
-
-  window.open(item.reportFileUrl, '_blank')
+  openLocalFilePreview({
+    fileId: item.reportFileId,
+    fileName: item.reportFileName,
+    fileUrl: item.reportFileUrl
+  })
 }
 
 function downloadTestReport(item) {
@@ -870,17 +889,11 @@ function downloadTestReport(item) {
     return
   }
 
-  if (!item.reportFileUrl) {
-    alert('当前还没有接真实文件下载，后面做 project_files 文件上传下载时再接')
-    return
-  }
-
-  const link = document.createElement('a')
-  link.href = item.reportFileUrl
-  link.download = item.reportFileName || '测试报告文件'
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
+  downloadLocalFile({
+    fileId: item.reportFileId,
+    fileName: item.reportFileName,
+    fileUrl: item.reportFileUrl
+  }, '测试报告文件')
 }
 
 async function submitTestCase(item) {

@@ -60,6 +60,7 @@ func TestCaseActionHandler(w http.ResponseWriter, r *http.Request) {
 
 func GetTestCasesHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	ensureUploadedFilesTable()
 
 	rows, err := config.DB.Query(`
 		SELECT
@@ -68,7 +69,7 @@ func GetTestCasesHandler(w http.ResponseWriter, r *http.Request) {
 			IFNULL(p.project_name, ''),
 			IFNULL(tc.case_name, ''),
 			IFNULL(tc.file_id, 0),
-			IFNULL(tc.file_name, ''),
+			IFNULL(NULLIF(tc.file_name, ''), IFNULL(case_file.file_name, '')),
 			IFNULL(tc.uploader_id, 0),
 			IFNULL(tc.uploader_name, ''),
 			IFNULL(DATE_FORMAT(tc.upload_time, '%Y-%m-%d'), ''),
@@ -80,7 +81,7 @@ func GetTestCasesHandler(w http.ResponseWriter, r *http.Request) {
 			IFNULL(tc.remark, ''),
 			IFNULL(tc.report_name, ''),
 			IFNULL(tc.report_file_id, 0),
-			IFNULL(tc.report_file_name, ''),
+			IFNULL(NULLIF(tc.report_file_name, ''), IFNULL(report_file.file_name, '')),
 			IFNULL(tc.report_uploader_id, 0),
 			IFNULL(tc.report_uploader_name, ''),
 			IFNULL(DATE_FORMAT(tc.report_upload_time, '%Y-%m-%d'), ''),
@@ -89,6 +90,8 @@ func GetTestCasesHandler(w http.ResponseWriter, r *http.Request) {
 			IFNULL(DATE_FORMAT(tc.updated_at, '%Y-%m-%d %H:%i:%s'), '')
 		FROM test_cases tc
 		LEFT JOIN projects p ON tc.project_id = p.id
+		LEFT JOIN uploaded_files case_file ON case_file.id = tc.file_id
+		LEFT JOIN uploaded_files report_file ON report_file.id = tc.report_file_id
 		WHERE tc.is_deleted = 0
 		ORDER BY tc.id DESC
 	`)
@@ -137,6 +140,8 @@ func GetTestCasesHandler(w http.ResponseWriter, r *http.Request) {
 		item.Uploader = item.UploaderName
 		item.Auditor = item.AuditorName
 		item.ReportUploader = item.ReportUploaderName
+		item.FileURL = filePreviewURL(item.FileID)
+		item.ReportFileURL = filePreviewURL(item.ReportFileID)
 
 		list = append(list, item)
 	}
@@ -151,28 +156,43 @@ func GetTestCasesHandler(w http.ResponseWriter, r *http.Request) {
 func CreateTestCaseHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	var req model.TestCase
+	var req struct {
+		model.TestCase
+		FileContentType string `json:"fileContentType"`
+		FileData        string `json:"fileData"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "参数解析失败: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	if req.ProjectID == 0 {
+	item := req.TestCase
+	if err := saveUploadedFile(UploadedFilePayload{
+		FileID:          item.FileID,
+		FileName:        item.FileName,
+		FileContentType: req.FileContentType,
+		FileData:        req.FileData,
+	}); err != nil {
+		http.Error(w, "保存测试用例文件失败: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if item.ProjectID == 0 {
 		http.Error(w, "项目ID不能为空", http.StatusBadRequest)
 		return
 	}
 
-	if req.CaseName == "" {
+	if item.CaseName == "" {
 		http.Error(w, "测试用例名称不能为空", http.StatusBadRequest)
 		return
 	}
 
-	if req.UploaderName == "" {
-		req.UploaderName = req.Uploader
+	if item.UploaderName == "" {
+		item.UploaderName = item.Uploader
 	}
 
-	if req.AuditStatus == "" {
-		req.AuditStatus = "草稿"
+	if item.AuditStatus == "" {
+		item.AuditStatus = "草稿"
 	}
 
 	result, err := config.DB.Exec(`
@@ -191,14 +211,14 @@ func CreateTestCaseHandler(w http.ResponseWriter, r *http.Request) {
 			updated_at
 		) VALUES (?, ?, ?, ?, ?, ?, NOW(), ?, ?, 0, NOW(), NOW())
 	`,
-		req.ProjectID,
-		req.CaseName,
-		req.FileID,
-		req.FileName,
-		req.UploaderID,
-		req.UploaderName,
-		req.AuditStatus,
-		req.Remark,
+		item.ProjectID,
+		item.CaseName,
+		item.FileID,
+		item.FileName,
+		item.UploaderID,
+		item.UploaderName,
+		item.AuditStatus,
+		item.Remark,
 	)
 	if err != nil {
 		http.Error(w, "新增失败: "+err.Error(), http.StatusInternalServerError)
@@ -303,23 +323,38 @@ func AuditTestCaseHandler(w http.ResponseWriter, r *http.Request, id int64) {
 func UploadTestReportHandler(w http.ResponseWriter, r *http.Request, id int64) {
 	w.Header().Set("Content-Type", "application/json")
 
-	var req model.TestCase
+	var req struct {
+		model.TestCase
+		FileContentType string `json:"fileContentType"`
+		FileData        string `json:"fileData"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "参数解析失败: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	if req.ReportName == "" {
+	item := req.TestCase
+	if err := saveUploadedFile(UploadedFilePayload{
+		FileID:          item.ReportFileID,
+		FileName:        item.ReportFileName,
+		FileContentType: req.FileContentType,
+		FileData:        req.FileData,
+	}); err != nil {
+		http.Error(w, "保存测试报告文件失败: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if item.ReportName == "" {
 		http.Error(w, "测试报告名称不能为空", http.StatusBadRequest)
 		return
 	}
 
-	if req.ReportFileName == "" {
-		req.ReportFileName = req.FileName
+	if item.ReportFileName == "" {
+		item.ReportFileName = item.FileName
 	}
 
-	if req.ReportUploaderName == "" {
-		req.ReportUploaderName = req.UploaderName
+	if item.ReportUploaderName == "" {
+		item.ReportUploaderName = item.UploaderName
 	}
 
 	result, err := config.DB.Exec(`
@@ -335,12 +370,12 @@ func UploadTestReportHandler(w http.ResponseWriter, r *http.Request, id int64) {
 			updated_at = NOW()
 		WHERE id = ? AND is_deleted = 0
 	`,
-		req.ReportName,
-		req.ReportFileID,
-		req.ReportFileName,
-		req.ReportUploaderID,
-		req.ReportUploaderName,
-		req.ReportRemark,
+		item.ReportName,
+		item.ReportFileID,
+		item.ReportFileName,
+		item.ReportUploaderID,
+		item.ReportUploaderName,
+		item.ReportRemark,
 		id,
 	)
 	if err != nil {

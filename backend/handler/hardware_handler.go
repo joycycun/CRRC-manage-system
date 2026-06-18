@@ -74,21 +74,25 @@ func HardwareVersionActionHandler(w http.ResponseWriter, r *http.Request) {
 // ==========================
 
 func GetHardwareVersionsHandler(w http.ResponseWriter, r *http.Request) {
+	ensureUploadedFilesTable()
+
 	rows, err := config.DB.Query(`
 		SELECT
-			id,
-			hardware_version,
-			IFNULL(project_id, 0),
-			IFNULL(device_type, ''),
-			IFNULL(status, ''),
-			IFNULL(owner_id, 0),
-			IFNULL(owner_name, ''),
-			IFNULL(zip_file_id, 0),
-			IFNULL(description, ''),
-			created_at,
-			updated_at
-		FROM hardware_versions
-		ORDER BY id DESC
+			hv.id,
+			hv.hardware_version,
+			IFNULL(hv.project_id, 0),
+			IFNULL(hv.device_type, ''),
+			IFNULL(hv.status, ''),
+			IFNULL(hv.owner_id, 0),
+			IFNULL(hv.owner_name, ''),
+			IFNULL(hv.zip_file_id, 0),
+			IFNULL(uf.file_name, ''),
+			IFNULL(hv.description, ''),
+			hv.created_at,
+			hv.updated_at
+		FROM hardware_versions hv
+		LEFT JOIN uploaded_files uf ON uf.id = hv.zip_file_id
+		ORDER BY hv.id DESC
 	`)
 	if err != nil {
 		http.Error(w, "查询失败: "+err.Error(), http.StatusInternalServerError)
@@ -110,6 +114,7 @@ func GetHardwareVersionsHandler(w http.ResponseWriter, r *http.Request) {
 			&item.OwnerID,
 			&item.OwnerName,
 			&item.ZipFileID,
+			&item.ZipFileName,
 			&item.Description,
 			&item.CreatedAt,
 			&item.UpdatedAt,
@@ -119,6 +124,8 @@ func GetHardwareVersionsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		item.ZipFileURL = filePreviewURL(item.ZipFileID)
+		item.ZipDownloadURL = fileDownloadURL(item.ZipFileID)
 		list = append(list, item)
 	}
 
@@ -134,11 +141,26 @@ func GetHardwareVersionsHandler(w http.ResponseWriter, r *http.Request) {
 // ==========================
 
 func CreateHardwareVersionHandler(w http.ResponseWriter, r *http.Request) {
-	var item model.HardwareVersion
+	var req struct {
+		model.HardwareVersion
+		FileContentType string `json:"fileContentType"`
+		FileData        string `json:"fileData"`
+	}
 
-	err := json.NewDecoder(r.Body).Decode(&item)
+	err := json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {
 		http.Error(w, "参数解析失败: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	item := req.HardwareVersion
+	if err := saveUploadedFile(UploadedFilePayload{
+		FileID:          item.ZipFileID,
+		FileName:        item.ZipFileName,
+		FileContentType: req.FileContentType,
+		FileData:        req.FileData,
+	}); err != nil {
+		http.Error(w, "保存硬件ZIP文件失败: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -172,12 +194,14 @@ func CreateHardwareVersionHandler(w http.ResponseWriter, r *http.Request) {
 			description,
 			created_at,
 			updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		item.HardwareVersion,
 		item.ProjectID,
 		item.DeviceType,
 		item.Status,
+		item.OwnerID,
+		item.OwnerName,
 		item.OwnerID,
 		item.OwnerName,
 		item.ZipFileID,
@@ -274,7 +298,10 @@ func UpdateHardwareVersionHandler(w http.ResponseWriter, r *http.Request, id int
 // ==========================
 
 type HardwareZipRequest struct {
-	ZipFileID int64 `json:"zipFileId"`
+	ZipFileID       int64  `json:"zipFileId"`
+	ZipFileName     string `json:"zipFileName"`
+	FileContentType string `json:"fileContentType"`
+	FileData        string `json:"fileData"`
 }
 
 func UploadHardwareZipHandler(w http.ResponseWriter, r *http.Request, id int64) {
@@ -288,6 +315,16 @@ func UploadHardwareZipHandler(w http.ResponseWriter, r *http.Request, id int64) 
 
 	if req.ZipFileID == 0 {
 		http.Error(w, "zipFileId 不能为空", http.StatusBadRequest)
+		return
+	}
+
+	if err := saveUploadedFile(UploadedFilePayload{
+		FileID:          req.ZipFileID,
+		FileName:        req.ZipFileName,
+		FileContentType: req.FileContentType,
+		FileData:        req.FileData,
+	}); err != nil {
+		http.Error(w, "保存硬件ZIP文件失败: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -384,6 +421,8 @@ func HardwareTestActionHandler(w http.ResponseWriter, r *http.Request) {
 // ============================================================
 
 func GetHardwareTestsHandler(w http.ResponseWriter, r *http.Request) {
+	ensureUploadedFilesTable()
+
 	rows, err := config.DB.Query(`
 	SELECT
 		ht.id,
@@ -394,6 +433,7 @@ func GetHardwareTestsHandler(w http.ResponseWriter, r *http.Request) {
 		ht.record_name,
 		ht.device_type,
 		IFNULL(ht.file_id, 0),
+		IFNULL(uf.file_name, ''),
 		IFNULL(ht.uploader_id, 0),
 		IFNULL(ht.uploader_name, ''),
 		IFNULL(ht.audit_status, ''),
@@ -407,6 +447,7 @@ func GetHardwareTestsHandler(w http.ResponseWriter, r *http.Request) {
 	FROM hardware_tests ht
 	LEFT JOIN projects p ON ht.project_id = p.id
 	LEFT JOIN hardware_versions hv ON ht.hardware_id = hv.id
+	LEFT JOIN uploaded_files uf ON uf.id = ht.file_id
 	WHERE ht.is_deleted = 0
 	ORDER BY ht.id DESC
 `)
@@ -430,6 +471,7 @@ func GetHardwareTestsHandler(w http.ResponseWriter, r *http.Request) {
 			&item.RecordName,
 			&item.DeviceType,
 			&item.FileID,
+			&item.FileName,
 			&item.UploaderID,
 			&item.UploaderName,
 			&item.AuditStatus,
@@ -446,6 +488,8 @@ func GetHardwareTestsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		item.FileURL = filePreviewURL(item.FileID)
+		item.DownloadURL = fileDownloadURL(item.FileID)
 		list = append(list, item)
 	}
 
@@ -463,11 +507,26 @@ func GetHardwareTestsHandler(w http.ResponseWriter, r *http.Request) {
 // ============================================================
 
 func CreateHardwareTestHandler(w http.ResponseWriter, r *http.Request) {
-	var item model.HardwareTest
+	var req struct {
+		model.HardwareTest
+		FileContentType string `json:"fileContentType"`
+		FileData        string `json:"fileData"`
+	}
 
-	err := json.NewDecoder(r.Body).Decode(&item)
+	err := json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {
 		http.Error(w, "参数解析失败: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	item := req.HardwareTest
+	if err := saveUploadedFile(UploadedFilePayload{
+		FileID:          item.FileID,
+		FileName:        item.FileName,
+		FileContentType: req.FileContentType,
+		FileData:        req.FileData,
+	}); err != nil {
+		http.Error(w, "保存硬件测试文件失败: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -512,7 +571,7 @@ func CreateHardwareTestHandler(w http.ResponseWriter, r *http.Request) {
 			uploader_id,
 			uploader_name,
 			upload_time
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
 	`,
 		item.ProjectID,
 		item.HardwareID,
@@ -523,6 +582,9 @@ func CreateHardwareTestHandler(w http.ResponseWriter, r *http.Request) {
 		item.RejectReason,
 		item.Remark,
 		now,
+		now,
+		item.UploaderID,
+		item.UploaderName,
 		now,
 	)
 

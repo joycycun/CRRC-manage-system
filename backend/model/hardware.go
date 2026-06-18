@@ -14,6 +14,9 @@ type HardwareVersion struct {
 	OwnerID         int64     `json:"ownerId"`
 	OwnerName       string    `json:"ownerName"`
 	ZipFileID       int64     `json:"zipFileId"`
+	ZipFileName     string    `json:"zipFileName"`
+	ZipFileURL      string    `json:"zipFileUrl"`
+	ZipDownloadURL  string    `json:"zipDownloadUrl"`
 	Description     string    `json:"description"`
 	CreatedAt       time.Time `json:"createdAt"`
 	UpdatedAt       time.Time `json:"updatedAt"`
@@ -28,6 +31,9 @@ type HardwareTest struct {
 	RecordName      string       `json:"recordName"`
 	DeviceType      string       `json:"deviceType"`
 	FileID          int64        `json:"fileId"`
+	FileName        string       `json:"fileName"`
+	FileURL         string       `json:"fileUrl"`
+	DownloadURL     string       `json:"downloadUrl"`
 	AuditStatus     string       `json:"auditStatus"`
 	AuditorID       int64        `json:"auditorId"`
 	AuditorName     string       `json:"auditorName"`

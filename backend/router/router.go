@@ -13,6 +13,7 @@ func InitRouter() http.Handler {
 	mux.HandleFunc("/api/login", handler.LoginHandler)
 	mux.HandleFunc("/api/change-password", handler.ChangePasswordHandler)
 	mux.HandleFunc("/api/users/software-owners", handler.SoftwareOwnersHandler)
+	mux.HandleFunc("/api/files/", handler.UploadedFileActionHandler)
 
 	// 项目管理
 	mux.HandleFunc("/api/projects", handler.ProjectsHandler)

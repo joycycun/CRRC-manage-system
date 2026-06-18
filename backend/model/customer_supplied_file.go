@@ -9,6 +9,9 @@ type CustomerSuppliedFile struct {
 	ID              int64        `json:"id"`
 	ProjectID       int64        `json:"projectId"`
 	FileID          int64        `json:"fileId"`
+	FileName        string       `json:"fileName"`
+	FileURL         string       `json:"fileUrl"`
+	DownloadURL     string       `json:"downloadUrl"`
 	MaterialName    string       `json:"materialName"`
 	FileDisplayName string       `json:"fileDisplayName"`
 	MaterialDesc    string       `json:"materialDesc"`

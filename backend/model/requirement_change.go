@@ -11,6 +11,9 @@ type RequirementChange struct {
 	ChangeTitle    string       `json:"changeTitle"`
 	ChangeType     string       `json:"changeType"`
 	FileID         int64        `json:"fileId"`
+	FileName       string       `json:"fileName"`
+	FileURL        string       `json:"fileUrl"`
+	DownloadURL    string       `json:"downloadUrl"`
 	Status         string       `json:"status"`
 	CloseStatus    string       `json:"closeStatus"`
 	SubmitUserID   int64        `json:"submitUserId"`

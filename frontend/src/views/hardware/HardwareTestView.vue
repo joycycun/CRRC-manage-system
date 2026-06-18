@@ -417,6 +417,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { canUseAction } from '@/utils/permission'
+import { buildUploadFilePayload, downloadLocalFile, getFilePreviewUrl } from '@/utils/filePreview'
 
 import { getProjects } from '@/api/project'
 
@@ -473,7 +474,10 @@ const uploadForm = reactive({
   deviceType: '',
   fileName: '',
   file: null,
+  fileId: 0,
   fileUrl: '',
+  fileContentType: '',
+  fileData: '',
   remark: ''
 })
 
@@ -626,7 +630,8 @@ function normalizeHardwareTest(item) {
       item.fileName ||
       item.fileDisplayName ||
       (item.fileId ? `文件ID-${item.fileId}.docx` : '暂无文件'),
-    fileUrl: item.fileUrl || '',
+    fileUrl: item.fileUrl || getFilePreviewUrl(item.fileId),
+    downloadUrl: item.downloadUrl || '',
     uploaderId: item.uploaderId || 0,
     uploader:
   item.uploaderName ||
@@ -690,12 +695,15 @@ function openUploadDialog() {
   uploadForm.deviceType = ''
   uploadForm.fileName = ''
   uploadForm.file = null
+  uploadForm.fileId = 0
   uploadForm.fileUrl = ''
+  uploadForm.fileContentType = ''
+  uploadForm.fileData = ''
   uploadForm.remark = ''
   showUploadDialog.value = true
 }
 
-function handleFileChange(event) {
+async function handleFileChange(event) {
   const file = event.target.files[0]
   if (!file) return
 
@@ -711,7 +719,11 @@ function handleFileChange(event) {
 
   uploadForm.file = file
   uploadForm.fileName = file.name
-  uploadForm.fileUrl = URL.createObjectURL(file)
+  try {
+    Object.assign(uploadForm, await buildUploadFilePayload(file))
+  } catch (err) {
+    alert('读取硬件测试文件失败，请重新选择')
+  }
 }
 
 async function uploadTest() {
@@ -760,8 +772,10 @@ const payload = {
   testName: uploadForm.recordName,
   recordName: uploadForm.recordName,
   hardwareVersion: uploadForm.hardwareVersion,
-  fileId: 1,
+  fileId: uploadForm.fileId,
   fileName: uploadForm.fileName,
+  fileContentType: uploadForm.fileContentType,
+  fileData: uploadForm.fileData,
 
   // 上传人
   uploaderId: 1,
@@ -798,17 +812,7 @@ function viewTest(item) {
 }
 
 function downloadTest(item) {
-  if (!item.fileUrl) {
-    alert('当前还没有接真实文件下载，后面做 project_files 文件上传下载时再接')
-    return
-  }
-
-  const link = document.createElement('a')
-  link.href = item.fileUrl
-  link.download = item.fileName || '硬件测试记录.docx'
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
+  downloadLocalFile(item, '硬件测试记录.docx')
 }
 
 async function submitTest(item) {

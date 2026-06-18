@@ -91,6 +91,9 @@ type RequirementBookVO struct {
 	ProjectID      int64  `json:"projectId"`
 	BookName       string `json:"bookName"`
 	FileID         int64  `json:"fileId"`
+	FileName       string `json:"fileName"`
+	FileURL        string `json:"fileUrl"`
+	DownloadURL    string `json:"downloadUrl"`
 	Status         string `json:"status"`
 	SubmitUserID   int64  `json:"submitUserId"`
 	SubmitUserName string `json:"submitUserName"`
@@ -108,27 +111,31 @@ type RequirementBookVO struct {
 // ---------------- 内部函数 -----------------
 
 func GetRequirementBooksHandler(w http.ResponseWriter, r *http.Request) {
+	ensureUploadedFilesTable()
+
 	rows, err := config.DB.Query(`
 		SELECT 
-			id,
-			project_id,
-			book_name,
-			file_id,
-			status,
-			submit_user_id,
-			submit_user_name,
-			submit_time,
-			audit_user_id,
-			audit_user_name,
-			audit_time,
-			reject_reason,
-			remark,
-			created_at,
-			updated_at,
-			is_deleted
-		FROM requirement_books
-		WHERE is_deleted = 0
-		ORDER BY id DESC
+			rb.id,
+			rb.project_id,
+			rb.book_name,
+			rb.file_id,
+			IFNULL(uf.file_name, ''),
+			rb.status,
+			rb.submit_user_id,
+			rb.submit_user_name,
+			rb.submit_time,
+			rb.audit_user_id,
+			rb.audit_user_name,
+			rb.audit_time,
+			rb.reject_reason,
+			rb.remark,
+			rb.created_at,
+			rb.updated_at,
+			rb.is_deleted
+		FROM requirement_books rb
+		LEFT JOIN uploaded_files uf ON uf.id = rb.file_id
+		WHERE rb.is_deleted = 0
+		ORDER BY rb.id DESC
 	`)
 	if err != nil {
 		http.Error(w, "查询失败: "+err.Error(), http.StatusInternalServerError)
@@ -160,6 +167,7 @@ func GetRequirementBooksHandler(w http.ResponseWriter, r *http.Request) {
 			&item.ProjectID,
 			&item.BookName,
 			&fileID,
+			&item.FileName,
 			&item.Status,
 			&submitUserID,
 			&submitUserName,
@@ -179,6 +187,8 @@ func GetRequirementBooksHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		item.FileID = nullInt64(fileID)
+		item.FileURL = filePreviewURL(item.FileID)
+		item.DownloadURL = fileDownloadURL(item.FileID)
 		item.SubmitUserID = nullInt64(submitUserID)
 		item.AuditUserID = nullInt64(auditUserID)
 
@@ -208,10 +218,30 @@ func GetRequirementBooksHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func CreateRequirementBookHandler(w http.ResponseWriter, r *http.Request) {
-	var rbook model.RequirementBook
-	err := json.NewDecoder(r.Body).Decode(&rbook)
+	var req struct {
+		model.RequirementBook
+		FileName        string `json:"fileName"`
+		FileContentType string `json:"fileContentType"`
+		FileData        string `json:"fileData"`
+	}
+	err := json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {
 		http.Error(w, "参数解析失败: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	rbook := req.RequirementBook
+	fileName := req.FileName
+	if fileName == "" {
+		fileName = rbook.BookName
+	}
+	if err := saveUploadedFile(UploadedFilePayload{
+		FileID:          rbook.FileID,
+		FileName:        fileName,
+		FileContentType: req.FileContentType,
+		FileData:        req.FileData,
+	}); err != nil {
+		http.Error(w, "保存需求书文件失败: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 

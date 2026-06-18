@@ -266,6 +266,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { canUseAction } from '@/utils/permission'
+import { buildUploadFilePayload, downloadLocalFile, getFilePreviewUrl } from '@/utils/filePreview'
 
 import { getProjects } from '@/api/project'
 
@@ -301,7 +302,10 @@ const uploadForm = reactive({
   bookName: '',
   fileName: '',
   file: null,
+  fileId: 0,
   fileUrl: '',
+  fileContentType: '',
+  fileData: '',
   remark: ''
 })
 
@@ -398,7 +402,8 @@ async function loadRequirementBooks() {
       bookName: item.bookName || '',
       fileId: item.fileId || 0,
       fileName: item.fileName || uploadFileNameFromItem(item),
-      fileUrl: item.fileUrl || '',
+      fileUrl: item.fileUrl || getFilePreviewUrl(item.fileId),
+      downloadUrl: item.downloadUrl || '',
       uploader: item.submitUserName || item.uploader || '',
       uploadTime: formatDate(item.submitTime || item.uploadTime || item.createdAt),
       status: backendStatusToFrontend(item.status),
@@ -449,20 +454,10 @@ function getStatusText(status) {
 }
 
 function downloadBook(item) {
-  if (!item.fileUrl) {
-    alert('当前还没有接真实文件下载，后面做 project_files 文件上传下载时再接')
-    return
-  }
-
-  const link = document.createElement('a')
-  link.href = item.fileUrl
-  link.download = item.fileName || '需求书.docx'
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
+  downloadLocalFile(item, '需求书.docx')
 }
 
-function handleFileChange(event) {
+async function handleFileChange(event) {
   const file = event.target.files[0]
   if (!file) return
 
@@ -478,7 +473,11 @@ function handleFileChange(event) {
 
   uploadForm.file = file
   uploadForm.fileName = file.name
-  uploadForm.fileUrl = URL.createObjectURL(file)
+  try {
+    Object.assign(uploadForm, await buildUploadFilePayload(file))
+  } catch (err) {
+    alert('读取需求书文件失败，请重新选择')
+  }
 }
 
 function resetFilters() {
@@ -492,7 +491,10 @@ function openUploadDialog() {
   uploadForm.bookName = ''
   uploadForm.fileName = ''
   uploadForm.file = null
+  uploadForm.fileId = 0
   uploadForm.fileUrl = ''
+  uploadForm.fileContentType = ''
+  uploadForm.fileData = ''
   uploadForm.remark = ''
   showUploadDialog.value = true
 }
@@ -523,7 +525,10 @@ async function uploadBook() {
   const payload = {
     projectId,
     bookName: uploadForm.bookName,
-    fileId: 1,
+    fileId: uploadForm.fileId,
+    fileName: uploadForm.fileName,
+    fileContentType: uploadForm.fileContentType,
+    fileData: uploadForm.fileData,
     status: frontendStatusToBackend('draft'),
     submitUserId: 1,
     submitUserName: currentUserName.value,

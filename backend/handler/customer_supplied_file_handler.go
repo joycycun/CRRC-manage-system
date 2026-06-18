@@ -54,24 +54,28 @@ func CustomerSuppliedFileActionHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetCustomerSuppliedFilesHandler(w http.ResponseWriter, r *http.Request) {
+	ensureUploadedFilesTable()
+
 	rows, err := config.DB.Query(`
 		SELECT
-			id,
-			project_id,
-			file_id,
-			material_name,
-			IFNULL(file_display_name, ''),
-			IFNULL(material_desc, ''),
-			IFNULL(upload_user_id, 0),
-			IFNULL(upload_user_name, ''),
-			upload_time,
-			IFNULL(remark, ''),
-			created_at,
-			updated_at,
-			is_deleted
-		FROM customer_supplied_files
-		WHERE is_deleted = 0
-		ORDER BY id DESC
+			csf.id,
+			csf.project_id,
+			csf.file_id,
+			IFNULL(uf.file_name, ''),
+			csf.material_name,
+			IFNULL(csf.file_display_name, ''),
+			IFNULL(csf.material_desc, ''),
+			IFNULL(csf.upload_user_id, 0),
+			IFNULL(csf.upload_user_name, ''),
+			csf.upload_time,
+			IFNULL(csf.remark, ''),
+			csf.created_at,
+			csf.updated_at,
+			csf.is_deleted
+		FROM customer_supplied_files csf
+		LEFT JOIN uploaded_files uf ON uf.id = csf.file_id
+		WHERE csf.is_deleted = 0
+		ORDER BY csf.id DESC
 	`)
 	if err != nil {
 		http.Error(w, "查询失败: "+err.Error(), http.StatusInternalServerError)
@@ -88,6 +92,7 @@ func GetCustomerSuppliedFilesHandler(w http.ResponseWriter, r *http.Request) {
 			&item.ID,
 			&item.ProjectID,
 			&item.FileID,
+			&item.FileName,
 			&item.MaterialName,
 			&item.FileDisplayName,
 			&item.MaterialDesc,
@@ -104,6 +109,8 @@ func GetCustomerSuppliedFilesHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		item.FileURL = filePreviewURL(item.FileID)
+		item.DownloadURL = fileDownloadURL(item.FileID)
 		list = append(list, item)
 	}
 
@@ -115,11 +122,30 @@ func GetCustomerSuppliedFilesHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func CreateCustomerSuppliedFileHandler(w http.ResponseWriter, r *http.Request) {
-	var item model.CustomerSuppliedFile
+	var req struct {
+		model.CustomerSuppliedFile
+		FileContentType string `json:"fileContentType"`
+		FileData        string `json:"fileData"`
+	}
 
-	err := json.NewDecoder(r.Body).Decode(&item)
+	err := json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {
 		http.Error(w, "参数解析失败: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	item := req.CustomerSuppliedFile
+	fileName := item.FileName
+	if fileName == "" {
+		fileName = item.FileDisplayName
+	}
+	if err := saveUploadedFile(UploadedFilePayload{
+		FileID:          item.FileID,
+		FileName:        fileName,
+		FileContentType: req.FileContentType,
+		FileData:        req.FileData,
+	}); err != nil {
+		http.Error(w, "保存客供资料文件失败: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
