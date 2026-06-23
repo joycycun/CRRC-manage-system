@@ -752,6 +752,10 @@ async function saveHardwareVersion() {
     }
   } catch (err) {
     console.error('保存硬件版本失败：', err)
+    if (err.code === 'ECONNABORTED') {
+      alert('保存硬件版本超时：压缩包较大或网络较慢，请稍后重试')
+      return
+    }
     alert('保存硬件版本失败，请检查后端接口')
   }
 }
@@ -828,6 +832,10 @@ async function saveZipFile() {
     }
   } catch (err) {
     console.error('上传硬件压缩包失败：', err)
+    if (err.code === 'ECONNABORTED') {
+      alert('上传硬件压缩包超时：文件较大或网络较慢，请稍后重试')
+      return
+    }
     alert('上传压缩包失败，请检查后端接口')
   }
 }

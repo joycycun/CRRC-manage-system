@@ -14,7 +14,8 @@ export function createHardwareVersion(data) {
   return request({
     url: '/hardware-versions',
     method: 'post',
-    data
+    data,
+    timeout: 120000
   })
 }
 
@@ -23,7 +24,8 @@ export function updateHardwareVersion(id, data) {
   return request({
     url: `/hardware-versions/${id}`,
     method: 'put',
-    data
+    data,
+    timeout: 120000
   })
 }
 
@@ -32,7 +34,8 @@ export function uploadHardwareZip(id, data) {
   return request({
     url: `/hardware-versions/${id}/upload-zip`,
     method: 'post',
-    data
+    data,
+    timeout: 120000
   })
 }
 
