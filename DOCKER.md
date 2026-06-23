@@ -40,3 +40,15 @@ admin / 123456
 docker compose down -v
 docker compose up -d --build
 ```
+
+已有数据库升级时，不要删除 Docker 卷，直接执行迁移脚本：
+
+```bash
+mysql -h 127.0.0.1 -P 3306 -ucrrc_user -p123456 crrc_pm < docker/mysql/migrations/20260623_runtime_schema.sql
+```
+
+如果使用 Docker Compose 内部数据库端口映射为 `3307:3306`，则把端口改为：
+
+```bash
+mysql -h 127.0.0.1 -P 3307 -ucrrc_user -p123456 crrc_pm < docker/mysql/migrations/20260623_runtime_schema.sql
+```
