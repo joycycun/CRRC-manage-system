@@ -178,7 +178,7 @@
             </select>
           </label>
 
-          <label class="file-field">
+          <label class="file-field full-span">
             立项书
             <input
               ref="proposalFileInput"
@@ -186,8 +186,11 @@
               accept=".doc,.docx"
               @change="handleProposalFileChange"
             />
+            <button type="button" class="file-picker-btn" @click="proposalFileInput?.click()">
+              选择 Word 文档
+            </button>
             <span class="file-name">
-              {{ projectForm.proposalFileName || '请上传 Word 立项书' }}
+              {{ projectForm.proposalFileName || '可在提交审核后补传' }}
             </span>
           </label>
         </div>
@@ -248,6 +251,22 @@
               {{ selectedProject.proposalFileName }}
             </button>
             <strong v-else>未上传</strong>
+            <div v-if="canUploadProposalInDetail(selectedProject)" class="proposal-actions">
+              <input
+                ref="detailProposalFileInput"
+                type="file"
+                accept=".doc,.docx"
+                @change="handleDetailProposalFileChange"
+              />
+              <button
+                type="button"
+                class="file-picker-btn"
+                :disabled="detailProposalUploading"
+                @click="detailProposalFileInput?.click()"
+              >
+                {{ detailProposalUploading ? '上传中' : selectedProject.proposalFileName ? '替换立项书' : '上传立项书' }}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -305,9 +324,14 @@
 
           <div>
             <span>立项书</span>
-            <button class="inline-link" @click="openProjectProposal(auditProjectItem)">
+            <button
+              v-if="auditProjectItem?.proposalFileName"
+              class="inline-link"
+              @click="openProjectProposal(auditProjectItem)"
+            >
               {{ auditProjectItem?.proposalFileName || '未上传' }}
             </button>
+            <strong v-else>未上传</strong>
           </div>
 
           <label>
@@ -331,12 +355,14 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { canUseAction } from '@/utils/permission'
+import { canUseAction, hasRole } from '@/utils/permission'
+import { getAuditUserPayload } from '@/utils/currentUser'
 
 import {
   getProjects,
   getSoftwareOwners,
   getProjectProposalUrl,
+  uploadProjectProposal,
   createProject as createProjectApi,
   updateProject as updateProjectApi,
   submitProject as submitProjectApi,
@@ -356,9 +382,11 @@ const loading = ref(false)
 const showCreateDialog = ref(false)
 const selectedProject = ref(null)
 const proposalFileInput = ref(null)
+const detailProposalFileInput = ref(null)
 const showAuditDialog = ref(false)
 const auditProjectItem = ref(null)
 const auditRejectReason = ref('')
+const detailProposalUploading = ref(false)
 
 const projectForm = reactive({
   projectName: '',
@@ -484,7 +512,7 @@ async function loadProjects() {
   loading.value = true
 
   try {
-    const res = await getProjects()
+    const res = await getProjects({ scope: 'manage' })
     const result = getResponseData(res)
 
     console.log('项目列表返回：', result)
@@ -589,29 +617,92 @@ async function loadSoftwareOwners() {
   }
 }
 
-function handleProposalFileChange(event) {
+function readProposalFile(event, targetForm) {
   const file = event.target.files?.[0]
   if (!file) return
 
   if (!/\.(doc|docx)$/i.test(file.name)) {
     alert('立项书仅支持 Word 文档（.doc/.docx）')
     event.target.value = ''
-    projectForm.proposalFileName = ''
-    projectForm.proposalContentType = ''
-    projectForm.proposalFileData = ''
+    targetForm.proposalFileName = ''
+    targetForm.proposalContentType = ''
+    targetForm.proposalFileData = ''
     return
   }
 
   const reader = new FileReader()
   reader.onload = () => {
-    projectForm.proposalFileName = file.name
-    projectForm.proposalContentType = file.type || 'application/octet-stream'
-    projectForm.proposalFileData = String(reader.result || '')
+    targetForm.proposalFileName = file.name
+    targetForm.proposalContentType = file.type || 'application/octet-stream'
+    targetForm.proposalFileData = String(reader.result || '')
   }
   reader.onerror = () => {
     alert('读取立项书失败，请重新选择文件')
   }
   reader.readAsDataURL(file)
+}
+
+function handleProposalFileChange(event) {
+  readProposalFile(event, projectForm)
+}
+
+function canUploadProposalInDetail(item) {
+  return item && canUseAction('project:update') && ['approved', 'running'].includes(item.status)
+}
+
+function handleDetailProposalFileChange(event) {
+  const file = event.target.files?.[0]
+  if (!file || !selectedProject.value) return
+
+  if (!/\.(doc|docx)$/i.test(file.name)) {
+    alert('立项书仅支持 Word 文档（.doc/.docx）')
+    event.target.value = ''
+    return
+  }
+
+  const reader = new FileReader()
+  reader.onload = async () => {
+    await uploadDetailProposal({
+      proposalFileName: file.name,
+      proposalContentType: file.type || 'application/octet-stream',
+      proposalFileData: String(reader.result || '')
+    })
+    event.target.value = ''
+  }
+  reader.onerror = () => {
+    alert('读取立项书失败，请重新选择文件')
+    event.target.value = ''
+  }
+  reader.readAsDataURL(file)
+}
+
+async function uploadDetailProposal(payload) {
+  const item = selectedProject.value
+  if (!item) return
+
+  detailProposalUploading.value = true
+  try {
+    const res = await uploadProjectProposal(item.id, payload)
+    const result = getResponseData(res)
+    if (result.code !== 200) {
+      alert(result.msg || '上传立项书失败')
+      return
+    }
+
+    selectedProject.value.proposalFileName = payload.proposalFileName
+    selectedProject.value.proposalContentType = payload.proposalContentType
+    const project = projectList.value.find(row => row.id === item.id)
+    if (project) {
+      project.proposalFileName = payload.proposalFileName
+      project.proposalContentType = payload.proposalContentType
+    }
+    alert('立项书已上传')
+  } catch (err) {
+    console.error('上传立项书失败：', err)
+    alert(err.response?.data || '上传立项书失败')
+  } finally {
+    detailProposalUploading.value = false
+  }
 }
 
 function openProjectProposal(item) {
@@ -631,11 +722,6 @@ async function createProject() {
 
   if (!projectForm.ownerId) {
     alert('请选择软件负责人')
-    return
-  }
-
-  if (!projectForm.proposalFileName || !projectForm.proposalFileData) {
-    alert('请上传项目立项书 Word 文档')
     return
   }
 
@@ -675,6 +761,7 @@ async function createProject() {
 }
 
 function canDeleteProject(item) {
+  if (canUseAction('project:delete') && hasRole('system_admin')) return true
   return canUseAction('project:delete') && !['approved', 'running', 'closed', 'archived'].includes(item.status)
 }
 
@@ -746,11 +833,6 @@ async function submitProject(item) {
 }
 
 async function auditProject(item) {
-  if (!item.proposalFileName) {
-    alert('该项目未上传立项书，不能审核')
-    return
-  }
-
   auditProjectItem.value = item
   auditRejectReason.value = ''
   showAuditDialog.value = true
@@ -781,8 +863,7 @@ async function submitProjectAudit(auditStatus, rejectReason) {
 
   try {
     const res = await auditProjectApi(item.id, {
-      auditUserId: 1,
-      auditUserName: '领导',
+      ...getAuditUserPayload(),
       auditStatus,
       rejectReason
     })
@@ -933,6 +1014,11 @@ async function deleteProject(item) {
   color: #cbd5e1;
 }
 
+.reset-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .red-btn {
   border: 1px solid #7f1d1d;
   background: #450a0a;
@@ -963,12 +1049,36 @@ async function deleteProject(item) {
   outline: none;
 }
 
-.form-grid input[type='file'] {
-  padding: 7px 12px;
-}
-
 .file-field {
   gap: 8px;
+}
+
+.file-field.full-span {
+  grid-column: 1 / -1;
+}
+
+.file-field input[type='file'],
+.audit-upload-control input[type='file'],
+.proposal-actions input[type='file'] {
+  display: none;
+}
+
+.file-picker-btn {
+  width: fit-content;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid #3b82f6;
+  border-radius: 8px;
+  background: #1d4ed833;
+  color: #bfdbfe;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.file-picker-btn:hover {
+  background: #2563eb55;
+  color: #eff6ff;
 }
 
 .file-name {
@@ -992,6 +1102,10 @@ async function deleteProject(item) {
 
 .inline-link:hover {
   color: #93c5fd;
+}
+
+.proposal-actions {
+  margin-top: 10px;
 }
 
 .filter-card input::placeholder {
@@ -1317,6 +1431,18 @@ async function deleteProject(item) {
   font-size: 14px;
 }
 
+.audit-upload-row {
+  display: grid;
+  gap: 10px;
+}
+
+.audit-upload-control {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
 .audit-panel textarea {
   width: 100%;
   min-height: 88px;
@@ -1406,6 +1532,11 @@ async function deleteProject(item) {
   .form-grid,
   .detail-card {
     grid-template-columns: 1fr;
+  }
+
+  .audit-upload-control {
+    grid-template-columns: 1fr;
+    align-items: stretch;
   }
 
   .stage-list {

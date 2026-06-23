@@ -66,8 +66,10 @@ VALUES
   ('hardware_owner', '硬件负责人', '维护硬件版本和硬件检测'),
   ('production_staff', '生产人员', '维护烧录记录和出厂测试'),
   ('shipping_staff', '发货人员', '维护库存、发货批次和出库'),
+  ('shipping_auditor', '发货审核', '发货人员权限基础上增加发货批次审核'),
   ('aftersales_staff', '售后人员', '维护维修记录和故障分析'),
-  ('leader', '领导', '审核项目和查看统计看板')
+  ('leader', '领导', '审核项目和查看统计看板'),
+  ('quality_staff', '质量检查人员', '负责生产管理里面生产测试审查')
 ON DUPLICATE KEY UPDATE
   role_name = VALUES(role_name),
   description = VALUES(description);
@@ -84,6 +86,7 @@ VALUES
   ('hardware:view', '查看硬件版本', '硬件管理', '查看硬件版本'),
   ('production:view', '查看生产记录', '生产管理', '查看生产数据'),
   ('production:test', '出厂测试', '生产管理', '处理烧录后的出厂测试'),
+  ('production:audit', '审核生产测试', '生产管理', '质量检查人员审核出厂测试'),
   ('shipping:view', '查看发货数据', '发货管理', '查看发货和出库数据'),
   ('shipping:audit', '审核发货批次', '发货管理', '审核发货批次'),
   ('aftersales:view', '查看售后数据', '售后管理', '查看维修和故障分析'),
@@ -98,6 +101,20 @@ SELECT r.id, p.id
 FROM roles r
 JOIN permissions p
 WHERE r.role_code = 'system_admin';
+
+INSERT IGNORE INTO role_permissions (role_id, permission_id)
+SELECT r.id, p.id
+FROM roles r
+JOIN permissions p
+WHERE r.role_code = 'quality_staff'
+  AND p.permission_code IN ('project:view', 'production:view', 'production:test', 'production:audit', 'report:view');
+
+INSERT IGNORE INTO role_permissions (role_id, permission_id)
+SELECT r.id, p.id
+FROM roles r
+JOIN permissions p
+WHERE r.role_code = 'shipping_auditor'
+  AND p.permission_code IN ('project:view', 'shipping:view', 'shipping:audit', 'report:view');
 
 INSERT IGNORE INTO user_roles (user_id, role_id)
 SELECT u.id, r.id

@@ -138,7 +138,7 @@
                   </button>
 
                   <button
-                    v-if="canUseAction('issue:reply') && item.closeStatus === 'open'"
+                    v-if="canReplyIssue(item)"
                     class="text-btn green"
                     @click="openReplyDialog(item)"
                   >
@@ -204,17 +204,6 @@
               >
                 {{ type }}
               </option>
-            </select>
-          </label>
-
-          <label>
-            问题来源
-            <select v-model="issueForm.issueSource">
-              <option value="">请选择来源</option>
-              <option value="研发">研发</option>
-              <option value="测试">测试</option>
-              <option value="生产">生产</option>
-              <option value="售后">售后</option>
             </select>
           </label>
 
@@ -422,7 +411,7 @@
 
         <div class="dialog-footer">
           <button
-            v-if="canUseAction('issue:reply') && selectedIssue.closeStatus === 'open'"
+            v-if="canReplyIssue(selectedIssue)"
             class="reset-btn"
             @click="openReplyDialog(selectedIssue)"
           >
@@ -457,6 +446,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { canUseAction } from '@/utils/permission'
+import { getCurrentUser, getCurrentUserName } from '@/utils/currentUser'
 
 import { getProjects } from '@/api/project'
 
@@ -469,12 +459,9 @@ import {
   reopenIssueApi
 } from '@/api/issue'
 
-const currentUserName = ref(
-  localStorage.getItem('username') ||
-  localStorage.getItem('accountName') ||
-  localStorage.getItem('realName') ||
-  '当前用户'
-)
+const currentUser = getCurrentUser()
+const currentUserId = Number(currentUser.id || 0)
+const currentUserName = ref(getCurrentUserName('当前用户'))
 
 const filters = reactive({
   keyword: '',
@@ -513,7 +500,7 @@ const deviceTypeOptions = [
 const issueForm = reactive({
   projectName: '',
   deviceType: '',
-  issueSource: '',
+  issueSource: '研发',
   level: '中',
   issueTitle: '',
   ownerId: 0,
@@ -750,6 +737,14 @@ function canCloseIssue(item) {
   return item.creator === currentUserName.value
 }
 
+function canReplyIssue(item) {
+  if (!item) return false
+  if (!canUseAction('issue:reply') || item.closeStatus !== 'open') return false
+  const ownerId = Number(item.ownerId || 0)
+  if (ownerId && currentUserId) return ownerId === currentUserId
+  return item.owner === currentUserName.value
+}
+
 function resetFilters() {
   filters.keyword = ''
   filters.projectName = ''
@@ -764,7 +759,7 @@ function openCreateDialog() {
 
   issueForm.projectName = ''
   issueForm.deviceType = ''
-  issueForm.issueSource = ''
+  issueForm.issueSource = '研发'
   issueForm.level = '中'
   issueForm.issueTitle = ''
   issueForm.ownerId = 0
@@ -801,11 +796,6 @@ async function saveIssue() {
     return
   }
 
-  if (!issueForm.issueSource) {
-    alert('请选择问题来源')
-    return
-  }
-
   if (!issueForm.issueTitle) {
     alert('请输入问题名称')
     return
@@ -827,8 +817,8 @@ async function saveIssue() {
     projectId,
     projectName: issueForm.projectName,
     deviceType: issueForm.deviceType,
-    issueSource: issueForm.issueSource,
-    source: issueForm.issueSource,
+    issueSource: '研发',
+    source: '研发',
     level: issueForm.level,
     severity: issueForm.level,
     issueTitle: issueForm.issueTitle,
@@ -836,10 +826,10 @@ async function saveIssue() {
     ownerId: Number(issueForm.ownerId || 0),
     owner: issueForm.owner,
     ownerName: issueForm.owner,
-    creatorId: 1,
+    creatorId: currentUserId,
     creator: currentUserName.value,
     creatorName: currentUserName.value,
-    createUserId: 1,
+    createUserId: currentUserId,
     createUserName: currentUserName.value,
     planCloseTime: issueForm.planCloseTime || '',
     closeStatus: frontendCloseStatusToBackend('open'),
@@ -877,6 +867,11 @@ function viewIssue(item) {
 }
 
 function openReplyDialog(item) {
+  if (!canReplyIssue(item)) {
+    alert('只有当前问题负责人可以回复该问题')
+    return
+  }
+
   currentReplyIssue.value = item
   replyForm.replyUser = currentUserName.value
   replyForm.content = ''
@@ -892,7 +887,7 @@ async function saveReply() {
   }
 
   const payload = {
-    replyUserId: 1,
+    replyUserId: currentUserId,
     replyUser: currentUserName.value,
     replyUserName: currentUserName.value,
     content: replyForm.content,

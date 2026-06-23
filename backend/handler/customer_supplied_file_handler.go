@@ -221,8 +221,8 @@ func CreateCustomerSuppliedFileHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func DeleteCustomerSuppliedFileHandler(w http.ResponseWriter, r *http.Request, id int64) {
-	if !hasRequestRole(r, "project_assistant") {
-		http.Error(w, "无删除权限：客供资料仅项目助理可删除", http.StatusForbidden)
+	if !hasRequestRole(r, "project_assistant") && !hasRequestRole(r, "system_admin") {
+		http.Error(w, "无删除权限：客供资料仅项目助理或管理员可删除", http.StatusForbidden)
 		return
 	}
 

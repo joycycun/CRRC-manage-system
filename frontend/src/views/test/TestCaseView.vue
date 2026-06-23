@@ -433,6 +433,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { canUseAction } from '@/utils/permission'
 import { buildUploadFilePayload, downloadLocalFile, getFilePreviewUrl, openLocalFilePreview } from '@/utils/filePreview'
+import { getAuditUserPayload } from '@/utils/currentUser'
 
 import { getProjects } from '@/api/project'
 
@@ -932,10 +933,7 @@ async function approveTestCase(item) {
 
   try {
     const res = await auditTestCaseApi(item.id, {
-      auditorId: 1,
-      auditorName: '领导',
-      auditUserId: 1,
-      auditUserName: '领导',
+      ...getAuditUserPayload(),
       auditStatus: frontendAuditStatusToBackend('approved'),
       status: frontendAuditStatusToBackend('approved'),
       rejectReason: ''
@@ -969,10 +967,7 @@ async function rejectTestCase(item) {
 
   try {
     const res = await auditTestCaseApi(item.id, {
-      auditorId: 1,
-      auditorName: '领导',
-      auditUserId: 1,
-      auditUserName: '领导',
+      ...getAuditUserPayload(),
       auditStatus: frontendAuditStatusToBackend('rejected'),
       status: frontendAuditStatusToBackend('rejected'),
       rejectReason: reason

@@ -103,7 +103,7 @@
                 </button>
 
                 <button
-                  v-if="canUseAction('requirement:submit') && (item.auditStatus === 'draft' || item.auditStatus === 'rejected')"
+                  v-if="canSubmitChange(item)"
                   class="text-btn blue"
                   @click="submitChange(item)"
                 >
@@ -168,18 +168,11 @@
           </label>
 
           <label>
-            需求变更名称
-            <input
-              v-model="uploadForm.changeName"
-              placeholder="例如：波哥大有轨需求变更V1.0"
-            />
-          </label>
-
-          <label>
             文件名称
             <input
               v-model="uploadForm.fileName"
-              placeholder="例如：需求变更_V1.0.docx"
+              placeholder="选择文件后自动填充"
+              disabled
             />
           </label>
 
@@ -233,8 +226,11 @@
           </div>
 
           <div>
-            <span>文件名称</span>
-            <strong>{{ selectedChange.fileName }}</strong>
+            <span>文件</span>
+            <button class="detail-file-link" @click="downloadChange(selectedChange)">
+              <span class="detail-file-icon">DOC</span>
+              <strong>{{ selectedChange.fileName || '下载需求变更文件' }}</strong>
+            </button>
           </div>
 
           <div>
@@ -316,6 +312,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { canUseAction } from '@/utils/permission'
 import { buildUploadFilePayload, downloadLocalFile, getFilePreviewUrl } from '@/utils/filePreview'
+import { getAuditUserPayload, getCurrentUserParams } from '@/utils/currentUser'
 
 import { getProjects } from '@/api/project'
 
@@ -612,6 +609,7 @@ async function handleFileChange(event) {
 
   uploadForm.file = file
   uploadForm.fileName = file.name
+  uploadForm.changeName = file.name
   try {
     Object.assign(uploadForm, await buildUploadFilePayload(file))
   } catch (err) {
@@ -625,17 +623,13 @@ async function uploadChange() {
     return
   }
 
-  if (!uploadForm.changeName) {
-    alert('请输入变更标题')
-    return
-  }
-
   if (!uploadForm.file) {
     alert('请上传需求变更文件')
     return
   }
 
   const projectId = projectMap.value[uploadForm.projectName]
+  const currentUser = getCurrentUserParams()
 
   if (!projectId) {
     alert('没有找到对应项目ID，请重新选择项目')
@@ -644,8 +638,8 @@ async function uploadChange() {
 
   const payload = {
     projectId,
-    changeTitle: uploadForm.changeName,
-    changeName: uploadForm.changeName,
+    changeTitle: uploadForm.fileName,
+    changeName: uploadForm.fileName,
     changeType: uploadForm.changeType,
     fileId: uploadForm.fileId,
     fileName: uploadForm.fileName,
@@ -653,8 +647,8 @@ async function uploadChange() {
     fileData: uploadForm.fileData,
     status: frontendStatusToBackend('draft'),
     closeStatus: '未关闭',
-    submitUserId: 1,
-    submitUserName: currentUserName.value,
+    submitUserId: currentUser.userId || 0,
+    submitUserName: currentUser.realName || currentUser.username || currentUserName.value,
     remark: uploadForm.remark || ''
   }
 
@@ -683,6 +677,19 @@ function viewChange(item) {
 
 function downloadChange(item) {
   downloadLocalFile(item, '需求变更文件')
+}
+
+function canSubmitChange(item) {
+  if (!canUseAction('requirement:submit')) return false
+  if (!['draft', 'rejected'].includes(item.auditStatus)) return false
+
+  const currentUser = getCurrentUserParams()
+  const currentID = Number(currentUser.userId || 0)
+  const submitID = Number(item.submitUserId || 0)
+  if (currentID && submitID && currentID === submitID) return true
+
+  const currentNames = [currentUser.realName, currentUser.username, currentUserName.value].filter(Boolean)
+  return currentNames.includes(item.submitUserName) || currentNames.includes(item.uploader)
 }
 
 async function submitChange(item) {
@@ -721,8 +728,7 @@ async function approveChange(item) {
 
   try {
     const res = await auditRequirementChange(item.id, {
-      auditUserId: 1,
-      auditUserName: '领导',
+      ...getAuditUserPayload(),
       auditStatus: '已通过',
       rejectReason: ''
     })
@@ -754,8 +760,7 @@ async function rejectChange(item) {
 
   try {
     const res = await auditRequirementChange(item.id, {
-      auditUserId: 1,
-      auditUserName: '领导',
+      ...getAuditUserPayload(),
       auditStatus: '已驳回',
       rejectReason: reason
     })
@@ -787,9 +792,10 @@ async function closeChange(item) {
   if (!ok) return
 
   try {
+    const currentUser = getCurrentUserParams()
     const res = await closeRequirementChange(item.id, {
-      closeUserId: 1,
-      closeUserName: currentUserName.value
+      closeUserId: currentUser.userId || 0,
+      closeUserName: currentUser.realName || currentUser.username || currentUserName.value
     })
 
     const result = getResponseData(res)
@@ -1216,6 +1222,54 @@ async function deleteChange(item) {
 .detail-card strong {
   color: #f8fafc;
   font-size: 14px;
+}
+
+.detail-file-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #f8fafc;
+  text-align: left;
+  cursor: pointer;
+}
+
+.detail-file-link:hover strong {
+  color: #93c5fd;
+  text-decoration: underline;
+}
+
+.detail-file-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 28px;
+  border-radius: 8px;
+  background: #1d4ed833;
+  color: #93c5fd;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.detail-card .detail-file-icon {
+  display: inline-flex;
+  margin-bottom: 0;
+  color: #93c5fd;
+}
+
+.detail-file-link strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #e2e8f0;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .remark-card {

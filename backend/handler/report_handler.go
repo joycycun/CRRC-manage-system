@@ -9,6 +9,9 @@ import (
 	"strings"
 )
 
+const approvedProjectSQL = "IFNULL(audit_status, '未提交') = '已通过'"
+const approvedProjectAliasSQL = "IFNULL(p.audit_status, '未提交') = '已通过'"
+
 // ============================================================
 // GET /api/dashboard/summary
 // 首页统计
@@ -30,14 +33,16 @@ func DashboardSummaryHandler(w http.ResponseWriter, r *http.Request) {
 
 	err := config.DB.QueryRow(`
 		SELECT
-			(SELECT COUNT(*) FROM projects WHERE IFNULL(is_deleted, 0) = 0 AND status = '进行中') AS ongoing_projects,
+			(SELECT COUNT(*) FROM projects WHERE IFNULL(is_deleted, 0) = 0 AND status = '进行中' AND IFNULL(audit_status, '未提交') = '已通过') AS ongoing_projects,
 			(SELECT COUNT(*) FROM projects
 			 WHERE IFNULL(is_deleted, 0) = 0
+			   AND IFNULL(audit_status, '未提交') = '已通过'
 			   AND status = '进行中'
 			   AND COALESCE(submit_time, created_at) >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
 			   AND COALESCE(submit_time, created_at) < DATE_ADD(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 1 MONTH)) AS current_month_projects,
 			(SELECT COUNT(*) FROM projects
 			 WHERE IFNULL(is_deleted, 0) = 0
+			   AND IFNULL(audit_status, '未提交') = '已通过'
 			   AND status = '进行中'
 			   AND COALESCE(submit_time, created_at) >= DATE_SUB(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 1 MONTH)
 			   AND COALESCE(submit_time, created_at) < DATE_FORMAT(CURDATE(), '%Y-%m-01')) AS previous_month_projects,
@@ -126,6 +131,12 @@ func DashboardSummaryHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data.Notifications = append(data.Notifications, issueNotifications...)
+	requirementChangeNotifications, err := queryRequirementChangeConfirmedNotifications(userID, username, realName)
+	if err != nil {
+		http.Error(w, "查询需求变更确认通知失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	data.Notifications = append(data.Notifications, requirementChangeNotifications...)
 
 	data.RecentReleases, err = queryRecentSoftwareReleases()
 	if err != nil {
@@ -256,10 +267,72 @@ func queryDashboardTodos(userID int64, username string, realName string, departm
 		todos = append(todos, requestItems...)
 	}
 
+	requirementChangeTodos, err := queryRequirementChangeReceiptTodos(userID, username, realName)
+	if err != nil {
+		return nil, err
+	}
+	todos = append(todos, requirementChangeTodos...)
+
 	if len(todos) > 8 {
 		return todos[:8], nil
 	}
 	return todos, nil
+}
+
+func queryRequirementChangeReceiptTodos(userID int64, username string, realName string) ([]model.DashboardTodoItem, error) {
+	if err := ensureRequirementChangeConfirmationTable(); err != nil {
+		return nil, err
+	}
+
+	rows, err := config.DB.Query(`
+		SELECT
+			rc.id,
+			IFNULL(rc.change_title, ''),
+			IFNULL(DATE_FORMAT(rc.audit_time, '%m-%d'), DATE_FORMAT(rc.updated_at, '%m-%d'))
+		FROM requirement_changes rc
+		JOIN projects p ON p.id = rc.project_id
+		WHERE IFNULL(rc.is_deleted, 0) = 0
+		  AND rc.status IN ('已通过', '审核通过', 'approved')
+		  AND (
+			? = 0
+			OR p.owner_id = ?
+			OR p.owner_name IN (?, ?)
+		  )
+		  AND NOT EXISTS (
+			SELECT 1
+			FROM requirement_change_confirmations rcc
+			WHERE rcc.requirement_change_id = rc.id
+			  AND (
+				(? <> 0 AND rcc.confirm_user_id = ?)
+				OR (? <> '' AND rcc.confirm_user_name = ?)
+			  )
+		  )
+		ORDER BY COALESCE(rc.audit_time, rc.updated_at) DESC
+		LIMIT 6
+	`, userID, userID, realName, username, userID, userID, realName, realName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	list := make([]model.DashboardTodoItem, 0)
+	for rows.Next() {
+		var id int64
+		var title string
+		var deadline string
+		if err := rows.Scan(&id, &title, &deadline); err != nil {
+			return nil, err
+		}
+		list = append(list, model.DashboardTodoItem{
+			ID:       "requirement-change-receipt-" + strconv.FormatInt(id, 10),
+			Title:    "需求变更待确认：" + title,
+			Deadline: deadline,
+			Level:    "中",
+			Type:     "requirementChangeReceipt",
+			Link:     "/requirement/change",
+		})
+	}
+	return list, rows.Err()
 }
 
 func queryAuditTodos() ([]model.DashboardTodoItem, error) {
@@ -763,6 +836,62 @@ func queryIssueConfirmedNotifications(userID int64, username string, realName st
 	return list, rows.Err()
 }
 
+func queryRequirementChangeConfirmedNotifications(userID int64, username string, realName string) ([]model.DashboardTodoItem, error) {
+	if err := ensureRequirementChangeConfirmationTable(); err != nil {
+		return nil, err
+	}
+	if err := ensureNotificationReadTable(); err != nil {
+		return nil, err
+	}
+
+	rows, err := config.DB.Query(`
+		SELECT id, title, deadline, level, todo_type, link
+		FROM (
+			SELECT
+				CONCAT('requirement-change-confirmed-', rc.id, '-', rcc.id) AS id,
+				CONCAT('需求变更软件负责人已收到：', rc.change_title, '（', rcc.confirm_user_name, '）') AS title,
+				IFNULL(DATE_FORMAT(rcc.confirm_time, '%m-%d'), '') AS deadline,
+				'中' AS level,
+				'requirementChangeConfirmed' AS todo_type,
+				'/requirement/change' AS link,
+				rcc.confirm_time AS sort_time
+			FROM requirement_change_confirmations rcc
+			JOIN requirement_changes rc ON rc.id = rcc.requirement_change_id
+			WHERE IFNULL(rc.is_deleted, 0) = 0
+			  AND (
+				? = 0
+				OR rc.submit_user_id = ?
+				OR rc.submit_user_name IN (?, ?)
+			  )
+		) requirement_change_results
+		WHERE NOT EXISTS (
+			SELECT 1
+			FROM notification_reads nr
+			WHERE nr.notification_id = requirement_change_results.id
+			  AND (
+				(? <> 0 AND nr.user_id = ?)
+				OR (? <> '' AND nr.username = ?)
+			  )
+		)
+		ORDER BY sort_time DESC
+		LIMIT 8
+	`, userID, userID, realName, username, userID, userID, username, username)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	list := make([]model.DashboardTodoItem, 0)
+	for rows.Next() {
+		var item model.DashboardTodoItem
+		if err := rows.Scan(&item.ID, &item.Title, &item.Deadline, &item.Level, &item.Type, &item.Link); err != nil {
+			return nil, err
+		}
+		list = append(list, item)
+	}
+	return list, rows.Err()
+}
+
 func queryBurnTestTodos() ([]model.DashboardTodoItem, error) {
 	rows, err := config.DB.Query(`
 		SELECT
@@ -813,15 +942,37 @@ func queryProductionRequestTodos() ([]model.DashboardTodoItem, error) {
 
 	rows, err := config.DB.Query(`
 		SELECT
-			id,
-			product_model,
-			IFNULL(device_type, ''),
-			quantity,
-			IFNULL(DATE_FORMAT(created_at, '%m-%d'), '')
-		FROM production_requests
-		WHERE IFNULL(is_deleted, 0) = 0
-		  AND status = 'pending'
-		ORDER BY created_at ASC
+			pr.id,
+			pr.product_model,
+			IFNULL(pr.device_type, ''),
+			pr.quantity,
+			(
+				SELECT COUNT(*)
+				FROM inventory_devices inv
+				WHERE IFNULL(inv.is_deleted, 0) = 0
+				  AND inv.inventory_status = '在库'
+				  AND inv.product_model = pr.product_model
+				  AND (
+					IFNULL(pr.device_type, '') = ''
+					OR inv.device_type = pr.device_type
+				  )
+			) AS stock_count,
+			IFNULL(DATE_FORMAT(pr.created_at, '%m-%d'), '')
+		FROM production_requests pr
+		WHERE IFNULL(pr.is_deleted, 0) = 0
+		  AND pr.status = 'pending'
+		  AND (
+			SELECT COUNT(*)
+			FROM inventory_devices inv
+			WHERE IFNULL(inv.is_deleted, 0) = 0
+			  AND inv.inventory_status = '在库'
+			  AND inv.product_model = pr.product_model
+			  AND (
+				IFNULL(pr.device_type, '') = ''
+				OR inv.device_type = pr.device_type
+			  )
+		  ) < pr.quantity
+		ORDER BY pr.created_at ASC
 		LIMIT 8
 	`)
 	if err != nil {
@@ -835,13 +986,18 @@ func queryProductionRequestTodos() ([]model.DashboardTodoItem, error) {
 		var productModel string
 		var deviceType string
 		var quantity int64
+		var stockCount int64
 		var deadline string
-		if err := rows.Scan(&id, &productModel, &deviceType, &quantity, &deadline); err != nil {
+		if err := rows.Scan(&id, &productModel, &deviceType, &quantity, &stockCount, &deadline); err != nil {
 			return nil, err
 		}
-		title := "生产请求：" + productModel + "（" + strconv.FormatInt(quantity, 10) + " 台）"
+		shortage := quantity - stockCount
+		if shortage < 0 {
+			shortage = 0
+		}
+		title := "生产请求：" + productModel + "（需求 " + strconv.FormatInt(quantity, 10) + " 台，在库 " + strconv.FormatInt(stockCount, 10) + " 台，缺 " + strconv.FormatInt(shortage, 10) + " 台）"
 		if deviceType != "" {
-			title = "生产请求：" + productModel + " / " + deviceType + "（" + strconv.FormatInt(quantity, 10) + " 台）"
+			title = "生产请求：" + productModel + " / " + deviceType + "（需求 " + strconv.FormatInt(quantity, 10) + " 台，在库 " + strconv.FormatInt(stockCount, 10) + " 台，缺 " + strconv.FormatInt(shortage, 10) + " 台）"
 		}
 		list = append(list, model.DashboardTodoItem{
 			ID:       "production-request-" + strconv.FormatInt(id, 10),
@@ -932,6 +1088,7 @@ func ProjectProgressReportHandler(w http.ResponseWriter, r *http.Request) {
 			IFNULL(DATE_FORMAT(p.updated_at, '%Y-%m-%d %H:%i:%s'), '')
 		FROM projects p
 		WHERE IFNULL(p.is_deleted, 0) = 0
+		  AND IFNULL(p.audit_status, '未提交') = '已通过'
 		ORDER BY p.id DESC
 	`)
 	if err != nil {
@@ -1043,7 +1200,10 @@ func VersionMatrixReportHandler(w http.ResponseWriter, r *http.Request) {
 			IFNULL(DATE_FORMAT(sv.updated_at, '%Y-%m-%d %H:%i:%s'), '') AS update_time,
 			IFNULL(sv.description, '') AS remark
 		FROM software_versions sv
-		LEFT JOIN projects p ON sv.project_id = p.id AND IFNULL(p.is_deleted, 0) = 0
+		INNER JOIN projects p
+		  ON sv.project_id = p.id
+		 AND IFNULL(p.is_deleted, 0) = 0
+		 AND IFNULL(p.audit_status, '未提交') = '已通过'
 		LEFT JOIN hardware_versions hv ON sv.hardware_id = hv.id
 		WHERE IFNULL(sv.is_deleted, 0) = 0
 
@@ -1061,7 +1221,10 @@ func VersionMatrixReportHandler(w http.ResponseWriter, r *http.Request) {
 			IFNULL(DATE_FORMAT(hv.updated_at, '%Y-%m-%d %H:%i:%s'), '') AS update_time,
 			IFNULL(hv.description, '') AS remark
 		FROM hardware_versions hv
-		LEFT JOIN projects p ON hv.project_id = p.id AND IFNULL(p.is_deleted, 0) = 0
+		INNER JOIN projects p
+		  ON hv.project_id = p.id
+		 AND IFNULL(p.is_deleted, 0) = 0
+		 AND IFNULL(p.audit_status, '未提交') = '已通过'
 		WHERE NOT EXISTS (
 			SELECT 1
 			FROM software_versions sv
@@ -1178,7 +1341,10 @@ func IssueStatisticsReportHandler(w http.ResponseWriter, r *http.Request) {
 			IFNULL(i.issue_source, '测试问题') AS issue_source,
 			IFNULL(i.reopen_count, 0) AS reopen_count
 		FROM issues i
-		LEFT JOIN projects p ON i.project_id = p.id AND IFNULL(p.is_deleted, 0) = 0
+		INNER JOIN projects p
+		  ON i.project_id = p.id
+		 AND IFNULL(p.is_deleted, 0) = 0
+		 AND IFNULL(p.audit_status, '未提交') = '已通过'
 		WHERE IFNULL(i.is_deleted, 0) = 0
 
 		UNION ALL
@@ -1197,7 +1363,10 @@ func IssueStatisticsReportHandler(w http.ResponseWriter, r *http.Request) {
 			'维修记录' AS issue_source,
 			0 AS reopen_count
 		FROM repair_records rr
-		LEFT JOIN projects p ON rr.project_id = p.id AND IFNULL(p.is_deleted, 0) = 0
+		INNER JOIN projects p
+		  ON rr.project_id = p.id
+		 AND IFNULL(p.is_deleted, 0) = 0
+		 AND IFNULL(p.audit_status, '未提交') = '已通过'
 		WHERE IFNULL(rr.is_deleted, 0) = 0
 		ORDER BY update_time DESC
 	`)
@@ -1298,6 +1467,7 @@ func GlobalSearchHandler(w http.ResponseWriter, r *http.Request) {
 			IFNULL(status, '') AS status
 		FROM projects
 		WHERE IFNULL(is_deleted, 0) = 0
+		  AND IFNULL(audit_status, '未提交') = '已通过'
 		  AND (project_name LIKE ? OR project_code LIKE ? OR owner_name LIKE ?)
 		ORDER BY updated_at DESC
 		LIMIT 8
@@ -1321,7 +1491,10 @@ func GlobalSearchHandler(w http.ResponseWriter, r *http.Request) {
 				IFNULL(sv.software_status, '') AS version_status,
 				sv.updated_at AS sort_time
 			FROM software_versions sv
-			LEFT JOIN projects p ON p.id = sv.project_id
+			INNER JOIN projects p
+			  ON p.id = sv.project_id
+			 AND IFNULL(p.is_deleted, 0) = 0
+			 AND IFNULL(p.audit_status, '未提交') = '已通过'
 			WHERE IFNULL(sv.is_deleted, 0) = 0
 			  AND (
 				sv.software_version LIKE ?
@@ -1342,8 +1515,12 @@ func GlobalSearchHandler(w http.ResponseWriter, r *http.Request) {
 				IFNULL(hv.status, '') AS version_status,
 				hv.updated_at AS sort_time
 			FROM hardware_versions hv
-			LEFT JOIN projects p ON p.id = hv.project_id
-			WHERE (
+			INNER JOIN projects p
+			  ON p.id = hv.project_id
+			 AND IFNULL(p.is_deleted, 0) = 0
+			 AND IFNULL(p.audit_status, '未提交') = '已通过'
+			WHERE IFNULL(hv.is_deleted, 0) = 0
+			  AND (
 				hv.hardware_version LIKE ?
 				OR hv.device_type LIKE ?
 				OR p.project_name LIKE ?

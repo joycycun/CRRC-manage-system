@@ -280,12 +280,6 @@
             <strong>{{ selectedConfig.fileSize || '-' }}</strong>
           </div>
 
-          <div>
-            <span>文件预览</span>
-            <button class="inline-link" @click="openConfigFile(selectedConfig)">
-              点开查看文件
-            </button>
-          </div>
         </div>
 
         <div class="remark-card">
@@ -301,10 +295,6 @@
         <div class="dialog-footer">
           <button class="reset-btn" @click="downloadConfig(selectedConfig)">
             下载文件
-          </button>
-
-          <button class="primary-btn" @click="openConfigFile(selectedConfig)">
-            点开查看
           </button>
 
           <button class="primary-btn" @click="selectedConfig = null">

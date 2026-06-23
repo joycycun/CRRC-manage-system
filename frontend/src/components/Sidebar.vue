@@ -181,7 +181,7 @@
       </div>
 
       <!-- 生产管理 -->
-      <div v-if="canAccessGroup(['/production/burn', '/production/factory-test', '/production/inventory'])" class="menu-group">
+      <div v-if="canAccessGroup(['/production/test-outline', '/production/burn', '/production/factory-test', '/production/inventory'])" class="menu-group">
         <button class="menu-item menu-button" @click="toggleMenu('production')">
           <span class="menu-left">
             <span class="menu-icon">▥</span>
@@ -191,6 +191,15 @@
         </button>
 
         <div v-show="openedMenus.production" class="submenu">
+          <router-link
+            v-if="canAccess('/production/test-outline')"
+            to="/production/test-outline"
+            class="submenu-item"
+            :class="{ active: isActive('/production/test-outline') }"
+          >
+            生产测试大纲
+          </router-link>
+
           <router-link
             v-if="canAccess('/production/burn')"
             to="/production/burn"
@@ -394,7 +403,23 @@ const currentUserName = computed(() => {
 })
 
 const currentRoleName = computed(() => {
-  const firstRole = storedRoles.value[0]
+  const rolePriority = [
+    'system_admin',
+    'leader',
+    'project_assistant',
+    'quality_staff',
+    'software_owner',
+    'hardware_owner',
+    'production_staff',
+    'shipping_auditor',
+    'shipping_staff',
+    'aftersales_staff'
+  ]
+  const roles = storedRoles.value
+  const matchedRole = rolePriority
+    .map(code => roles.find(role => (role.roleCode || role.role_code || role.code || role) === code))
+    .find(Boolean)
+  const firstRole = matchedRole || roles[0]
   return firstRole?.roleName || firstRole?.role_name || storedUser.value.department || localStorage.getItem('department') || '系统用户'
 })
 

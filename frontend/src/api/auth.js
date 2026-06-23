@@ -16,3 +16,11 @@ export const loginApi = (username, password) => {
 export const changePasswordApi = data => {
   return request.post("/change-password", data);
 };
+
+export const getRoleOptionsApi = () => {
+  return request.get("/roles");
+};
+
+export const createUserApi = data => {
+  return request.post("/users", data);
+};

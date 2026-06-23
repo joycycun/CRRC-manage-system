@@ -110,10 +110,6 @@
                     打开
                   </button>
 
-                  <button v-if="canUseAction('branch:download')" class="text-btn yellow" @click="copyCloneUrl(item)">
-                    复制
-                  </button>
-
                   <button v-if="canUseAction('branch:delete')" class="text-btn red" @click="deleteBranchRecord(item)">
                     删除
                   </button>
@@ -182,21 +178,18 @@
             />
           </label>
 
-          <label class="full-row">
+          <label class="full-row owner-field">
             软件负责人
             <input
-              :value="editMode === 'create' ? currentUserName : branchForm.owner"
+              :value="selectedProjectOwnerName || '选择项目后自动带出'"
               disabled
             />
           </label>
 
-          <label class="full-row">
-            Clone 地址
-            <input
-              v-model="branchForm.cloneUrl"
-              placeholder="例如：http://bc.zycoo.com:3000/speaker/X10-Series_PA_Intercom.git"
-            />
-          </label>
+          <div class="full-row readonly-info">
+            <span>Clone 地址</span>
+            <strong>{{ COMMON_CLONE_URL }}</strong>
+          </div>
         </div>
 
         <div class="dialog-footer">
@@ -254,10 +247,6 @@
         </div>
 
         <div class="dialog-footer">
-          <button v-if="canUseAction('branch:download')" class="reset-btn" @click="copyCloneUrl(selectedBranch)">
-            复制 Clone 地址
-          </button>
-
           <button v-if="canUseAction('branch:download')" class="primary-btn" @click="openCloneUrl(selectedBranch)">
             打开 Clone 地址
           </button>
@@ -284,12 +273,7 @@ import {
   deleteBranch
 } from '@/api/software'
 
-const currentUserName = ref(
-  localStorage.getItem('username') ||
-  localStorage.getItem('accountName') ||
-  localStorage.getItem('realName') ||
-  '当前用户'
-)
+const COMMON_CLONE_URL = 'http://bc.zycoo.com:3000/speaker/X10-Series_PA_Intercom.git'
 
 const filters = reactive({
   keyword: '',
@@ -304,6 +288,7 @@ const editMode = ref('create')
 
 const projectOptions = ref([])
 const projectMap = ref({})
+const projectDetailMap = ref({})
 
 const deviceTypeOptions = [
   '广播控制盒',
@@ -328,6 +313,14 @@ const branchForm = reactive({
 })
 
 const branchList = ref([])
+
+const selectedProject = computed(() => {
+  return projectDetailMap.value[branchForm.projectName] || null
+})
+
+const selectedProjectOwnerName = computed(() => {
+  return selectedProject.value?.owner || selectedProject.value?.ownerName || ''
+})
 
 onMounted(async () => {
   await loadProjects()
@@ -373,11 +366,14 @@ async function loadProjects() {
     projectOptions.value = list.map(item => item.projectName)
 
     const map = {}
+    const detailMap = {}
     list.forEach(item => {
       map[item.projectName] = item.id
+      detailMap[item.projectName] = item
     })
 
     projectMap.value = map
+    projectDetailMap.value = detailMap
   } catch (err) {
     console.error('加载项目失败：', err)
     alert('加载项目失败')
@@ -413,7 +409,7 @@ function normalizeBranch(item) {
     owner: item.owner || item.ownerName || item.responsibleUser || '未分配',
     createTime: formatDate(item.createTime || item.createdAt),
     branchName: item.branchName || item.repoName || item.name || '',
-    cloneUrl: item.cloneUrl || item.repoUrl || item.gitUrl || item.repositoryUrl || ''
+    cloneUrl: item.cloneUrl || item.repoUrl || item.gitUrl || item.repositoryUrl || COMMON_CLONE_URL
     
   }
 }
@@ -451,9 +447,9 @@ function openCreateDialog() {
   branchForm.projectName = ''
   branchForm.deviceType = ''
   branchForm.branchName = ''
-  branchForm.owner = currentUserName.value
+  branchForm.owner = ''
   branchForm.createTime = new Date().toISOString().slice(0, 10)
-  branchForm.cloneUrl = ''
+  branchForm.cloneUrl = COMMON_CLONE_URL
 
   showEditDialog.value = true
 }
@@ -465,9 +461,9 @@ function openEditDialog(item) {
   branchForm.projectName = item.projectName
   branchForm.deviceType = item.deviceType
   branchForm.branchName = item.branchName
-  branchForm.owner = item.owner || currentUserName.value
+  branchForm.owner = item.owner || ''
   branchForm.createTime = item.createTime
-  branchForm.cloneUrl = item.cloneUrl
+  branchForm.cloneUrl = item.cloneUrl || COMMON_CLONE_URL
 
   showEditDialog.value = true
 }
@@ -488,15 +484,18 @@ async function saveBranch() {
     return
   }
 
-  if (!branchForm.cloneUrl) {
-    alert('请输入 Clone 地址')
-    return
-  }
-
   const projectId = projectMap.value[branchForm.projectName]
+  const project = projectDetailMap.value[branchForm.projectName]
+  const ownerId = Number(project?.ownerId || 0)
+  const ownerName = project?.owner || project?.ownerName || ''
 
   if (!projectId) {
     alert('没有找到项目ID，请重新选择项目')
+    return
+  }
+
+  if (!ownerName) {
+    alert('当前项目未绑定软件负责人，请先在项目立项中维护软件负责人')
     return
   }
 
@@ -505,15 +504,11 @@ async function saveBranch() {
     projectName: branchForm.projectName,
     deviceType: branchForm.deviceType,
     branchName: branchForm.branchName,
-    ownerId: 1,
-    owner: editMode.value === 'create'
-      ? currentUserName.value
-      : (branchForm.owner || currentUserName.value),
-    ownerName: editMode.value === 'create'
-      ? currentUserName.value
-      : (branchForm.owner || currentUserName.value),
+    ownerId,
+    owner: ownerName,
+    ownerName,
     createTime: branchForm.createTime || new Date().toISOString().slice(0, 10),
-    cloneUrl: branchForm.cloneUrl
+    cloneUrl: COMMON_CLONE_URL
   }
 
   try {
@@ -553,26 +548,6 @@ function openCloneUrl(item) {
   }
 
   window.open(item.cloneUrl, '_blank')
-}
-
-async function copyCloneUrl(item) {
-  if (!item.cloneUrl) {
-    alert('当前项目分支没有配置 Clone 地址')
-    return
-  }
-
-  try {
-    await navigator.clipboard.writeText(item.cloneUrl)
-    alert('Clone 地址已复制')
-  } catch (error) {
-    const input = document.createElement('input')
-    input.value = item.cloneUrl
-    document.body.appendChild(input)
-    input.select()
-    document.execCommand('copy')
-    document.body.removeChild(input)
-    alert('Clone 地址已复制')
-  }
 }
 
 async function deleteBranchRecord(item) {
@@ -859,7 +834,7 @@ async function deleteBranchRecord(item) {
 }
 
 .operation-col {
-  width: 320px;
+  width: 260px;
   text-align: right !important;
 }
 
@@ -972,6 +947,28 @@ async function deleteBranchRecord(item) {
   grid-column: 1 / -1;
 }
 
+.readonly-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: #cbd5e1;
+  font-size: 13px;
+}
+
+.readonly-info strong {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  background: #020617;
+  color: #94a3b8;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 500;
+  word-break: break-all;
+}
+
 .dialog-footer {
   padding: 16px 20px;
   border-top: 1px solid #1e293b;
@@ -1038,7 +1035,7 @@ async function deleteBranchRecord(item) {
   .form-grid,
   .detail-card {
     grid-template-columns: 1fr;
-  }s
+  }
 
   .full-detail-row {
     grid-column: auto;

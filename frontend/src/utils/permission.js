@@ -1,6 +1,6 @@
 const FULL_ACCESS_ROLES = ['system_admin', 'leader']
 const LEADER_ROLES = ['leader', 'system_admin']
-const LIMITED_ROLES = ['software_owner', 'hardware_owner', 'project_assistant', 'production_staff', 'shipping_staff', 'aftersales_staff', 'quality_staff']
+const LIMITED_ROLES = ['software_owner', 'hardware_owner', 'project_assistant', 'production_staff', 'shipping_staff', 'shipping_auditor', 'aftersales_staff', 'quality_staff']
 
 const PAGE_ACCESS = {
   software_owner: [
@@ -27,6 +27,7 @@ const PAGE_ACCESS = {
     '/requirement/customer-supplied',
     '/hardware/version',
     '/hardware/test',
+    '/production/test-outline',
     '/test/case',
     '/test/issue',
     '/report/project-progress',
@@ -58,6 +59,7 @@ const PAGE_ACCESS = {
   production_staff: [
     '/dashboard',
     '/project/manage',
+    '/production/test-outline',
     '/production/burn',
     '/production/factory-test',
     '/production/inventory',
@@ -68,6 +70,18 @@ const PAGE_ACCESS = {
     '/version/matrix'
   ],
   shipping_staff: [
+    '/dashboard',
+    '/project/manage',
+    '/shipping/out',
+    '/shipping/batch',
+    '/inventory/out',
+    '/report/project-progress',
+    '/report/version-matrix',
+    '/report/issue-statistics',
+    '/project/progress-report',
+    '/version/matrix'
+  ],
+  shipping_auditor: [
     '/dashboard',
     '/project/manage',
     '/shipping/out',
@@ -117,6 +131,7 @@ const DEFAULT_PAGE = {
   project_assistant: '/project/manage',
   production_staff: '/dashboard',
   shipping_staff: '/dashboard',
+  shipping_auditor: '/dashboard',
   aftersales_staff: '/dashboard',
   quality_staff: '/production/factory-test'
 }
@@ -143,6 +158,8 @@ const ACTION_ACCESS = {
     'customer:view',
     'customer:download',
     'hardware:*',
+    'production:outline:view',
+    'production:outline:upload',
     'testcase:view',
     'testcase:download',
     'issue:view',
@@ -159,6 +176,7 @@ const ACTION_ACCESS = {
     'software:view',
     'software:download',
     'branch:view',
+    'branch:create',
     'branch:download',
     'testcase:*',
     'issue:*',
@@ -172,7 +190,18 @@ const ACTION_ACCESS = {
   ],
   shipping_staff: [
     'project:view',
-    'shipping:*',
+    'shipping:view',
+    'shipping:manage',
+    'shipping:create',
+    'shipping:update',
+    'shipping:delete',
+    'shipping:submit',
+    'report:*'
+  ],
+  shipping_auditor: [
+    'project:view',
+    'shipping:view',
+    'shipping:audit',
     'report:*'
   ],
   aftersales_staff: [
@@ -266,8 +295,18 @@ function actionMatches(grantedAction, action) {
 }
 
 export function canUseAction(action) {
+  if (hasRole('system_admin')) return true
+
+  if (action === 'production:outline:upload') {
+    return hasRole('hardware_owner') || hasRole('system_admin')
+  }
+
+  if (action === 'production:outline:view') {
+    return hasRole('hardware_owner') || hasRole('production_staff') || hasRole('system_admin') || hasRole('leader')
+  }
+
   if (action === 'customer:delete') {
-    return hasRole('project_assistant')
+    return hasRole('project_assistant') || hasRole('system_admin')
   }
 
   if (action === 'issue:update') {
@@ -279,11 +318,15 @@ export function canUseAction(action) {
   }
 
   if (action === 'burn:deleteBatch') {
-    return hasRole('production_staff')
+    return hasRole('production_staff') || hasRole('system_admin')
   }
 
   if (action === 'production:audit') {
-    return hasLeaderRole() || hasRole('quality_staff')
+    return hasRole('quality_staff') || hasRole('system_admin')
+  }
+
+  if (action === 'shipping:audit') {
+    return hasLeaderRole() || hasRole('shipping_auditor')
   }
 
   if (action.endsWith(':audit')) {

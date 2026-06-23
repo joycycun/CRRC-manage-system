@@ -37,6 +37,7 @@ func ProjectsHandler(w http.ResponseWriter, r *http.Request) {
 // POST   /api/projects/{id}/audit
 // POST   /api/projects/{id}/archive
 // POST   /api/projects/{id}/close
+// POST   /api/projects/{id}/proposal
 // DELETE /api/projects/{id}
 // ============================================================
 
@@ -88,6 +89,9 @@ func ProjectActionHandler(w http.ResponseWriter, r *http.Request) {
 		case "close":
 			CloseProject(w, r, id)
 			return
+		case "proposal":
+			UploadProjectProposal(w, r, id)
+			return
 		default:
 			http.Error(w, "不支持的操作", http.StatusNotFound)
 			return
@@ -131,6 +135,8 @@ func ensureProjectColumn(columnName string, definition string) {
 func GetProjects(w http.ResponseWriter, r *http.Request) {
 	ensureProjectProposalColumns()
 
+	visibilitySQL := getProjectVisibilitySQL(r)
+
 	rows, err := config.DB.Query(`
 		SELECT 
 			id,
@@ -155,6 +161,7 @@ func GetProjects(w http.ResponseWriter, r *http.Request) {
 			IFNULL(is_deleted, 0)
 		FROM projects
 		WHERE IFNULL(is_deleted, 0) = 0
+		` + visibilitySQL + `
 		ORDER BY id DESC
 	`)
 	if err != nil {
@@ -205,6 +212,28 @@ func GetProjects(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func getProjectVisibilitySQL(r *http.Request) string {
+	if r.URL.Query().Get("scope") != "manage" {
+		return `
+	  AND IFNULL(audit_status, '未提交') = '已通过'
+	`
+	}
+
+	if hasRequestRole(r, "system_admin") || hasRequestRole(r, "project_assistant") {
+		return ""
+	}
+
+	if hasLeaderPermission(r) {
+		return `
+		  AND IFNULL(audit_status, '未提交') IN ('待审核', '已通过')
+		`
+	}
+
+	return `
+	  AND IFNULL(audit_status, '未提交') = '已通过'
+	`
+}
+
 // ============================================================
 // GET /api/projects/{id}
 // ============================================================
@@ -213,6 +242,7 @@ func GetProjectDetail(w http.ResponseWriter, r *http.Request, id int64) {
 	ensureProjectProposalColumns()
 
 	var p model.Project
+	visibilitySQL := getProjectVisibilitySQL(r)
 
 	err := config.DB.QueryRow(`
 		SELECT 
@@ -238,6 +268,7 @@ func GetProjectDetail(w http.ResponseWriter, r *http.Request, id int64) {
 			IFNULL(is_deleted, 0)
 		FROM projects
 		WHERE id = ? AND IFNULL(is_deleted, 0) = 0
+		`+visibilitySQL+`
 		LIMIT 1
 	`, id).Scan(
 		&p.ID,
@@ -307,20 +338,14 @@ func CreateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if strings.TrimSpace(p.ProposalFileName) == "" || strings.TrimSpace(req.ProposalFileData) == "" {
-		http.Error(w, "请上传项目立项书Word文档", http.StatusBadRequest)
-		return
-	}
-
-	if !strings.HasSuffix(strings.ToLower(p.ProposalFileName), ".doc") && !strings.HasSuffix(strings.ToLower(p.ProposalFileName), ".docx") {
-		http.Error(w, "立项书仅支持Word文档（.doc/.docx）", http.StatusBadRequest)
-		return
-	}
-
-	proposalData, err := decodeBase64File(req.ProposalFileData)
-	if err != nil {
-		http.Error(w, "立项书文件解析失败: "+err.Error(), http.StatusBadRequest)
-		return
+	var proposalData []byte
+	if strings.TrimSpace(p.ProposalFileName) != "" || strings.TrimSpace(req.ProposalFileData) != "" {
+		var err error
+		proposalData, err = parseProjectProposalFile(p.ProposalFileName, req.ProposalFileData)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 	}
 
 	var ownerName string
@@ -397,6 +422,84 @@ func decodeBase64File(value string) ([]byte, error) {
 		value = value[idx+1:]
 	}
 	return base64.StdEncoding.DecodeString(value)
+}
+
+func parseProjectProposalFile(fileName string, fileData string) ([]byte, error) {
+	fileName = strings.TrimSpace(fileName)
+	fileData = strings.TrimSpace(fileData)
+	if fileName == "" || fileData == "" {
+		return nil, httpErrorText("请上传项目立项书Word文档")
+	}
+	if !strings.HasSuffix(strings.ToLower(fileName), ".doc") && !strings.HasSuffix(strings.ToLower(fileName), ".docx") {
+		return nil, httpErrorText("立项书仅支持Word文档（.doc/.docx）")
+	}
+	data, err := decodeBase64File(fileData)
+	if err != nil {
+		return nil, httpErrorText("立项书文件解析失败: " + err.Error())
+	}
+	return data, nil
+}
+
+type httpErrorText string
+
+func (e httpErrorText) Error() string {
+	return string(e)
+}
+
+type ProjectProposalUploadRequest struct {
+	ProposalFileName    string `json:"proposalFileName"`
+	ProposalContentType string `json:"proposalContentType"`
+	ProposalFileData    string `json:"proposalFileData"`
+}
+
+func UploadProjectProposal(w http.ResponseWriter, r *http.Request, id int64) {
+	ensureProjectProposalColumns()
+
+	if !requireProjectAssistantPermission(w, r) {
+		return
+	}
+
+	var req ProjectProposalUploadRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "参数解析失败: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	proposalData, err := parseProjectProposalFile(req.ProposalFileName, req.ProposalFileData)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	result, err := config.DB.Exec(`
+		UPDATE projects
+		SET
+			proposal_file_name = ?,
+			proposal_content_type = ?,
+			proposal_file_data = ?,
+			updated_at = NOW()
+		WHERE id = ? AND IFNULL(is_deleted, 0) = 0
+	`,
+		req.ProposalFileName,
+		req.ProposalContentType,
+		proposalData,
+		id,
+	)
+	if err != nil {
+		http.Error(w, "保存立项书失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	affected, _ := result.RowsAffected()
+	if affected == 0 {
+		http.Error(w, "项目不存在或已删除", http.StatusNotFound)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"code": 200,
+		"msg":  "立项书保存成功",
+	})
 }
 
 func DownloadProjectProposal(w http.ResponseWriter, r *http.Request, id int64) {
@@ -572,6 +675,7 @@ func AuditProject(w http.ResponseWriter, r *http.Request, id int64) {
 		http.Error(w, "审核状态只能是 已通过 或 已驳回", http.StatusBadRequest)
 		return
 	}
+	req.AuditUserID, req.AuditUserName = normalizeAuditUser(r, req.AuditUserID, req.AuditUserName)
 
 	projectStatus := "立项中"
 	stage := "立项阶段"
@@ -690,6 +794,31 @@ func CloseProject(w http.ResponseWriter, r *http.Request, id int64) {
 // ============================================================
 
 func DeleteProject(w http.ResponseWriter, r *http.Request, id int64) {
+	if hasRequestRole(r, "system_admin") {
+		result, err := config.DB.Exec(`
+			UPDATE projects
+			SET
+				is_deleted = 1,
+				updated_at = NOW()
+			WHERE id = ?
+			  AND IFNULL(is_deleted, 0) = 0
+		`, id)
+		if err != nil {
+			http.Error(w, "删除失败: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		affected, _ := result.RowsAffected()
+		if affected == 0 {
+			http.Error(w, "项目不存在或已删除", http.StatusNotFound)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"code": 200,
+			"msg":  "删除成功",
+		})
+		return
+	}
+
 	result, err := config.DB.Exec(`
 		UPDATE projects
 		SET

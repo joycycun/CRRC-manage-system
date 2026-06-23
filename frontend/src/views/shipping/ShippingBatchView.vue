@@ -5,7 +5,7 @@
         <h1>发货批次管理</h1>
       </div>
 
-      <button class="primary-btn" @click="openCreateDialog">
+      <button v-if="canUseAction('shipping:manage')" class="primary-btn" @click="openCreateDialog">
         新增发货批次
       </button>
     </div>
@@ -101,7 +101,7 @@
                   </button>
 
                   <button
-                    v-if="item.auditStatus === 'draft' || item.auditStatus === 'rejected'"
+                    v-if="canUseAction('shipping:manage') && (item.auditStatus === 'draft' || item.auditStatus === 'rejected')"
                     class="text-btn blue"
                     @click="submitBatch(item)"
                   >
@@ -117,7 +117,7 @@
                   </button>
 
                   <button
-                    v-if="item.auditStatus === 'draft' || item.auditStatus === 'rejected'"
+                    v-if="canUseAction('shipping:manage') && (item.auditStatus === 'draft' || item.auditStatus === 'rejected')"
                     class="text-btn red"
                     @click="deleteBatch(item)"
                   >
@@ -167,6 +167,9 @@
           <label>
             发货单文件
             <input type="file" accept=".xls,.xlsx,.csv,.pdf,.doc,.docx,.zip" @change="handleFileChange" />
+            <span class="selected-file-name" :title="batchForm.fileName">
+              {{ batchForm.fileName || '未选择文件' }}
+            </span>
           </label>
 
           <label class="full-row">
@@ -495,10 +498,6 @@
             审核驳回
           </button>
 
-          <button class="reset-btn" @click="openFile(selectedBatch)">
-            打开文件
-          </button>
-
           <button class="reset-btn" @click="downloadFile(selectedBatch)">
             下载文件
           </button>
@@ -524,7 +523,8 @@ import {
   deleteShippingBatch,
   createProductionRequest
 } from '@/api/shippingBatch'
-import { getCurrentUser } from '@/utils/currentUser'
+import { getAuditUserPayload, getCurrentUser } from '@/utils/currentUser'
+import { buildUploadFilePayload, downloadLocalFile } from '@/utils/filePreview'
 
 const filters = reactive({ keyword: '', auditStatus: '' })
 const inventoryFilters = reactive({ keyword: '', deviceType: '' })
@@ -546,8 +546,10 @@ const batchForm = reactive({
   batchNo: '',
   uploader: '',
   expressNo: '',
+  fileId: 0,
   fileName: '',
-  file: null,
+  fileContentType: '',
+  fileData: '',
   fileUrl: '',
   remark: ''
 })
@@ -661,6 +663,7 @@ function normalizeBatch(item) {
     fileId: item.fileId || item.file_id || 0,
     fileName: item.fileName || item.file_name || '',
     fileUrl: item.fileUrl || item.file_url || '',
+    downloadUrl: item.downloadUrl || item.download_url || '',
     uploaderId: item.uploaderId || item.uploader_id || 0,
     uploader: item.uploader || item.uploaderName || item.uploader_name || '',
     uploaderName: item.uploaderName || item.uploader_name || item.uploader || '',
@@ -824,8 +827,10 @@ async function openCreateDialog() {
   batchForm.batchNo = ''
   batchForm.uploader = getCurrentUserName()
   batchForm.expressNo = ''
+  batchForm.fileId = 0
   batchForm.fileName = ''
-  batchForm.file = null
+  batchForm.fileContentType = ''
+  batchForm.fileData = ''
   batchForm.fileUrl = ''
   batchForm.remark = ''
 
@@ -841,12 +846,17 @@ async function openCreateDialog() {
   showCreateDialog.value = true
 }
 
-function handleFileChange(event) {
+async function handleFileChange(event) {
   const file = event.target.files[0]
   if (!file) return
-  batchForm.file = file
-  batchForm.fileName = file.name
-  batchForm.fileUrl = URL.createObjectURL(file)
+  const payload = await buildUploadFilePayload(file)
+  Object.assign(batchForm, {
+    fileId: payload.fileId,
+    fileName: payload.fileName,
+    fileContentType: payload.fileContentType,
+    fileData: payload.fileData,
+    fileUrl: payload.fileUrl
+  })
 }
 
 function normalizeMac(mac) {
@@ -956,16 +966,21 @@ async function createBatch() {
     alert('上传人读取失败')
     return
   }
-  if (!batchForm.file) {
-    alert('请上传发货单 Excel 文件')
+  if (!batchForm.fileId || !batchForm.fileName || !batchForm.fileData) {
+    alert('请上传发货单文件')
     return
   }
 
   try {
+    const user = getCurrentUser()
     const res = await createShippingBatch({
       batchNo: batchForm.batchNo,
       expressNo: batchForm.expressNo,
-      uploaderId: 1,
+      fileId: batchForm.fileId,
+      fileName: batchForm.fileName,
+      fileContentType: batchForm.fileContentType,
+      fileData: batchForm.fileData,
+      uploaderId: user.id || 0,
       uploaderName: batchForm.uploader,
       remark: batchForm.remark,
       shippingDesc: batchForm.remark,
@@ -1072,7 +1087,7 @@ async function approveBatch(item) {
   if (!ok) return
 
   try {
-    const res = await auditShippingBatch(item.id, { auditStatus: '已通过', auditorId: 1, auditorName: '领导' })
+    const res = await auditShippingBatch(item.id, { auditStatus: '已通过', ...getAuditUserPayload() })
     const result = getResponseData(res)
     if (result.code !== 200) {
       alert(result.msg || '审核失败')
@@ -1090,7 +1105,7 @@ async function approveBatch(item) {
 
 async function rejectBatch(item) {
   try {
-    const res = await auditShippingBatch(item.id, { auditStatus: '已驳回', auditorId: 1, auditorName: '领导', rejectReason: '审核驳回' })
+    const res = await auditShippingBatch(item.id, { auditStatus: '已驳回', ...getAuditUserPayload(), rejectReason: '审核驳回' })
     const result = getResponseData(res)
     if (result.code !== 200) {
       alert(result.msg || '审核驳回失败')
@@ -1106,25 +1121,8 @@ async function rejectBatch(item) {
   }
 }
 
-function openFile(item) {
-  if (!item.fileUrl) {
-    alert('当前表结构只有 file_id，没有 file_url，暂不支持直接打开文件')
-    return
-  }
-  window.open(item.fileUrl, '_blank')
-}
-
 function downloadFile(item) {
-  if (!item.fileUrl) {
-    alert('当前表结构只有 file_id，没有 file_url，暂不支持下载文件')
-    return
-  }
-  const link = document.createElement('a')
-  link.href = item.fileUrl
-  link.download = item.fileName || '发货单.xlsx'
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
+  downloadLocalFile(item, item.fileName || '发货单')
 }
 
 async function deleteBatch(item) {
@@ -1277,6 +1275,16 @@ async function deleteBatch(item) {
   background: #1e293b;
   color: #cbd5e1;
   cursor: pointer;
+}
+
+.selected-file-name {
+  display: block;
+  max-width: 100%;
+  color: #94a3b8;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .table-card {

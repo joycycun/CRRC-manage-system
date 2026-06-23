@@ -101,6 +101,14 @@ export function closeRequirementChange(id, data) {
   })
 }
 
+export function confirmRequirementChange(id, data) {
+  return request({
+    url: `/requirement-changes/${id}/confirm`,
+    method: 'post',
+    data
+  })
+}
+
 export function deleteRequirementChange(id) {
   return request({
     url: `/requirement-changes/${id}`,

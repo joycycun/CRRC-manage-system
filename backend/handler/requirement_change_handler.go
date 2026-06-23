@@ -70,6 +70,9 @@ func RequirementChangeActionHandler(w http.ResponseWriter, r *http.Request) {
 		case "close":
 			CloseRequirementChangeHandler(w, r, id)
 			return
+		case "confirm":
+			ConfirmRequirementChangeHandler(w, r, id)
+			return
 		default:
 			http.Error(w, "不支持的操作", http.StatusNotFound)
 			return
@@ -79,10 +82,71 @@ func RequirementChangeActionHandler(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "接口不存在", http.StatusNotFound)
 }
 
+func ensureRequirementChangeConfirmationTable() error {
+	_, err := config.DB.Exec(`
+		CREATE TABLE IF NOT EXISTS requirement_change_confirmations (
+			id BIGINT PRIMARY KEY AUTO_INCREMENT,
+			requirement_change_id BIGINT NOT NULL,
+			confirm_user_id BIGINT NOT NULL DEFAULT 0,
+			confirm_user_name VARCHAR(64) NOT NULL DEFAULT '',
+			confirm_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE KEY uk_requirement_change_confirm_user (requirement_change_id, confirm_user_id, confirm_user_name),
+			KEY idx_requirement_change_confirm_change (requirement_change_id)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+	`)
+	return err
+}
+
+func requirementChangeVisibilitySQL(r *http.Request) string {
+	if hasRequestRole(r, "system_admin") {
+		return ""
+	}
+
+	if hasRequestRole(r, "leader") {
+		return " AND IFNULL(rc.status, '草稿') IN ('待审核', 'submitted', '已提交', '已通过', '审核通过', 'approved', '已驳回', '审核驳回', 'rejected')"
+	}
+
+	userID, userName := currentRequestUser(r)
+	ownSQL := ""
+	if userID > 0 {
+		ownSQL += " OR IFNULL(rc.submit_user_id, 0) = " + strconv.FormatInt(userID, 10)
+	}
+	if userName != "" {
+		ownSQL += " OR IFNULL(rc.submit_user_name, '') = '" + strings.ReplaceAll(userName, "'", "''") + "'"
+	}
+
+	return " AND (IFNULL(rc.status, '草稿') IN ('已通过', '审核通过', 'approved')" + ownSQL + ")"
+}
+
+func canSubmitRequirementChange(r *http.Request, id int64) bool {
+	if hasRequestRole(r, "system_admin") {
+		return true
+	}
+
+	var submitUserID int64
+	var submitUserName string
+	err := config.DB.QueryRow(`
+		SELECT IFNULL(submit_user_id, 0), IFNULL(submit_user_name, '')
+		FROM requirement_changes
+		WHERE id = ? AND is_deleted = 0
+		LIMIT 1
+	`, id).Scan(&submitUserID, &submitUserName)
+	if err != nil {
+		return false
+	}
+
+	userID, userName := currentRequestUser(r)
+	if userID > 0 && submitUserID > 0 && userID == submitUserID {
+		return true
+	}
+	return userName != "" && submitUserName != "" && userName == submitUserName
+}
+
 // GET /api/requirement-changes
 func GetRequirementChangesHandler(w http.ResponseWriter, r *http.Request) {
 	ensureUploadedFilesTable()
 
+	visibilitySQL := requirementChangeVisibilitySQL(r)
 	rows, err := config.DB.Query(`
 		SELECT
 			rc.id,
@@ -109,7 +173,7 @@ func GetRequirementChangesHandler(w http.ResponseWriter, r *http.Request) {
 			rc.is_deleted
 		FROM requirement_changes rc
 		LEFT JOIN uploaded_files uf ON uf.id = rc.file_id
-		WHERE rc.is_deleted = 0
+		WHERE rc.is_deleted = 0 ` + visibilitySQL + `
 		ORDER BY rc.id DESC
 	`)
 	if err != nil {
@@ -166,6 +230,10 @@ func GetRequirementChangesHandler(w http.ResponseWriter, r *http.Request) {
 
 // POST /api/requirement-changes
 func CreateRequirementChangeHandler(w http.ResponseWriter, r *http.Request) {
+	if !requireProjectAssistantPermission(w, r) {
+		return
+	}
+
 	var req struct {
 		model.RequirementChange
 		FileContentType string `json:"fileContentType"`
@@ -179,6 +247,11 @@ func CreateRequirementChangeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	item := req.RequirementChange
+	item.FileName = strings.TrimSpace(item.FileName)
+	item.ChangeTitle = strings.TrimSpace(item.ChangeTitle)
+	if item.ChangeTitle == "" {
+		item.ChangeTitle = item.FileName
+	}
 	if err := saveUploadedFile(UploadedFilePayload{
 		FileID:          item.FileID,
 		FileName:        item.FileName,
@@ -264,13 +337,22 @@ func CreateRequirementChangeHandler(w http.ResponseWriter, r *http.Request) {
 
 // POST /api/requirement-changes/{id}/submit
 func SubmitRequirementChangeHandler(w http.ResponseWriter, r *http.Request, id int64) {
+	if !requireProjectAssistantPermission(w, r) {
+		return
+	}
+
+	if !canSubmitRequirementChange(r, id) {
+		http.Error(w, "无提交权限：只有上传人可以提交当前需求变更", http.StatusForbidden)
+		return
+	}
+
 	result, err := config.DB.Exec(`
 		UPDATE requirement_changes
 		SET
 			status = '待审核',
 			submit_time = NOW(),
 			updated_at = NOW()
-		WHERE id = ? AND is_deleted = 0
+		WHERE id = ? AND is_deleted = 0 AND IFNULL(status, '草稿') IN ('草稿', '未提交', '已驳回', '审核驳回', 'rejected', 'draft')
 	`, id)
 
 	if err != nil {
@@ -280,7 +362,7 @@ func SubmitRequirementChangeHandler(w http.ResponseWriter, r *http.Request, id i
 
 	affected, _ := result.RowsAffected()
 	if affected == 0 {
-		http.Error(w, "需求变更不存在或已删除", http.StatusNotFound)
+		http.Error(w, "需求变更不存在、已删除或当前状态不可提交", http.StatusNotFound)
 		return
 	}
 
@@ -320,6 +402,7 @@ func AuditRequirementChangeHandler(w http.ResponseWriter, r *http.Request, id in
 		http.Error(w, "审核状态只能是 已通过 或 已驳回", http.StatusBadRequest)
 		return
 	}
+	req.AuditUserID, req.AuditUserName = normalizeAuditUser(r, req.AuditUserID, req.AuditUserName)
 
 	result, err := config.DB.Exec(`
 		UPDATE requirement_changes
@@ -408,8 +491,55 @@ func CloseRequirementChangeHandler(w http.ResponseWriter, r *http.Request, id in
 	})
 }
 
+func ConfirmRequirementChangeHandler(w http.ResponseWriter, r *http.Request, id int64) {
+	if err := ensureRequirementChangeConfirmationTable(); err != nil {
+		http.Error(w, "初始化需求变更确认表失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var req struct {
+		ConfirmUserID   int64  `json:"confirmUserId"`
+		ConfirmUserName string `json:"confirmUserName"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "参数解析失败: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	req.ConfirmUserID, req.ConfirmUserName = normalizeAuditUser(r, req.ConfirmUserID, req.ConfirmUserName)
+
+	result, err := config.DB.Exec(`
+		INSERT INTO requirement_change_confirmations (
+			requirement_change_id,
+			confirm_user_id,
+			confirm_user_name,
+			confirm_time
+		) VALUES (?, ?, ?, NOW())
+		ON DUPLICATE KEY UPDATE
+			confirm_time = NOW()
+	`, id, req.ConfirmUserID, req.ConfirmUserName)
+	if err != nil {
+		http.Error(w, "确认需求变更失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	affected, _ := result.RowsAffected()
+	if affected == 0 {
+		http.Error(w, "需求变更已确认", http.StatusBadRequest)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"code": 200,
+		"msg":  "确认成功",
+	})
+}
+
 // DELETE /api/requirement-changes/{id}
 func DeleteRequirementChangeHandler(w http.ResponseWriter, r *http.Request, id int64) {
+	if !requireProjectAssistantPermission(w, r) {
+		return
+	}
+
 	result, err := config.DB.Exec(`
 		UPDATE requirement_changes
 		SET

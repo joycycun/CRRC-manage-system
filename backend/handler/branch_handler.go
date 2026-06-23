@@ -3,11 +3,14 @@ package handler
 import (
 	"crrc_pm_backend/config"
 	"crrc_pm_backend/model"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
 )
+
+const defaultBranchCloneURL = "http://bc.zycoo.com:3000/speaker/X10-Series_PA_Intercom.git"
 
 func BranchesHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
@@ -65,7 +68,10 @@ func GetBranchesHandler(w http.ResponseWriter, r *http.Request) {
 			IFNULL(DATE_FORMAT(pb.created_at, '%Y-%m-%d %H:%i:%s'), ''),
 			IFNULL(DATE_FORMAT(pb.updated_at, '%Y-%m-%d %H:%i:%s'), '')
 		FROM project_branches pb
-		LEFT JOIN projects p ON pb.project_id = p.id
+		INNER JOIN projects p
+		  ON pb.project_id = p.id
+		 AND IFNULL(p.is_deleted, 0) = 0
+		 AND IFNULL(p.audit_status, '未提交') = '已通过'
 		WHERE pb.is_deleted = 0
 		ORDER BY pb.id DESC
 	`)
@@ -109,6 +115,21 @@ func GetBranchesHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func getApprovedProjectOwner(projectID int64) (int64, string, error) {
+	var ownerID int64
+	var ownerName string
+
+	err := config.DB.QueryRow(`
+		SELECT IFNULL(owner_id, 0), IFNULL(owner_name, '')
+		FROM projects
+		WHERE id = ?
+		  AND IFNULL(is_deleted, 0) = 0
+		  AND IFNULL(audit_status, '未提交') = '已通过'
+	`, projectID).Scan(&ownerID, &ownerName)
+
+	return ownerID, ownerName, err
+}
+
 func CreateBranchHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -128,9 +149,23 @@ func CreateBranchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.OwnerName == "" {
-		req.OwnerName = req.Owner
+	ownerID, ownerName, err := getApprovedProjectOwner(req.ProjectID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "绑定项目不存在、未审核通过或已删除", http.StatusBadRequest)
+			return
+		}
+		http.Error(w, "读取项目软件负责人失败: "+err.Error(), http.StatusInternalServerError)
+		return
 	}
+
+	if ownerName == "" {
+		http.Error(w, "绑定项目未设置软件负责人", http.StatusBadRequest)
+		return
+	}
+
+	req.OwnerID = ownerID
+	req.OwnerName = ownerName
 
 	if req.RepoName == "" {
 		req.RepoName = req.BranchName
@@ -139,9 +174,11 @@ func CreateBranchHandler(w http.ResponseWriter, r *http.Request) {
 	if req.RepoURL == "" {
 		req.RepoURL = req.CloneURL
 	}
-
-	if req.OwnerName == "" {
-		req.OwnerName = req.Owner
+	if req.CloneURL == "" {
+		req.CloneURL = defaultBranchCloneURL
+	}
+	if req.RepoURL == "" {
+		req.RepoURL = defaultBranchCloneURL
 	}
 
 	result, err := config.DB.Exec(`
@@ -195,8 +232,30 @@ func UpdateBranchHandler(w http.ResponseWriter, r *http.Request, id int64) {
 		return
 	}
 
-	if req.OwnerName == "" {
-		req.OwnerName = req.Owner
+	if req.ProjectID == 0 {
+		http.Error(w, "项目ID不能为空", http.StatusBadRequest)
+		return
+	}
+
+	ownerID, ownerName, err := getApprovedProjectOwner(req.ProjectID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "绑定项目不存在、未审核通过或已删除", http.StatusBadRequest)
+			return
+		}
+		http.Error(w, "读取项目软件负责人失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if ownerName == "" {
+		http.Error(w, "绑定项目未设置软件负责人", http.StatusBadRequest)
+		return
+	}
+
+	req.OwnerID = ownerID
+	req.OwnerName = ownerName
+	if req.CloneURL == "" {
+		req.CloneURL = defaultBranchCloneURL
 	}
 
 	result, err := config.DB.Exec(`

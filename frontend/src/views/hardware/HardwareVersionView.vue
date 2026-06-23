@@ -57,7 +57,7 @@
             <th>版本状态</th>
             <th>负责人</th>
             <th>更新时间</th>
-            <th>ZIP 文件</th>
+            <th>压缩包文件</th>
             <th class="operation-col">操作</th>
           </tr>
         </thead>
@@ -117,7 +117,7 @@
                 </button>
 
                 <button v-if="canUseAction('hardware:upload')" class="text-btn yellow" @click="openZipUploadDialog(item)">
-                  上传ZIP
+                  上传压缩包
                 </button>
 
                 <button v-if="canUseAction('hardware:download')" class="text-btn green" @click="downloadZip(item)">
@@ -201,10 +201,10 @@
           </label>
 
           <label class="full-row">
-            硬件文件 ZIP
+            硬件文件压缩包
             <input
               type="file"
-              accept=".zip,application/zip,application/x-zip-compressed"
+              accept=".zip,.rar,application/zip,application/x-zip-compressed,application/vnd.rar,application/x-rar-compressed"
               @change="handleHardwareFileChange"
             />
 
@@ -213,7 +213,7 @@
             </span>
 
             <span v-else class="file-tip">
-              可在新增硬件版本时直接上传硬件原理图、PCB资料、BOM清单、生产资料等 ZIP 压缩包。
+              可在新增硬件版本时直接上传硬件原理图、PCB资料、BOM清单、生产资料等 ZIP/RAR 压缩包。
             </span>
           </label>
 
@@ -238,11 +238,11 @@
       </div>
     </div>
 
-    <!-- 单独上传 ZIP 弹窗 -->
+    <!-- 单独上传压缩包弹窗 -->
     <div v-if="showZipDialog" class="dialog-mask">
       <div class="dialog">
         <div class="dialog-header">
-          <h3>上传硬件版本 ZIP 文件</h3>
+          <h3>上传硬件版本压缩包</h3>
           <button @click="showZipDialog = false">×</button>
         </div>
 
@@ -258,7 +258,7 @@
           </div>
 
           <div>
-            <span>当前 ZIP 文件</span>
+            <span>当前压缩包文件</span>
             <strong>{{ currentZipHardware?.zipFileName || '未上传' }}</strong>
           </div>
 
@@ -270,10 +270,10 @@
 
         <div class="form-grid zip-form">
           <label class="full-row">
-            ZIP 压缩包
+            ZIP/RAR 压缩包
             <input
               type="file"
-              accept=".zip,application/zip,application/x-zip-compressed"
+              accept=".zip,.rar,application/zip,application/x-zip-compressed,application/vnd.rar,application/x-rar-compressed"
               @change="handleZipFileChange"
             />
           </label>
@@ -293,7 +293,7 @@
           </button>
 
           <button class="primary-btn" @click="saveZipFile">
-            保存 ZIP
+            保存压缩包
           </button>
         </div>
       </div>
@@ -334,7 +334,7 @@
           </div>
 
           <div>
-            <span>ZIP 文件</span>
+            <span>压缩包文件</span>
             <strong>{{ selectedHardware.zipFileName || '未上传' }}</strong>
           </div>
         </div>
@@ -360,7 +360,7 @@
 
         <div class="dialog-footer">
           <button v-if="canUseAction('hardware:download')" class="reset-btn" @click="downloadZip(selectedHardware)">
-            下载 ZIP
+            下载压缩包
           </button>
 
           <button class="primary-btn" @click="selectedHardware = null">
@@ -662,10 +662,8 @@ async function handleHardwareFileChange(event) {
   const file = event.target.files[0]
   if (!file) return
 
-  const isZip = file.name.toLowerCase().endsWith('.zip')
-
-  if (!isZip) {
-    alert('只能上传 ZIP 压缩包文件')
+  if (!isArchiveFile(file)) {
+    alert('只能上传 ZIP 或 RAR 压缩包文件')
     event.target.value = ''
     return
   }
@@ -679,8 +677,13 @@ async function handleHardwareFileChange(event) {
     hardwareForm.zipFileContentType = payload.fileContentType
     hardwareForm.zipFileData = payload.fileData
   } catch (err) {
-    alert('读取硬件 ZIP 文件失败，请重新选择')
+    alert('读取硬件压缩包失败，请重新选择')
   }
+}
+
+function isArchiveFile(file) {
+  const name = (file?.name || '').toLowerCase()
+  return name.endsWith('.zip') || name.endsWith('.rar')
 }
 
 async function saveHardwareVersion() {
@@ -775,10 +778,8 @@ async function handleZipFileChange(event) {
   const file = event.target.files[0]
   if (!file) return
 
-  const isZip = file.name.toLowerCase().endsWith('.zip')
-
-  if (!isZip) {
-    alert('只能上传 ZIP 压缩包文件')
+  if (!isArchiveFile(file)) {
+    alert('只能上传 ZIP 或 RAR 压缩包文件')
     event.target.value = ''
     return
   }
@@ -792,7 +793,7 @@ async function handleZipFileChange(event) {
     zipForm.fileContentType = payload.fileContentType
     zipForm.fileData = payload.fileData
   } catch (err) {
-    alert('读取硬件 ZIP 文件失败，请重新选择')
+    alert('读取硬件压缩包失败，请重新选择')
   }
 }
 
@@ -800,7 +801,7 @@ async function saveZipFile() {
   if (!currentZipHardware.value) return
 
   if (!zipForm.file) {
-    alert('请选择 ZIP 压缩包文件')
+    alert('请选择 ZIP 或 RAR 压缩包文件')
     return
   }
 
@@ -816,18 +817,18 @@ async function saveZipFile() {
     const res = await uploadHardwareZip(currentZipHardware.value.id, payload)
     const result = getResponseData(res)
 
-    console.log('上传硬件 ZIP 返回：', result)
+    console.log('上传硬件压缩包返回：', result)
 
     if (result.code === 200) {
-      alert(`硬件版本【${currentZipHardware.value.hardwareVersion}】ZIP 文件已上传`)
+      alert(`硬件版本【${currentZipHardware.value.hardwareVersion}】压缩包已上传`)
       showZipDialog.value = false
       await loadHardwareVersions()
     } else {
-      alert(result.msg || '上传 ZIP 失败')
+      alert(result.msg || '上传压缩包失败')
     }
   } catch (err) {
-    console.error('上传硬件 ZIP 失败：', err)
-    alert('上传 ZIP 失败，请检查后端接口')
+    console.error('上传硬件压缩包失败：', err)
+    alert('上传压缩包失败，请检查后端接口')
   }
 }
 
@@ -853,7 +854,7 @@ function exportHardwareVersions() {
     '版本状态',
     '负责人',
     '更新时间',
-    'ZIP文件'
+    '压缩包文件'
   ]
 
   const rows = hardwareVersionList.value.map(item => [

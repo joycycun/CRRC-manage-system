@@ -168,7 +168,10 @@ func GetIssuesHandler(w http.ResponseWriter, r *http.Request) {
 			IFNULL(i.reopen_reason, ''),
 			IFNULL(DATE_FORMAT(i.updated_at, '%Y-%m-%d %H:%i:%s'), '')
 		FROM issues i
-		LEFT JOIN projects p ON i.project_id = p.id
+		INNER JOIN projects p
+		  ON i.project_id = p.id
+		 AND IFNULL(p.is_deleted, 0) = 0
+		 AND IFNULL(p.audit_status, '未提交') = '已通过'
 		WHERE IFNULL(i.is_deleted, 0) = 0
 		ORDER BY i.id DESC
 	`)
@@ -303,6 +306,9 @@ func CreateIssueHandler(w http.ResponseWriter, r *http.Request) {
 	if req.IssueSource == "" {
 		req.IssueSource = req.Source
 	}
+	if req.IssueSource == "" {
+		req.IssueSource = "研发"
+	}
 
 	if req.Level == "" {
 		req.Level = req.Severity
@@ -316,7 +322,9 @@ func CreateIssueHandler(w http.ResponseWriter, r *http.Request) {
 	err := config.DB.QueryRow(`
 		SELECT IFNULL(owner_id, 0), IFNULL(owner_name, '')
 		FROM projects
-		WHERE id = ? AND is_deleted = 0
+		WHERE id = ?
+		  AND is_deleted = 0
+		  AND IFNULL(audit_status, '未提交') = '已通过'
 	`, req.ProjectID).Scan(&req.OwnerID, &projectOwnerName)
 	if err != nil {
 		http.Error(w, "所选项目不存在或已删除", http.StatusBadRequest)
@@ -473,7 +481,40 @@ func ReplyIssueHandler(w http.ResponseWriter, r *http.Request, id int64) {
 		return
 	}
 
-	_, err := config.DB.Exec(`
+	var ownerID int64
+	var ownerName string
+	var closeStatus string
+	err := config.DB.QueryRow(`
+		SELECT
+			IFNULL(owner_id, 0),
+			IFNULL(owner_name, ''),
+			IFNULL(close_status, '未关闭')
+		FROM issues
+		WHERE id = ? AND IFNULL(is_deleted, 0) = 0
+	`, id).Scan(&ownerID, &ownerName, &closeStatus)
+	if err != nil {
+		http.Error(w, "问题不存在或已删除", http.StatusNotFound)
+		return
+	}
+
+	if closeStatus == "已关闭" || closeStatus == "关闭" || closeStatus == "closed" {
+		http.Error(w, "已关闭的问题不能回复", http.StatusBadRequest)
+		return
+	}
+
+	isOwner := false
+	if ownerID != 0 && req.ReplyUserID != 0 && ownerID == req.ReplyUserID {
+		isOwner = true
+	}
+	if strings.TrimSpace(ownerName) != "" && strings.TrimSpace(ownerName) == strings.TrimSpace(req.ReplyUserName) {
+		isOwner = true
+	}
+	if !isOwner {
+		http.Error(w, "只有当前问题负责人可以回复该问题", http.StatusForbidden)
+		return
+	}
+
+	_, err = config.DB.Exec(`
 		INSERT INTO issue_replies (
 			issue_id,
 			reply_user_id,

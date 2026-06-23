@@ -113,6 +113,7 @@ type RequirementBookVO struct {
 func GetRequirementBooksHandler(w http.ResponseWriter, r *http.Request) {
 	ensureUploadedFilesTable()
 
+	visibilitySQL := requirementAuditVisibilitySQL(r, "rb.status", "rb.submit_user_id", "rb.submit_user_name")
 	rows, err := config.DB.Query(`
 		SELECT 
 			rb.id,
@@ -134,7 +135,7 @@ func GetRequirementBooksHandler(w http.ResponseWriter, r *http.Request) {
 			rb.is_deleted
 		FROM requirement_books rb
 		LEFT JOIN uploaded_files uf ON uf.id = rb.file_id
-		WHERE rb.is_deleted = 0
+		WHERE rb.is_deleted = 0 ` + visibilitySQL + `
 		ORDER BY rb.id DESC
 	`)
 	if err != nil {
@@ -218,6 +219,10 @@ func GetRequirementBooksHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func CreateRequirementBookHandler(w http.ResponseWriter, r *http.Request) {
+	if !requireProjectAssistantPermission(w, r) {
+		return
+	}
+
 	var req struct {
 		model.RequirementBook
 		FileName        string `json:"fileName"`
@@ -231,9 +236,12 @@ func CreateRequirementBookHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rbook := req.RequirementBook
-	fileName := req.FileName
+	fileName := strings.TrimSpace(req.FileName)
 	if fileName == "" {
-		fileName = rbook.BookName
+		fileName = strings.TrimSpace(rbook.BookName)
+	}
+	if strings.TrimSpace(rbook.BookName) == "" {
+		rbook.BookName = fileName
 	}
 	if err := saveUploadedFile(UploadedFilePayload{
 		FileID:          rbook.FileID,
@@ -245,7 +253,7 @@ func CreateRequirementBookHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if rbook.ProjectID == 0 || rbook.BookName == "" || rbook.FileID == 0 {
+	if rbook.ProjectID == 0 || strings.TrimSpace(rbook.BookName) == "" || rbook.FileID == 0 {
 		http.Error(w, "缺少必要参数", http.StatusBadRequest)
 		return
 	}
@@ -296,6 +304,10 @@ func CreateRequirementBookHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func SubmitRequirementBookHandler(w http.ResponseWriter, r *http.Request, id int64) {
+	if !requireProjectAssistantPermission(w, r) {
+		return
+	}
+
 	result, err := config.DB.Exec(`
 		UPDATE requirement_books
 		SET 
@@ -334,13 +346,7 @@ func ApproveRequirementBookHandler(w http.ResponseWriter, r *http.Request, id in
 	var req RequirementBookAuditRequest
 	_ = json.NewDecoder(r.Body).Decode(&req)
 
-	if req.AuditUserID == 0 {
-		req.AuditUserID = 1
-	}
-
-	if req.AuditUserName == "" {
-		req.AuditUserName = "当前领导"
-	}
+	req.AuditUserID, req.AuditUserName = normalizeAuditUser(r, req.AuditUserID, req.AuditUserName)
 
 	result, err := config.DB.Exec(`
 		UPDATE requirement_books
@@ -376,13 +382,7 @@ func RejectRequirementBookHandler(w http.ResponseWriter, r *http.Request, id int
 	var req RequirementBookAuditRequest
 	_ = json.NewDecoder(r.Body).Decode(&req)
 
-	if req.AuditUserID == 0 {
-		req.AuditUserID = 1
-	}
-
-	if req.AuditUserName == "" {
-		req.AuditUserName = "当前领导"
-	}
+	req.AuditUserID, req.AuditUserName = normalizeAuditUser(r, req.AuditUserID, req.AuditUserName)
 
 	if req.RejectReason == "" {
 		req.RejectReason = "未填写驳回原因"
@@ -430,13 +430,7 @@ func AuditRequirementBookHandler(w http.ResponseWriter, r *http.Request, id int6
 		return
 	}
 
-	if req.AuditUserID == 0 {
-		req.AuditUserID = 1
-	}
-
-	if req.AuditUserName == "" {
-		req.AuditUserName = "当前领导"
-	}
+	req.AuditUserID, req.AuditUserName = normalizeAuditUser(r, req.AuditUserID, req.AuditUserName)
 
 	if req.AuditStatus == "已通过" {
 		ApproveRequirementBookHandler(w, r, id)
@@ -482,6 +476,10 @@ func AuditRequirementBookHandler(w http.ResponseWriter, r *http.Request, id int6
 }
 
 func DeleteRequirementBookHandler(w http.ResponseWriter, r *http.Request, id int64) {
+	if !requireProjectAssistantPermission(w, r) {
+		return
+	}
+
 	result, err := config.DB.Exec(`
 		UPDATE requirement_books
 		SET 
@@ -508,6 +506,26 @@ func DeleteRequirementBookHandler(w http.ResponseWriter, r *http.Request, id int
 }
 
 // ---------------- NULL 字段转换函数 -----------------
+
+func requirementAuditVisibilitySQL(r *http.Request, statusExpr string, submitUserIDExpr string, submitUserNameExpr string) string {
+	if hasRequestRole(r, "system_admin") {
+		return ""
+	}
+	if hasRequestRole(r, "leader") {
+		return " AND IFNULL(" + statusExpr + ", '草稿') IN ('待审核', '已通过')"
+	}
+
+	userID, userName := currentRequestUser(r)
+	ownSQL := ""
+	if userID > 0 {
+		ownSQL += " OR IFNULL(" + submitUserIDExpr + ", 0) = " + strconv.FormatInt(userID, 10)
+	}
+	if userName != "" {
+		ownSQL += " OR IFNULL(" + submitUserNameExpr + ", '') = '" + strings.ReplaceAll(userName, "'", "''") + "'"
+	}
+
+	return " AND (IFNULL(" + statusExpr + ", '草稿') IN ('已通过', '审核通过', 'approved')" + ownSQL + ")"
+}
 
 func nullInt64(v sql.NullInt64) int64 {
 	if v.Valid {

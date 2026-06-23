@@ -19,6 +19,9 @@ type CreateShippingBatchRequest struct {
 	ProjectID          int64   `json:"projectId"`
 	ExpressNo          string  `json:"expressNo"`
 	FileID             int64   `json:"fileId"`
+	FileName           string  `json:"fileName"`
+	FileContentType    string  `json:"fileContentType"`
+	FileData           string  `json:"fileData"`
 	UploaderID         int64   `json:"uploaderId"`
 	UploaderName       string  `json:"uploaderName"`
 	Remark             string  `json:"remark"`
@@ -264,30 +267,35 @@ func ShippingBatchActionHandler(w http.ResponseWriter, r *http.Request) {
 // ============================================================
 
 func GetShippingBatchesHandler(w http.ResponseWriter, r *http.Request) {
+	ensureUploadedFilesTable()
+
+	visibilitySQL := reviewVisibilitySQL(r, "sb.audit_status", "sb.uploader_id", "sb.uploader_name", "shipping_staff")
 	rows, err := config.DB.Query(`
 		SELECT
-			id,
-			batch_no,
-			IFNULL(project_id, 0),
-			IFNULL(express_no, ''),
-			IFNULL(device_count, 0),
-			IFNULL(file_id, 0),
-			IFNULL(uploader_id, 0),
-			IFNULL(uploader_name, ''),
-			upload_time,
-			IFNULL(audit_status, ''),
-			IFNULL(auditor_id, 0),
-			IFNULL(auditor_name, ''),
-			audit_time,
-			IFNULL(remark, ''),
-			IFNULL(reject_reason, ''),
-			IFNULL(shipping_desc, ''),
-			is_deleted,
-			created_at,
-			updated_at
-		FROM shipping_batches
-		WHERE is_deleted = 0
-		ORDER BY id DESC
+			sb.id,
+			sb.batch_no,
+			IFNULL(sb.project_id, 0),
+			IFNULL(sb.express_no, ''),
+			IFNULL(sb.device_count, 0),
+			IFNULL(sb.file_id, 0),
+			IFNULL(uf.file_name, ''),
+			IFNULL(sb.uploader_id, 0),
+			IFNULL(sb.uploader_name, ''),
+			sb.upload_time,
+			IFNULL(sb.audit_status, ''),
+			IFNULL(sb.auditor_id, 0),
+			IFNULL(sb.auditor_name, ''),
+			sb.audit_time,
+			IFNULL(sb.remark, ''),
+			IFNULL(sb.reject_reason, ''),
+			IFNULL(sb.shipping_desc, ''),
+			sb.is_deleted,
+			sb.created_at,
+			sb.updated_at
+		FROM shipping_batches sb
+		LEFT JOIN uploaded_files uf ON uf.id = sb.file_id
+		WHERE sb.is_deleted = 0 ` + visibilitySQL + `
+		ORDER BY sb.id DESC
 	`)
 	if err != nil {
 		http.Error(w, "查询失败: "+err.Error(), http.StatusInternalServerError)
@@ -299,6 +307,7 @@ func GetShippingBatchesHandler(w http.ResponseWriter, r *http.Request) {
 
 	for rows.Next() {
 		var item model.ShippingBatch
+		var fileName string
 
 		err := rows.Scan(
 			&item.ID,
@@ -307,6 +316,7 @@ func GetShippingBatchesHandler(w http.ResponseWriter, r *http.Request) {
 			&item.ExpressNo,
 			&item.DeviceCount,
 			&item.FileID,
+			&fileName,
 			&item.UploaderID,
 			&item.UploaderName,
 			&item.UploadTime,
@@ -339,6 +349,9 @@ func GetShippingBatchesHandler(w http.ResponseWriter, r *http.Request) {
 			"expressNo":    item.ExpressNo,
 			"deviceCount":  item.DeviceCount,
 			"fileId":       item.FileID,
+			"fileName":     fileName,
+			"fileUrl":      filePreviewURL(item.FileID),
+			"downloadUrl":  fileDownloadURL(item.FileID),
 			"uploaderId":   item.UploaderID,
 			"uploaderName": item.UploaderName,
 			"uploadTime":   item.UploadTime,
@@ -370,6 +383,10 @@ func GetShippingBatchesHandler(w http.ResponseWriter, r *http.Request) {
 // ============================================================
 
 func CreateShippingBatchHandler(w http.ResponseWriter, r *http.Request) {
+	if !requireShippingManagePermission(w, r) {
+		return
+	}
+
 	var req CreateShippingBatchRequest
 
 	err := json.NewDecoder(r.Body).Decode(&req)
@@ -384,6 +401,21 @@ func CreateShippingBatchHandler(w http.ResponseWriter, r *http.Request) {
 
 	if req.BatchNo == "" {
 		http.Error(w, "发货批次号不能为空", http.StatusBadRequest)
+		return
+	}
+
+	if req.FileID == 0 || strings.TrimSpace(req.FileName) == "" || strings.TrimSpace(req.FileData) == "" {
+		http.Error(w, "请上传发货单文件", http.StatusBadRequest)
+		return
+	}
+
+	if err := saveUploadedFile(UploadedFilePayload{
+		FileID:          req.FileID,
+		FileName:        req.FileName,
+		FileContentType: req.FileContentType,
+		FileData:        req.FileData,
+	}); err != nil {
+		http.Error(w, "保存发货单文件失败: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -536,6 +568,10 @@ func CreateShippingBatchHandler(w http.ResponseWriter, r *http.Request) {
 // ============================================================
 
 func SubmitShippingBatchHandler(w http.ResponseWriter, r *http.Request, id int64) {
+	if !requireShippingManagePermission(w, r) {
+		return
+	}
+
 	result, err := config.DB.Exec(`
 		UPDATE shipping_batches
 		SET audit_status = '待审核', updated_at = NOW()
@@ -566,7 +602,7 @@ func SubmitShippingBatchHandler(w http.ResponseWriter, r *http.Request, id int64
 // ============================================================
 
 func AuditShippingBatchHandler(w http.ResponseWriter, r *http.Request, id int64) {
-	if !requireLeaderPermission(w, r) {
+	if !requireShippingAuditPermission(w, r) {
 		return
 	}
 
@@ -592,6 +628,7 @@ func AuditShippingBatchHandler(w http.ResponseWriter, r *http.Request, id int64)
 		http.Error(w, "审核状态只能是 已通过 或 已驳回", http.StatusBadRequest)
 		return
 	}
+	req.AuditorID, req.AuditorName = normalizeAuditUser(r, req.AuditorID, req.AuditorName)
 
 	tx, err := config.DB.Begin()
 	if err != nil {
@@ -762,6 +799,10 @@ func AuditShippingBatchHandler(w http.ResponseWriter, r *http.Request, id int64)
 // ============================================================
 
 func DeleteShippingBatchHandler(w http.ResponseWriter, r *http.Request, id int64) {
+	if !requireShippingManagePermission(w, r) {
+		return
+	}
+
 	tx, err := config.DB.Begin()
 	if err != nil {
 		http.Error(w, "开启事务失败: "+err.Error(), http.StatusInternalServerError)

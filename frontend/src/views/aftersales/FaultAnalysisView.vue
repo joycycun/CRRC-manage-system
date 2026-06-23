@@ -351,6 +351,7 @@ import { computed, reactive, ref } from 'vue'
 import { onMounted } from 'vue'
 import { canUseAction } from '@/utils/permission'
 import { buildUploadFilePayload, downloadLocalFile, getFilePreviewUrl, openLocalFilePreview } from '@/utils/filePreview'
+import { getAuditUserPayload } from '@/utils/currentUser'
 import { getProjects } from '@/api/project'
 import {
   auditFaultAnalysis,
@@ -629,8 +630,7 @@ async function rejectAnalysis(item) {
 async function auditAnalysisStatus(item, status) {
   try {
     const res = await auditFaultAnalysis(item.id, {
-      auditorId: 1,
-      auditorName: currentUserName.value,
+      ...getAuditUserPayload(),
       auditStatus: backendAuditStatus(status),
       rejectReason: status === 'rejected' ? '审核驳回' : ''
     })

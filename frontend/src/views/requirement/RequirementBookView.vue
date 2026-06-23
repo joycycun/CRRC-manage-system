@@ -146,22 +146,6 @@
             </select>
           </label>
 
-          <label>
-            需求书名称
-            <input
-              v-model="uploadForm.bookName"
-              placeholder="例如：香港屯马项目需求书"
-            />
-          </label>
-
-          <label>
-            文件名称
-            <input
-              v-model="uploadForm.fileName"
-              placeholder="例如：需求书_V1.0.docx"
-            />
-          </label>
-
           <label class="full-row">
             Word 文档
             <input
@@ -169,6 +153,9 @@
               accept=".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
               @change="handleFileChange"
              />
+            <span class="selected-file-name">
+              {{ uploadForm.fileName || '请选择 Word 需求书文件，需求书名称将自动使用文件名' }}
+            </span>
           </label>
         </div>
 
@@ -267,6 +254,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { canUseAction } from '@/utils/permission'
 import { buildUploadFilePayload, downloadLocalFile, getFilePreviewUrl } from '@/utils/filePreview'
+import { getAuditUserPayload } from '@/utils/currentUser'
 
 import { getProjects } from '@/api/project'
 
@@ -473,8 +461,11 @@ async function handleFileChange(event) {
 
   uploadForm.file = file
   uploadForm.fileName = file.name
+  uploadForm.bookName = file.name
   try {
     Object.assign(uploadForm, await buildUploadFilePayload(file))
+    uploadForm.fileName = file.name
+    uploadForm.bookName = file.name
   } catch (err) {
     alert('读取需求书文件失败，请重新选择')
   }
@@ -505,11 +496,6 @@ async function uploadBook() {
     return
   }
 
-  if (!uploadForm.bookName) {
-    alert('请输入需求书名称')
-    return
-  }
-
   if (!uploadForm.file) {
     alert('请上传 Word 需求书文档')
     return
@@ -524,7 +510,7 @@ async function uploadBook() {
 
   const payload = {
     projectId,
-    bookName: uploadForm.bookName,
+    bookName: uploadForm.fileName,
     fileId: uploadForm.fileId,
     fileName: uploadForm.fileName,
     fileContentType: uploadForm.fileContentType,
@@ -594,8 +580,7 @@ async function approveBook(item) {
 
   try {
     const res = await auditRequirementBook(item.id, {
-      auditUserId: 1,
-      auditUserName: '领导',
+      ...getAuditUserPayload(),
       auditStatus: '已通过',
       rejectReason: ''
     })
@@ -627,8 +612,7 @@ async function rejectBook(item) {
 
   try {
     const res = await auditRequirementBook(item.id, {
-      auditUserId: 1,
-      auditUserName: '领导',
+      ...getAuditUserPayload(),
       auditStatus: '已驳回',
       rejectReason: reason
     })
@@ -853,6 +837,13 @@ async function deleteBook(item) {
   margin-top: 4px;
   color: #64748b;
   font-size: 12px;
+  word-break: break-all;
+}
+
+.selected-file-name {
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.5;
   word-break: break-all;
 }
 

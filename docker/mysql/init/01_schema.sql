@@ -342,6 +342,29 @@ CREATE TABLE `production_orders` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='生产工单表';
 /*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `production_test_outlines`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `production_test_outlines` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `hardware_id` bigint NOT NULL DEFAULT '0',
+  `hardware_version` varchar(128) COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `board_models` varchar(512) COLLATE utf8mb4_general_ci NOT NULL DEFAULT '' COMMENT '板卡型号，多个用逗号分隔',
+  `device_type` varchar(128) COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `file_id` bigint NOT NULL DEFAULT '0',
+  `file_name` varchar(255) COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `uploader_id` bigint NOT NULL DEFAULT '0',
+  `uploader_name` varchar(64) COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `upload_time` datetime DEFAULT CURRENT_TIMESTAMP,
+  `remark` text COLLATE utf8mb4_general_ci,
+  `is_deleted` tinyint NOT NULL DEFAULT '0',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_pto_hardware_id` (`hardware_id`),
+  KEY `idx_pto_upload_time` (`upload_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='生产测试大纲表';
+/*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `production_requests`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
@@ -668,4 +691,3 @@ CREATE TABLE `users` (
 /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
-

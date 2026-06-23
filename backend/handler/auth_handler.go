@@ -135,6 +135,9 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		user.ID,
 	)
 
+	ensureUserRoleBinding("丁sir", "software_owner")
+	ensureUserRoleBinding("王宇", "hardware_owner")
+
 	roles, _ := queryUserRoles(user.ID)
 	permissions, _ := queryUserPermissions(user.ID)
 
@@ -262,6 +265,217 @@ func ChangePasswordHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+type CreateUserRequest struct {
+	Username   string   `json:"username"`
+	Password   string   `json:"password"`
+	RealName   string   `json:"realName"`
+	Email      string   `json:"email"`
+	Phone      string   `json:"phone"`
+	Department string   `json:"department"`
+	Status     string   `json:"status"`
+	RoleCodes  []string `json:"roleCodes"`
+}
+
+func UsersHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != http.MethodPost {
+		json.NewEncoder(w).Encode(LoginResponse{Code: 405, Msg: "请求方法错误"})
+		return
+	}
+
+	if !hasRequestRole(r, "system_admin") {
+		json.NewEncoder(w).Encode(LoginResponse{Code: 403, Msg: "只有系统管理员可以新增用户"})
+		return
+	}
+
+	if !authTableExists("roles") || !authTableExists("user_roles") {
+		json.NewEncoder(w).Encode(LoginResponse{Code: 500, Msg: "角色表未初始化"})
+		return
+	}
+	ensureQualityStaffRole()
+	ensureShippingAuditorRole()
+
+	var req CreateUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		json.NewEncoder(w).Encode(LoginResponse{Code: 400, Msg: "请求参数错误"})
+		return
+	}
+
+	req.Username = strings.TrimSpace(req.Username)
+	req.RealName = strings.TrimSpace(req.RealName)
+	req.Email = strings.TrimSpace(req.Email)
+	req.Phone = strings.TrimSpace(req.Phone)
+	req.Department = strings.TrimSpace(req.Department)
+	req.Status = strings.TrimSpace(req.Status)
+	if req.Status == "" {
+		req.Status = "启用"
+	}
+	if req.Password == "" {
+		req.Password = "123456"
+	}
+
+	if req.Username == "" {
+		json.NewEncoder(w).Encode(LoginResponse{Code: 400, Msg: "登录账号不能为空"})
+		return
+	}
+	if req.RealName == "" {
+		req.RealName = req.Username
+	}
+	if len(req.Password) < 6 {
+		json.NewEncoder(w).Encode(LoginResponse{Code: 400, Msg: "密码至少需要6位"})
+		return
+	}
+	roleCodes := uniqueRoleCodes(req.RoleCodes)
+	if len(roleCodes) == 0 {
+		json.NewEncoder(w).Encode(LoginResponse{Code: 400, Msg: "请至少选择一个角色"})
+		return
+	}
+
+	passwordHash, err := hashPassword(req.Password)
+	if err != nil {
+		json.NewEncoder(w).Encode(LoginResponse{Code: 500, Msg: "密码加密失败"})
+		return
+	}
+
+	tx, err := config.DB.Begin()
+	if err != nil {
+		json.NewEncoder(w).Encode(LoginResponse{Code: 500, Msg: "开启事务失败: " + err.Error()})
+		return
+	}
+	defer tx.Rollback()
+
+	result, err := tx.Exec(`
+		INSERT INTO users (
+			username,
+			password_hash,
+			real_name,
+			email,
+			phone,
+			department,
+			status,
+			created_at,
+			updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+	`,
+		req.Username,
+		passwordHash,
+		req.RealName,
+		req.Email,
+		req.Phone,
+		req.Department,
+		req.Status,
+	)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
+			json.NewEncoder(w).Encode(LoginResponse{Code: 409, Msg: "登录账号已存在"})
+			return
+		}
+		json.NewEncoder(w).Encode(LoginResponse{Code: 500, Msg: "新增用户失败: " + err.Error()})
+		return
+	}
+
+	userID, _ := result.LastInsertId()
+	for _, roleCode := range roleCodes {
+		roleResult, err := tx.Exec(`
+			INSERT IGNORE INTO user_roles (user_id, role_id, created_at)
+			SELECT ?, id, NOW()
+			FROM roles
+			WHERE role_code = ?
+		`, userID, roleCode)
+		if err != nil {
+			json.NewEncoder(w).Encode(LoginResponse{Code: 500, Msg: "绑定角色失败: " + err.Error()})
+			return
+		}
+		affected, _ := roleResult.RowsAffected()
+		if affected == 0 {
+			var exists int
+			_ = tx.QueryRow("SELECT COUNT(1) FROM roles WHERE role_code = ?", roleCode).Scan(&exists)
+			if exists == 0 {
+				json.NewEncoder(w).Encode(LoginResponse{Code: 400, Msg: "角色不存在: " + roleCode})
+				return
+			}
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		json.NewEncoder(w).Encode(LoginResponse{Code: 500, Msg: "提交事务失败: " + err.Error()})
+		return
+	}
+
+	json.NewEncoder(w).Encode(LoginResponse{
+		Code: 200,
+		Msg:  "新增用户成功",
+		Data: map[string]interface{}{
+			"id": userID,
+		},
+	})
+}
+
+func uniqueRoleCodes(values []string) []string {
+	seen := make(map[string]bool)
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		result = append(result, value)
+	}
+	return result
+}
+
+func UserRolesOptionsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != http.MethodGet {
+		json.NewEncoder(w).Encode(LoginResponse{Code: 405, Msg: "请求方法错误"})
+		return
+	}
+
+	if !hasRequestRole(r, "system_admin") {
+		json.NewEncoder(w).Encode(LoginResponse{Code: 403, Msg: "只有系统管理员可以查看角色"})
+		return
+	}
+
+	ensureQualityStaffRole()
+	ensureShippingAuditorRole()
+
+	rows, err := config.DB.Query(`
+		SELECT role_code, role_name, IFNULL(description, '')
+		FROM roles
+		ORDER BY id ASC
+	`)
+	if err != nil {
+		json.NewEncoder(w).Encode(LoginResponse{Code: 500, Msg: "查询角色失败: " + err.Error()})
+		return
+	}
+	defer rows.Close()
+
+	list := make([]map[string]interface{}, 0)
+	for rows.Next() {
+		var roleCode string
+		var roleName string
+		var description string
+		if err := rows.Scan(&roleCode, &roleName, &description); err != nil {
+			json.NewEncoder(w).Encode(LoginResponse{Code: 500, Msg: "解析角色失败: " + err.Error()})
+			return
+		}
+		list = append(list, map[string]interface{}{
+			"roleCode":    roleCode,
+			"roleName":    roleName,
+			"description": description,
+		})
+	}
+
+	json.NewEncoder(w).Encode(LoginResponse{
+		Code: 200,
+		Msg:  "查询成功",
+		Data: list,
+	})
+}
+
 func hashPassword(password string) (string, error) {
 	salt := make([]byte, passwordSaltSize)
 	if _, err := io.ReadFull(rand.Reader, salt); err != nil {
@@ -359,6 +573,8 @@ func SoftwareOwnersHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ensureUserRoleBinding("丁sir", "software_owner")
+
 	rows, err := config.DB.Query(`
 		SELECT
 			u.id,
@@ -399,6 +615,98 @@ func SoftwareOwnersHandler(w http.ResponseWriter, r *http.Request) {
 		"msg":  "查询成功",
 		"data": list,
 	})
+}
+
+func ensureQualityStaffRole() {
+	_, _ = config.DB.Exec(`
+		INSERT INTO roles (role_code, role_name, description, created_at, updated_at)
+		VALUES ('quality_staff', '质量检查人员', '负责生产管理里面生产测试审查', NOW(), NOW())
+		ON DUPLICATE KEY UPDATE
+			role_name = VALUES(role_name),
+			description = VALUES(description),
+			updated_at = NOW()
+	`)
+
+	_, _ = config.DB.Exec(`
+		INSERT INTO permissions (permission_code, permission_name, module, description, created_at)
+		VALUES
+			('production:view', '查看生产记录', '生产管理', '查看生产数据', NOW()),
+			('production:test', '出厂测试', '生产管理', '处理烧录后的出厂测试', NOW()),
+			('production:audit', '审核生产测试', '生产管理', '质量检查人员审核出厂测试', NOW())
+		ON DUPLICATE KEY UPDATE
+			permission_name = VALUES(permission_name),
+			module = VALUES(module),
+			description = VALUES(description)
+	`)
+
+	_, _ = config.DB.Exec(`
+		INSERT IGNORE INTO role_permissions (role_id, permission_id, created_at)
+		SELECT r.id, p.id, NOW()
+		FROM roles r
+		JOIN permissions p
+		WHERE r.role_code = 'quality_staff'
+		  AND p.permission_code IN ('project:view', 'production:view', 'production:test', 'production:audit', 'report:view', 'report:manage')
+	`)
+}
+
+func ensureShippingAuditorRole() {
+	_, _ = config.DB.Exec(`
+		INSERT INTO roles (role_code, role_name, description, created_at, updated_at)
+		VALUES ('shipping_auditor', '发货审核', '发货人员权限基础上增加发货批次审核', NOW(), NOW())
+		ON DUPLICATE KEY UPDATE
+			role_name = VALUES(role_name),
+			description = VALUES(description),
+			updated_at = NOW()
+	`)
+
+	_, _ = config.DB.Exec(`
+		INSERT INTO permissions (permission_code, permission_name, module, description, created_at)
+		VALUES
+			('project:view', '查看项目', '项目管理', '查看项目立项数据', NOW()),
+			('shipping:view', '查看发货数据', '发货管理', '查看发货和出库数据', NOW()),
+			('shipping:audit', '审核发货批次', '发货管理', '审核发货批次', NOW()),
+			('report:view', '查看统计报表', '统计报表', '查看项目进度、版本矩阵和问题统计', NOW()),
+			('report:manage', '查看统计报表', '统计报表', '查看统计报表', NOW())
+		ON DUPLICATE KEY UPDATE
+			permission_name = VALUES(permission_name),
+			module = VALUES(module),
+			description = VALUES(description)
+	`)
+
+	_, _ = config.DB.Exec(`
+		INSERT IGNORE INTO role_permissions (role_id, permission_id, created_at)
+		SELECT r.id, p.id, NOW()
+		FROM roles r
+		JOIN permissions p
+		WHERE r.role_code = 'shipping_auditor'
+		  AND p.permission_code IN ('project:view', 'shipping:view', 'shipping:audit', 'report:view', 'report:manage')
+	`)
+
+	_, _ = config.DB.Exec(`
+		DELETE rp
+		FROM role_permissions rp
+		JOIN roles r ON r.id = rp.role_id
+		JOIN permissions p ON p.id = rp.permission_id
+		WHERE r.role_code = 'shipping_auditor'
+		  AND p.permission_code = 'shipping:manage'
+	`)
+}
+
+func ensureUserRoleBinding(username string, roleCode string) {
+	username = strings.TrimSpace(username)
+	roleCode = strings.TrimSpace(roleCode)
+	if username == "" || roleCode == "" {
+		return
+	}
+
+	_, _ = config.DB.Exec(`
+		INSERT IGNORE INTO user_roles (user_id, role_id, created_at)
+		SELECT u.id, r.id, NOW()
+		FROM users u
+		JOIN roles r ON r.role_code = ?
+		WHERE (u.username = ? OR u.real_name = ?)
+		  AND IFNULL(u.status, '启用') = '启用'
+	`, roleCode, username, username)
 }
 
 func authTableExists(tableName string) bool {

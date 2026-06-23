@@ -120,6 +120,7 @@ func resolveAfterSalesProjectID(projectID int64, projectName string) (int64, err
 			FROM projects
 			WHERE id = ?
 			  AND IFNULL(is_deleted, 0) = 0
+			  AND IFNULL(audit_status, '未提交') = '已通过'
 			  AND status = '已关闭'
 		`, projectID).Scan(&exists)
 		if err != nil {
@@ -142,6 +143,7 @@ func resolveAfterSalesProjectID(projectID int64, projectName string) (int64, err
 		FROM projects
 		WHERE project_name = ?
 		  AND IFNULL(is_deleted, 0) = 0
+		  AND IFNULL(audit_status, '未提交') = '已通过'
 		  AND status = '已关闭'
 		LIMIT 1
 	`, projectName).Scan(&id)
@@ -207,6 +209,7 @@ func GetRepairRecordsHandler(w http.ResponseWriter, r *http.Request) {
 		INNER JOIN projects p
 			ON rr.project_id = p.id
 			AND IFNULL(p.is_deleted, 0) = 0
+			AND IFNULL(p.audit_status, '未提交') = '已通过'
 			AND p.status = '已关闭'
 		WHERE IFNULL(rr.is_deleted, 0) = 0
 		ORDER BY rr.id DESC
@@ -605,6 +608,7 @@ func FaultAnalysisActionHandler(w http.ResponseWriter, r *http.Request) {
 func GetFaultAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 	ensureUploadedFilesTable()
 
+	visibilitySQL := reviewVisibilitySQL(r, "fa.audit_status", "fa.submit_user_id", "fa.submit_user_name", "aftersales_staff")
 	rows, err := config.DB.Query(`
 		SELECT
 			fa.id,
@@ -633,9 +637,10 @@ func GetFaultAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 		INNER JOIN projects p
 			ON fa.project_id = p.id
 			AND IFNULL(p.is_deleted, 0) = 0
+			AND IFNULL(p.audit_status, '未提交') = '已通过'
 			AND p.status = '已关闭'
 		LEFT JOIN uploaded_files uf ON uf.id = fa.file_id
-		WHERE fa.is_deleted = 0
+		WHERE fa.is_deleted = 0 ` + visibilitySQL + `
 		ORDER BY fa.id DESC
 	`)
 	if err != nil {
@@ -816,6 +821,7 @@ func AuditFaultAnalysisHandler(w http.ResponseWriter, r *http.Request, id int64)
 		http.Error(w, "审核状态只能是 已通过 或 已驳回", http.StatusBadRequest)
 		return
 	}
+	req.AuditorID, req.AuditorName = normalizeAuditUser(r, req.AuditorID, req.AuditorName)
 
 	result, err := config.DB.Exec(`
 		UPDATE fault_analysis

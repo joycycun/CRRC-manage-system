@@ -713,6 +713,7 @@ func GetFactoryTestsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	ensureUploadedFilesTable()
 
+	visibilitySQL := reviewVisibilitySQL(r, "ft.audit_status", "ft.uploader_id", "ft.uploader_name", "production_staff")
 	rows, err := config.DB.Query(`
 		SELECT
 			ft.id,
@@ -741,7 +742,7 @@ func GetFactoryTestsHandler(w http.ResponseWriter, r *http.Request) {
 			IFNULL(ft.remark, '')
 		FROM factory_tests ft
 		LEFT JOIN uploaded_files uf ON uf.id = ft.file_id
-		WHERE IFNULL(ft.is_deleted, 0) = 0
+		WHERE IFNULL(ft.is_deleted, 0) = 0 ` + visibilitySQL + `
 		ORDER BY ft.id DESC
 	`)
 
@@ -954,7 +955,7 @@ type FactoryTestAuditRequest struct {
 }
 
 func AuditFactoryTestHandler(w http.ResponseWriter, r *http.Request, id int64) {
-	if !requireProductionAuditPermission(w, r) {
+	if !requireFactoryQualityAuditorPermission(w, r) {
 		return
 	}
 
@@ -970,6 +971,7 @@ func AuditFactoryTestHandler(w http.ResponseWriter, r *http.Request, id int64) {
 		http.Error(w, "审核状态只能是 已通过 或 已驳回", http.StatusBadRequest)
 		return
 	}
+	req.AuditorID, req.AuditorName = normalizeAuditUser(r, req.AuditorID, req.AuditorName)
 
 	tx, err := config.DB.Begin()
 	if err != nil {
@@ -1531,8 +1533,8 @@ func ImportBurnRecordsHandler(w http.ResponseWriter, r *http.Request) {
 func DeleteBurnBatchHandler(w http.ResponseWriter, r *http.Request, batchNo string) {
 	w.Header().Set("Content-Type", "application/json")
 
-	if !hasRequestRole(r, "production_staff") {
-		http.Error(w, "无删除权限：生产烧录批次仅生产人员可删除", http.StatusForbidden)
+	if !hasRequestRole(r, "production_staff") && !hasRequestRole(r, "system_admin") {
+		http.Error(w, "无删除权限：生产烧录批次仅生产人员或管理员可删除", http.StatusForbidden)
 		return
 	}
 
@@ -1612,8 +1614,8 @@ func DeleteBurnBatchHandler(w http.ResponseWriter, r *http.Request, batchNo stri
 func DeleteBurnRecordHandler(w http.ResponseWriter, r *http.Request, id int64) {
 	w.Header().Set("Content-Type", "application/json")
 
-	if !hasRequestRole(r, "production_staff") {
-		http.Error(w, "无删除权限：生产烧录记录仅生产人员可删除", http.StatusForbidden)
+	if !hasRequestRole(r, "production_staff") && !hasRequestRole(r, "system_admin") {
+		http.Error(w, "无删除权限：生产烧录记录仅生产人员或管理员可删除", http.StatusForbidden)
 		return
 	}
 
@@ -2020,7 +2022,7 @@ func SubmitFactoryTestsHandler(w http.ResponseWriter, r *http.Request) {
 func AuditFactoryTestsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	if !requireLeaderPermission(w, r) {
+	if !requireFactoryQualityAuditorPermission(w, r) {
 		return
 	}
 
@@ -2047,9 +2049,7 @@ func AuditFactoryTestsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if strings.TrimSpace(req.AuditorName) == "" {
-		req.AuditorName = "质量检查人员"
-	}
+	req.AuditorID, req.AuditorName = normalizeAuditUser(r, req.AuditorID, req.AuditorName)
 
 	tx, err := config.DB.Begin()
 	if err != nil {

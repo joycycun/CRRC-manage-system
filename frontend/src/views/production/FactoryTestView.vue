@@ -130,7 +130,7 @@
                   </button>
 
                   <button
-                    v-if="canUseAction('production:audit') && group.auditStatus === 'submitted'"
+                    v-if="canAuditFactoryTest && group.auditStatus === 'submitted'"
                     class="text-btn green"
                     @click="auditModelGroup(group)"
                   >
@@ -440,7 +440,7 @@
 
         <div class="dialog-footer">
           <button
-            v-if="canUseAction('production:audit') && selectedFactoryTest.auditStatus === 'submitted'"
+            v-if="canAuditFactoryTest && selectedFactoryTest.auditStatus === 'submitted'"
             class="green-btn"
             @click="approveFactoryTest(selectedFactoryTest)"
           >
@@ -448,7 +448,7 @@
           </button>
 
           <button
-            v-if="canUseAction('production:audit') && selectedFactoryTest.auditStatus === 'submitted'"
+            v-if="canAuditFactoryTest && selectedFactoryTest.auditStatus === 'submitted'"
             class="red-btn"
             @click="rejectFactoryTest(selectedFactoryTest)"
           >
@@ -491,6 +491,15 @@ const currentUserName = ref(
   localStorage.getItem('realName') ||
   '当前用户'
 )
+
+try {
+  const user = JSON.parse(localStorage.getItem('user') || '{}')
+  currentUserName.value = user.realName || user.username || currentUserName.value
+} catch (err) {
+  console.warn('读取当前用户失败：', err)
+}
+
+const canAuditFactoryTest = computed(() => canUseAction('production:audit'))
 
 function getCurrentUserId() {
   try {

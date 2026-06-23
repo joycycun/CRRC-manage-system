@@ -111,7 +111,7 @@
                   </button>
 
                   <button
-                    v-if="canUseAction('hardware:submit') && (item.auditStatus === 'draft' || item.auditStatus === 'rejected')"
+                    v-if="canSubmitTest(item)"
                     class="text-btn blue"
                     @click="submitTest(item)"
                   >
@@ -418,6 +418,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { canUseAction } from '@/utils/permission'
 import { buildUploadFilePayload, downloadLocalFile, getFilePreviewUrl } from '@/utils/filePreview'
+import { getAuditUserPayload, getCurrentUserParams } from '@/utils/currentUser'
 
 import { getProjects } from '@/api/project'
 
@@ -765,28 +766,29 @@ async function uploadTest() {
     return
   }
 
-const payload = {
-  projectId,
-  hardwareId,
-  deviceType: uploadForm.deviceType,
-  testName: uploadForm.recordName,
-  recordName: uploadForm.recordName,
-  hardwareVersion: uploadForm.hardwareVersion,
-  fileId: uploadForm.fileId,
-  fileName: uploadForm.fileName,
-  fileContentType: uploadForm.fileContentType,
-  fileData: uploadForm.fileData,
+  const currentUser = getCurrentUserParams()
+  const uploaderName = currentUser.realName || currentUser.username || currentUserName.value
+  const payload = {
+    projectId,
+    hardwareId,
+    deviceType: uploadForm.deviceType,
+    testName: uploadForm.recordName,
+    recordName: uploadForm.recordName,
+    hardwareVersion: uploadForm.hardwareVersion,
+    fileId: uploadForm.fileId,
+    fileName: uploadForm.fileName,
+    fileContentType: uploadForm.fileContentType,
+    fileData: uploadForm.fileData,
 
-  // 上传人
-  uploaderId: 1,
-  uploaderName: currentUserName.value,
-  uploadUserId: 1,
-  uploadUserName: currentUserName.value,
+    uploaderId: currentUser.userId || 0,
+    uploaderName,
+    uploadUserId: currentUser.userId || 0,
+    uploadUserName: uploaderName,
 
-  auditStatus: '草稿',
-  status: '草稿',
-  remark: uploadForm.remark || ''
-}
+    auditStatus: '草稿',
+    status: '草稿',
+    remark: uploadForm.remark || ''
+  }
 
   try {
     const res = await createHardwareTest(payload)
@@ -813,6 +815,19 @@ function viewTest(item) {
 
 function downloadTest(item) {
   downloadLocalFile(item, '硬件测试记录.docx')
+}
+
+function canSubmitTest(item) {
+  if (!canUseAction('hardware:submit')) return false
+  if (!['draft', 'rejected'].includes(item.auditStatus)) return false
+
+  const currentUser = getCurrentUserParams()
+  const currentID = Number(currentUser.userId || 0)
+  const uploaderID = Number(item.uploaderId || 0)
+  if (currentID && uploaderID && currentID === uploaderID) return true
+
+  const currentNames = [currentUser.realName, currentUser.username, currentUserName.value].filter(Boolean)
+  return currentNames.includes(item.uploader)
 }
 
 async function submitTest(item) {
@@ -851,10 +866,7 @@ async function approveTest(item) {
 
   try {
     const res = await auditHardwareTest(item.id, {
-      auditorId: 1,
-      auditorName: '领导',
-      auditUserId: 1,
-      auditUserName: '领导',
+      ...getAuditUserPayload(),
       auditStatus: '已通过',
       rejectReason: ''
     })
@@ -892,10 +904,7 @@ async function confirmRejectTest() {
 
   try {
     const res = await auditHardwareTest(currentRejectTest.value.id, {
-      auditorId: 1,
-      auditorName: '领导',
-      auditUserId: 1,
-      auditUserName: '领导',
+      ...getAuditUserPayload(),
       auditStatus: '已驳回',
       rejectReason: rejectForm.reason
     })

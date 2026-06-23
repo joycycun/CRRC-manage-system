@@ -12,6 +12,9 @@ func InitRouter() http.Handler {
 	// 登录
 	mux.HandleFunc("/api/login", handler.LoginHandler)
 	mux.HandleFunc("/api/change-password", handler.ChangePasswordHandler)
+	mux.HandleFunc("/api/roles", handler.UserRolesOptionsHandler)
+	mux.HandleFunc("/api/users", handler.UsersHandler)
+	mux.HandleFunc("/api/users/roles", handler.UserRolesOptionsHandler)
 	mux.HandleFunc("/api/users/software-owners", handler.SoftwareOwnersHandler)
 	mux.HandleFunc("/api/files/", handler.UploadedFileActionHandler)
 
@@ -56,6 +59,9 @@ func InitRouter() http.Handler {
 	// 生产工单
 	mux.HandleFunc("/api/production-orders", handler.ProductionOrdersHandler)
 	mux.HandleFunc("/api/production-orders/", handler.ProductionOrderActionHandler)
+
+	// 生产测试大纲
+	mux.HandleFunc("/api/production-test-outlines", handler.ProductionTestOutlinesHandler)
 
 	// 烧录记录
 	mux.HandleFunc("/api/burn-records", handler.BurnRecordsHandler)

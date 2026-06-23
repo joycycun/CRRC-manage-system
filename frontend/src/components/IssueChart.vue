@@ -87,7 +87,7 @@ function initChart() {
         name: '问题级别',
         type: 'pie',
 
-        radius: ['42%', '62%'],
+        radius: ['38%', '56%'],
         center: ['50%', '50%'],
 
         itemStyle: {
@@ -109,7 +109,7 @@ function initChart() {
         // 鼠标悬浮时，只放大扇区，不显示外圈文字
         emphasis: {
           scale: true,
-          scaleSize: 6,
+          scaleSize: 3,
           label: {
             show: false
           },
@@ -152,7 +152,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .chart-card {
   width: 100%;
-  height: 420px;
+  min-height: 456px;
   background: #0f172a;
   border: 1px solid #1e293b;
   border-radius: 14px;
@@ -160,7 +160,7 @@ onBeforeUnmount(() => {
   color: #f8fafc;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .chart-header {
@@ -181,8 +181,8 @@ onBeforeUnmount(() => {
 }
 
 .chart-area {
-  height: 280px;
-  flex-shrink: 0;
+  flex: 1 1 280px;
+  min-height: 270px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -190,19 +190,20 @@ onBeforeUnmount(() => {
 
 .chart-box {
   width: 100%;
-  height: 280px;
+  height: 270px;
 }
 
 .legend-list {
-  height: 48px;
+  min-height: 62px;
   flex-shrink: 0;
   display: grid;
-  grid-template-columns: repeat(4, auto);
+  grid-template-columns: repeat(2, minmax(86px, max-content));
   justify-content: center;
   align-items: center;
-  column-gap: 28px;
+  column-gap: 22px;
   row-gap: 8px;
-  padding-top: 8px;
+  padding: 10px 0 4px;
+  max-width: 100%;
 }
 
 .legend-item {
@@ -238,20 +239,21 @@ onBeforeUnmount(() => {
 
 @media (max-width: 768px) {
   .chart-card {
-    height: 380px;
+    min-height: 408px;
   }
 
   .chart-area {
-    height: 230px;
+    flex-basis: 220px;
+    min-height: 220px;
   }
 
   .chart-box {
-    height: 230px;
+    height: 220px;
   }
 
   .legend-list {
-    grid-template-columns: repeat(2, auto);
-    height: 70px;
+    grid-template-columns: repeat(2, minmax(86px, max-content));
+    min-height: 82px;
   }
 }
 </style>

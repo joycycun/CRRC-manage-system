@@ -71,11 +71,15 @@
     </div>
 
     <div class="header-right">
+      <button v-if="isSystemAdmin" class="password-btn" type="button" @click="openUserDialog">
+        新增用户
+      </button>
+
       <button class="password-btn" type="button" @click="openPasswordDialog">
         修改密码
       </button>
 
-      <div class="notify-wrap">
+      <div v-if="!isSystemAdmin" class="notify-wrap">
         <button class="notify-btn" type="button" @click="toggleNotifications">
           🔔
           <span v-if="notificationCount > 0" class="notify-dot"></span>
@@ -97,7 +101,23 @@
               class="notify-item"
               @click="goNotification(item)"
             >
-              <span class="notify-title">{{ item.title }}</span>
+              <button
+                class="notify-title"
+                :class="{ expanded: expandedNotificationIds.includes(item.id) }"
+                type="button"
+                :title="item.title"
+                @click.stop="toggleNotificationExpand(item)"
+              >
+                {{ item.title }}
+              </button>
+              <button
+                v-if="isLongNotification(item)"
+                class="notify-expand"
+                type="button"
+                @click.stop="toggleNotificationExpand(item)"
+              >
+                {{ expandedNotificationIds.includes(item.id) ? '收起' : '展开' }}
+              </button>
               <span class="notify-meta">
                 {{ item.deadline || '暂无截止时间' }} · {{ item.level || '普通' }}
               </span>
@@ -114,6 +134,14 @@
                 class="notify-action"
                 type="button"
                 @click.stop="confirmIssueTodo(item)"
+              >
+                确认
+              </button>
+              <button
+                v-if="item.type === 'requirementChangeReceipt'"
+                class="notify-action"
+                type="button"
+                @click.stop="confirmRequirementChangeTodo(item)"
               >
                 确认
               </button>
@@ -186,6 +214,93 @@
       </div>
     </div>
   </div>
+
+  <div v-if="showUserDialog" class="dialog-mask">
+    <div class="user-dialog">
+      <div class="dialog-header">
+        <h3>新增用户</h3>
+        <button type="button" @click="closeUserDialog">×</button>
+      </div>
+
+      <div class="user-form">
+        <label>
+          登录账号
+          <input v-model.trim="userForm.username" placeholder="请输入登录账号" />
+        </label>
+
+        <label>
+          真实姓名
+          <input v-model.trim="userForm.realName" placeholder="请输入真实姓名" />
+        </label>
+
+        <label>
+          初始密码
+          <input v-model="userForm.password" type="password" placeholder="默认 123456" />
+        </label>
+
+        <label>
+          部门
+          <select v-model="userForm.department">
+            <option value="">请选择部门</option>
+            <option
+              v-for="department in departmentOptions"
+              :key="department"
+              :value="department"
+            >
+              {{ department }}
+            </option>
+          </select>
+        </label>
+
+        <label>
+          邮箱
+          <input v-model.trim="userForm.email" placeholder="可选" />
+        </label>
+
+        <label>
+          手机/微信
+          <input v-model.trim="userForm.phone" placeholder="可选" />
+        </label>
+
+        <label>
+          状态
+          <select v-model="userForm.status">
+            <option value="启用">启用</option>
+            <option value="禁用">禁用</option>
+          </select>
+        </label>
+
+        <div class="role-field">
+          <span>角色</span>
+          <div class="role-grid">
+            <label
+              v-for="role in roleOptions"
+              :key="role.roleCode"
+              class="role-option"
+            >
+              <input
+                v-model="userForm.roleCodes"
+                type="checkbox"
+                :value="role.roleCode"
+              />
+              <span>{{ role.roleName }}</span>
+            </label>
+          </div>
+        </div>
+
+        <p v-if="userError" class="password-error">{{ userError }}</p>
+      </div>
+
+      <div class="dialog-footer">
+        <button class="cancel-btn" type="button" @click="closeUserDialog">
+          取消
+        </button>
+        <button class="save-btn" type="button" :disabled="userSaving" @click="submitCreateUser">
+          {{ userSaving ? '保存中...' : '保存' }}
+        </button>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup>
@@ -195,8 +310,10 @@ import { useRouter } from 'vue-router'
 import { getDashboardSummary, globalSearch, markNotificationRead } from '@/api/report'
 import { confirmProductionRequest } from '@/api/shippingBatch'
 import { confirmIssue } from '@/api/issue'
-import { changePasswordApi } from '@/api/auth'
+import { confirmRequirementChange } from '@/api/requirement'
+import { changePasswordApi, createUserApi, getRoleOptionsApi } from '@/api/auth'
 import { getCurrentUserParams } from '@/utils/currentUser'
+import { getStoredRoles } from '@/utils/permission'
 
 const router = useRouter()
 const keyword = ref('')
@@ -206,9 +323,26 @@ const showSearchPanel = ref(false)
 const searching = ref(false)
 const hasSearched = ref(false)
 const headerRef = ref(null)
+const expandedNotificationIds = ref([])
 const showPasswordDialog = ref(false)
+const showUserDialog = ref(false)
 const passwordSaving = ref(false)
+const userSaving = ref(false)
 const passwordError = ref('')
+const userError = ref('')
+const roleOptions = ref([])
+const departmentOptions = [
+  '管理部',
+  '项目助理',
+  '软件研发',
+  '硬件研发',
+  '生产',
+  '发货',
+  '发货审核',
+  '售后',
+  '质量检查',
+  '领导'
+]
 const searchResults = reactive({
   projects: [],
   versions: [],
@@ -219,8 +353,19 @@ const passwordForm = reactive({
   newPassword: '',
   confirmPassword: ''
 })
+const userForm = reactive({
+  username: '',
+  realName: '',
+  password: '123456',
+  email: '',
+  phone: '',
+  department: '',
+  status: '启用',
+  roleCodes: []
+})
 
 const notificationCount = computed(() => notifications.value.length)
+const isSystemAdmin = computed(() => getStoredRoles().includes('system_admin'))
 const hasSearchResult = computed(() => {
   return searchResults.projects.length > 0 ||
     searchResults.versions.length > 0 ||
@@ -228,7 +373,11 @@ const hasSearchResult = computed(() => {
 })
 
 onMounted(() => {
-  loadNotifications()
+  if (isSystemAdmin.value) {
+    clearAdminNotifications()
+  } else {
+    loadNotifications()
+  }
   document.addEventListener('click', handleDocumentClick)
 })
 
@@ -244,7 +393,18 @@ const todayText = computed(() => {
   return `${year}年${month}月${day}日`
 })
 
+function clearAdminNotifications() {
+  notifications.value = []
+  expandedNotificationIds.value = []
+  showNotifications.value = false
+}
+
 async function loadNotifications() {
+  if (isSystemAdmin.value) {
+    clearAdminNotifications()
+    return
+  }
+
   try {
     const res = await getDashboardSummary(getCurrentUserParams())
     const result = res?.data || res
@@ -253,12 +413,33 @@ async function loadNotifications() {
       ...(result.data?.todos || []),
       ...(result.data?.notifications || [])
     ]
+    const currentIds = new Set(notifications.value.map(item => item.id))
+    expandedNotificationIds.value = expandedNotificationIds.value.filter(id => currentIds.has(id))
   } catch (err) {
     console.error('加载消息提醒失败：', err)
   }
 }
 
+function isLongNotification(item) {
+  return String(item?.title || '').length > 24
+}
+
+function toggleNotificationExpand(item) {
+  if (!isLongNotification(item)) return
+  const id = item.id
+  if (expandedNotificationIds.value.includes(id)) {
+    expandedNotificationIds.value = expandedNotificationIds.value.filter(itemId => itemId !== id)
+  } else {
+    expandedNotificationIds.value = [...expandedNotificationIds.value, id]
+  }
+}
+
 async function toggleNotifications() {
+  if (isSystemAdmin.value) {
+    clearAdminNotifications()
+    return
+  }
+
   showNotifications.value = !showNotifications.value
   if (showNotifications.value) {
     await loadNotifications()
@@ -268,7 +449,7 @@ async function toggleNotifications() {
 async function goNotification(item) {
   showNotifications.value = false
 
-  if (String(item.type || '').endsWith('AuditResult') || item.type === 'productionRequestConfirmed' || item.type === 'issueConfirmed') {
+  if (String(item.type || '').endsWith('AuditResult') || item.type === 'productionRequestConfirmed' || item.type === 'issueConfirmed' || item.type === 'requirementChangeConfirmed') {
     await markAuditResultRead(item)
     notifications.value = notifications.value.filter(notification => notification.id !== item.id)
   }
@@ -326,6 +507,30 @@ async function confirmIssueTodo(item) {
   }
 }
 
+async function confirmRequirementChangeTodo(item) {
+  const id = Number(String(item.id || '').replace('requirement-change-receipt-', ''))
+  if (!id) return
+
+  try {
+    const user = getCurrentUserParams()
+    const res = await confirmRequirementChange(id, {
+      confirmUserId: user.userId,
+      confirmUserName: user.realName || user.username || '软件负责人'
+    })
+    const result = res?.data || res
+    if (result.code !== 200) {
+      alert(result.msg || '确认失败')
+      return
+    }
+    notifications.value = notifications.value.filter(notification => notification.id !== item.id)
+    await loadNotifications()
+    alert('已确认需求变更，上传人将收到通知')
+  } catch (err) {
+    console.error('确认需求变更失败：', err)
+    alert(err.response?.data || '确认失败，请检查后端接口')
+  }
+}
+
 async function markAuditResultRead(item) {
   try {
     const user = getCurrentUserParams()
@@ -357,6 +562,86 @@ function openPasswordDialog() {
 function closePasswordDialog() {
   if (passwordSaving.value) return
   showPasswordDialog.value = false
+}
+
+async function openUserDialog() {
+  userError.value = ''
+  userForm.username = ''
+  userForm.realName = ''
+  userForm.password = '123456'
+  userForm.email = ''
+  userForm.phone = ''
+  userForm.department = ''
+  userForm.status = '启用'
+  userForm.roleCodes = []
+  showUserDialog.value = true
+  await loadRoleOptions()
+}
+
+function closeUserDialog() {
+  if (userSaving.value) return
+  showUserDialog.value = false
+}
+
+async function loadRoleOptions() {
+  if (roleOptions.value.length > 0) return
+  try {
+    const res = await getRoleOptionsApi()
+    const result = res?.data || res
+    if (result.code !== 200) {
+      userError.value = result.msg || '加载角色失败'
+      return
+    }
+    roleOptions.value = result.data || []
+  } catch (err) {
+    console.error('加载角色失败：', err)
+    userError.value = err.response?.data?.msg || err.response?.data || '加载角色失败'
+  }
+}
+
+async function submitCreateUser() {
+  userError.value = ''
+
+  if (!userForm.username) {
+    userError.value = '请输入登录账号'
+    return
+  }
+
+  if ((userForm.password || '').length < 6) {
+    userError.value = '初始密码至少需要6位'
+    return
+  }
+
+  if (userForm.roleCodes.length === 0) {
+    userError.value = '请至少选择一个角色'
+    return
+  }
+
+  try {
+    userSaving.value = true
+    const res = await createUserApi({
+      username: userForm.username,
+      password: userForm.password || '123456',
+      realName: userForm.realName || userForm.username,
+      email: userForm.email,
+      phone: userForm.phone,
+      department: userForm.department,
+      status: userForm.status,
+      roleCodes: userForm.roleCodes
+    })
+    const result = res?.data || res
+    if (result.code !== 200) {
+      userError.value = result.msg || '新增用户失败'
+      return
+    }
+    alert('新增用户成功')
+    closeUserDialog()
+  } catch (err) {
+    console.error('新增用户失败：', err)
+    userError.value = err.response?.data?.msg || err.response?.data || '新增用户失败，请检查后端接口'
+  } finally {
+    userSaving.value = false
+  }
 }
 
 async function submitPasswordChange() {
@@ -728,14 +1013,42 @@ function goSearchResult(type, item) {
 
 .notify-title {
   display: block;
+  width: 100%;
   max-width: 100%;
+  border: none;
+  background: transparent;
   color: #f8fafc;
   font-size: 14px;
   font-weight: 600;
   line-height: 1.45;
+  text-align: left;
+  padding: 0;
+  cursor: pointer;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.notify-title.expanded {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.notify-expand {
+  margin-top: 5px;
+  border: none;
+  background: transparent;
+  color: #38bdf8;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0;
+}
+
+.notify-expand:hover {
+  color: #7dd3fc;
+  text-decoration: underline;
 }
 
 .notify-meta {
@@ -800,13 +1113,18 @@ function goSearchResult(type, item) {
   padding: 24px;
 }
 
-.password-dialog {
+.password-dialog,
+.user-dialog {
   width: min(420px, calc(100vw - 32px));
   border: 1px solid #263244;
   border-radius: 8px;
   background: #0b1220;
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.38);
   color: #e2e8f0;
+}
+
+.user-dialog {
+  width: min(640px, calc(100vw - 32px));
 }
 
 .dialog-header {
@@ -839,13 +1157,19 @@ function goSearchResult(type, item) {
   color: #f8fafc;
 }
 
-.password-form {
+.password-form,
+.user-form {
   display: grid;
   gap: 14px;
   padding: 18px;
 }
 
-.password-form label {
+.user-form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.password-form label,
+.user-form label {
   display: grid;
   gap: 7px;
   color: #cbd5e1;
@@ -853,7 +1177,9 @@ function goSearchResult(type, item) {
   font-weight: 700;
 }
 
-.password-form input {
+.password-form input,
+.user-form input,
+.user-form select {
   width: 100%;
   height: 38px;
   border: 1px solid #334155;
@@ -864,11 +1190,57 @@ function goSearchResult(type, item) {
   padding: 0 11px;
 }
 
-.password-form input:focus {
+.password-form input:focus,
+.user-form input:focus,
+.user-form select:focus {
   border-color: #38bdf8;
 }
 
+.role-field {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 9px;
+}
+
+.role-field > span {
+  color: #cbd5e1;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.role-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.role-option {
+  min-height: 36px;
+  border: 1px solid #263244;
+  border-radius: 6px;
+  background: #020617;
+  display: flex !important;
+  grid-template-columns: none !important;
+  align-items: center;
+  gap: 8px !important;
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.role-option input {
+  width: 14px;
+  height: 14px;
+  padding: 0;
+}
+
+.role-option span {
+  color: #e2e8f0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .password-error {
+  grid-column: 1 / -1;
   margin: 0;
   border: 1px solid rgba(248, 113, 113, 0.35);
   border-radius: 6px;
@@ -911,5 +1283,12 @@ function goSearchResult(type, item) {
 .save-btn:disabled {
   cursor: not-allowed;
   opacity: 0.65;
+}
+
+@media (max-width: 720px) {
+  .user-form,
+  .role-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

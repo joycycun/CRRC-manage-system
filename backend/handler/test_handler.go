@@ -62,6 +62,7 @@ func GetTestCasesHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	ensureUploadedFilesTable()
 
+	visibilitySQL := reviewVisibilitySQL(r, "tc.audit_status", "tc.uploader_id", "tc.uploader_name", "project_assistant")
 	rows, err := config.DB.Query(`
 		SELECT
 			tc.id,
@@ -89,10 +90,13 @@ func GetTestCasesHandler(w http.ResponseWriter, r *http.Request) {
 			IFNULL(DATE_FORMAT(tc.created_at, '%Y-%m-%d %H:%i:%s'), ''),
 			IFNULL(DATE_FORMAT(tc.updated_at, '%Y-%m-%d %H:%i:%s'), '')
 		FROM test_cases tc
-		LEFT JOIN projects p ON tc.project_id = p.id
+		INNER JOIN projects p
+		  ON tc.project_id = p.id
+		 AND IFNULL(p.is_deleted, 0) = 0
+		 AND IFNULL(p.audit_status, '未提交') = '已通过'
 		LEFT JOIN uploaded_files case_file ON case_file.id = tc.file_id
 		LEFT JOIN uploaded_files report_file ON report_file.id = tc.report_file_id
-		WHERE tc.is_deleted = 0
+		WHERE tc.is_deleted = 0 ` + visibilitySQL + `
 		ORDER BY tc.id DESC
 	`)
 	if err != nil {
@@ -277,9 +281,7 @@ func AuditTestCaseHandler(w http.ResponseWriter, r *http.Request, id int64) {
 		return
 	}
 
-	if req.AuditorName == "" {
-		req.AuditorName = req.Auditor
-	}
+	req.AuditorID, req.AuditorName = normalizeAuditUser(r, req.AuditorID, req.AuditorName)
 
 	if req.AuditStatus == "" {
 		http.Error(w, "审核状态不能为空", http.StatusBadRequest)

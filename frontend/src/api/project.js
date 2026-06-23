@@ -19,6 +19,14 @@ export function getProjectProposalUrl(id) {
   return `/api/projects/${id}/proposal`
 }
 
+export function uploadProjectProposal(id, data) {
+  return request({
+    url: `/projects/${id}/proposal`,
+    method: 'post',
+    data
+  })
+}
+
 export function getSoftwareOwners() {
   return request({
     url: '/users/software-owners',

@@ -160,7 +160,7 @@ func CreateHardwareVersionHandler(w http.ResponseWriter, r *http.Request) {
 		FileContentType: req.FileContentType,
 		FileData:        req.FileData,
 	}); err != nil {
-		http.Error(w, "保存硬件ZIP文件失败: "+err.Error(), http.StatusBadRequest)
+		http.Error(w, "保存硬件压缩包失败: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -188,20 +188,16 @@ func CreateHardwareVersionHandler(w http.ResponseWriter, r *http.Request) {
 			status,
 			owner_id,
 			owner_name,
-			uploader_id,
-			uploader_name,
 			zip_file_id,
 			description,
 			created_at,
 			updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		item.HardwareVersion,
 		item.ProjectID,
 		item.DeviceType,
 		item.Status,
-		item.OwnerID,
-		item.OwnerName,
 		item.OwnerID,
 		item.OwnerName,
 		item.ZipFileID,
@@ -324,7 +320,7 @@ func UploadHardwareZipHandler(w http.ResponseWriter, r *http.Request, id int64) 
 		FileContentType: req.FileContentType,
 		FileData:        req.FileData,
 	}); err != nil {
-		http.Error(w, "保存硬件ZIP文件失败: "+err.Error(), http.StatusBadRequest)
+		http.Error(w, "保存硬件压缩包失败: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -423,6 +419,7 @@ func HardwareTestActionHandler(w http.ResponseWriter, r *http.Request) {
 func GetHardwareTestsHandler(w http.ResponseWriter, r *http.Request) {
 	ensureUploadedFilesTable()
 
+	visibilitySQL := hardwareTestVisibilitySQL(r)
 	rows, err := config.DB.Query(`
 	SELECT
 		ht.id,
@@ -442,13 +439,17 @@ func GetHardwareTestsHandler(w http.ResponseWriter, r *http.Request) {
 		ht.audit_time,
 		IFNULL(ht.reject_reason, ''),
 		IFNULL(ht.remark, ''),
+		ht.upload_time,
 		ht.created_at,
 		IFNULL(ht.is_deleted, 0)
 	FROM hardware_tests ht
-	LEFT JOIN projects p ON ht.project_id = p.id
+	INNER JOIN projects p
+		ON ht.project_id = p.id
+		AND IFNULL(p.is_deleted, 0) = 0
+		AND IFNULL(p.audit_status, '未提交') = '已通过'
 	LEFT JOIN hardware_versions hv ON ht.hardware_id = hv.id
 	LEFT JOIN uploaded_files uf ON uf.id = ht.file_id
-	WHERE ht.is_deleted = 0
+	WHERE ht.is_deleted = 0 ` + visibilitySQL + `
 	ORDER BY ht.id DESC
 `)
 	if err != nil {
@@ -480,6 +481,7 @@ func GetHardwareTestsHandler(w http.ResponseWriter, r *http.Request) {
 			&item.AuditTime,
 			&item.RejectReason,
 			&item.Remark,
+			&item.UploadTime,
 			&item.CreatedAt,
 			&item.IsDeleted,
 		)
@@ -498,6 +500,27 @@ func GetHardwareTestsHandler(w http.ResponseWriter, r *http.Request) {
 		"msg":  "查询成功",
 		"data": list,
 	})
+}
+
+func hardwareTestVisibilitySQL(r *http.Request) string {
+	if hasRequestRole(r, "system_admin") {
+		return ""
+	}
+
+	if hasRequestRole(r, "leader") {
+		return " AND IFNULL(ht.audit_status, '草稿') IN ('待审核', 'submitted', '已提交', '已通过', '审核通过', 'approved', '已驳回', '审核驳回', 'rejected')"
+	}
+
+	userID, userName := currentRequestUser(r)
+	ownSQL := ""
+	if userID > 0 {
+		ownSQL += " OR IFNULL(ht.uploader_id, 0) = " + strconv.FormatInt(userID, 10)
+	}
+	if userName != "" {
+		ownSQL += " OR IFNULL(ht.uploader_name, '') = '" + strings.ReplaceAll(userName, "'", "''") + "'"
+	}
+
+	return " AND (IFNULL(ht.audit_status, '草稿') IN ('已通过', '审核通过', 'approved')" + ownSQL + ")"
 }
 
 // ============================================================
@@ -550,7 +573,7 @@ func CreateHardwareTestHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if item.AuditStatus == "" {
-		item.AuditStatus = "待审核"
+		item.AuditStatus = "草稿"
 	}
 
 	now := time.Now()
@@ -637,6 +660,7 @@ func AuditHardwareTestHandler(w http.ResponseWriter, r *http.Request, id int64) 
 		http.Error(w, "审核状态只能是 已通过 或 已驳回", http.StatusBadRequest)
 		return
 	}
+	req.AuditorID, req.AuditorName = normalizeAuditUser(r, req.AuditorID, req.AuditorName)
 
 	result, err := config.DB.Exec(`
 		UPDATE hardware_tests
@@ -705,6 +729,11 @@ func DeleteHardwareTestHandler(w http.ResponseWriter, r *http.Request, id int64)
 func SubmitHardwareTestHandler(w http.ResponseWriter, r *http.Request, id int64) {
 	w.Header().Set("Content-Type", "application/json")
 
+	if !canSubmitHardwareTest(r, id) {
+		http.Error(w, "无提交权限：只有上传人可以提交当前硬件测试记录", http.StatusForbidden)
+		return
+	}
+
 	result, err := config.DB.Exec(`
 		UPDATE hardware_tests
 		SET
@@ -712,6 +741,7 @@ func SubmitHardwareTestHandler(w http.ResponseWriter, r *http.Request, id int64)
 			reject_reason = '',
 			updated_at = NOW()
 		WHERE id = ? AND is_deleted = 0
+		  AND IFNULL(audit_status, '草稿') IN ('草稿', 'draft', '未提交', '已驳回', '审核驳回', 'rejected')
 	`, id)
 
 	if err != nil {
@@ -721,7 +751,7 @@ func SubmitHardwareTestHandler(w http.ResponseWriter, r *http.Request, id int64)
 
 	affected, _ := result.RowsAffected()
 	if affected == 0 {
-		http.Error(w, "硬件测试记录不存在或已删除", http.StatusNotFound)
+		http.Error(w, "硬件测试记录不存在、已删除或当前状态不可提交", http.StatusNotFound)
 		return
 	}
 
@@ -729,4 +759,28 @@ func SubmitHardwareTestHandler(w http.ResponseWriter, r *http.Request, id int64)
 		"code": 200,
 		"msg":  "提交成功",
 	})
+}
+
+func canSubmitHardwareTest(r *http.Request, id int64) bool {
+	if hasRequestRole(r, "system_admin") {
+		return true
+	}
+
+	var uploaderID int64
+	var uploaderName string
+	err := config.DB.QueryRow(`
+		SELECT IFNULL(uploader_id, 0), IFNULL(uploader_name, '')
+		FROM hardware_tests
+		WHERE id = ? AND is_deleted = 0
+		LIMIT 1
+	`, id).Scan(&uploaderID, &uploaderName)
+	if err != nil {
+		return false
+	}
+
+	userID, userName := currentRequestUser(r)
+	if userID > 0 && uploaderID > 0 && userID == uploaderID {
+		return true
+	}
+	return userName != "" && uploaderName != "" && userName == uploaderName
 }
