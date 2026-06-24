@@ -32,7 +32,7 @@ func HardwareVersionsHandler(w http.ResponseWriter, r *http.Request) {
 // ==========================
 // 硬件版本带 ID 操作入口
 // PUT  /api/hardware-versions/{id}
-// POST /api/hardware-versions/{id}/upload-zip
+// POST /api/hardware-versions/{id}/upload-document
 // ==========================
 
 func HardwareVersionActionHandler(w http.ResponseWriter, r *http.Request) {
@@ -60,9 +60,10 @@ func HardwareVersionActionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// POST /api/hardware-versions/1/upload-zip
-	if len(parts) == 2 && r.Method == http.MethodPost && parts[1] == "upload-zip" {
-		UploadHardwareZipHandler(w, r, id)
+	// POST /api/hardware-versions/1/upload-document
+	// 保留 upload-zip 兼容旧前端缓存和旧接口调用。
+	if len(parts) == 2 && r.Method == http.MethodPost && (parts[1] == "upload-document" || parts[1] == "upload-zip") {
+		UploadHardwareDocumentHandler(w, r, id)
 		return
 	}
 
@@ -160,7 +161,7 @@ func CreateHardwareVersionHandler(w http.ResponseWriter, r *http.Request) {
 		FileContentType: req.FileContentType,
 		FileData:        req.FileData,
 	}); err != nil {
-		http.Error(w, "保存硬件压缩包失败: "+err.Error(), http.StatusBadRequest)
+		http.Error(w, "保存硬件更改文档失败: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -227,11 +228,26 @@ func CreateHardwareVersionHandler(w http.ResponseWriter, r *http.Request) {
 // ==========================
 
 func UpdateHardwareVersionHandler(w http.ResponseWriter, r *http.Request, id int64) {
-	var item model.HardwareVersion
+	var req struct {
+		model.HardwareVersion
+		FileContentType string `json:"fileContentType"`
+		FileData        string `json:"fileData"`
+	}
 
-	err := json.NewDecoder(r.Body).Decode(&item)
+	err := json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {
 		http.Error(w, "参数解析失败: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	item := req.HardwareVersion
+	if err := saveUploadedFile(UploadedFilePayload{
+		FileID:          item.ZipFileID,
+		FileName:        item.ZipFileName,
+		FileContentType: req.FileContentType,
+		FileData:        req.FileData,
+	}); err != nil {
+		http.Error(w, "保存硬件更改文档失败: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -288,20 +304,19 @@ func UpdateHardwareVersionHandler(w http.ResponseWriter, r *http.Request, id int
 }
 
 // ==========================
-// POST /api/hardware-versions/{id}/upload-zip
-// 当前先接收 JSON 里的 zipFileId
-// 后面统一文件上传完成后，再改成 multipart 上传
+// POST /api/hardware-versions/{id}/upload-document
+// 当前沿用 zip_file_id 字段保存文件 ID，语义为硬件更改文档。
 // ==========================
 
-type HardwareZipRequest struct {
+type HardwareDocumentRequest struct {
 	ZipFileID       int64  `json:"zipFileId"`
 	ZipFileName     string `json:"zipFileName"`
 	FileContentType string `json:"fileContentType"`
 	FileData        string `json:"fileData"`
 }
 
-func UploadHardwareZipHandler(w http.ResponseWriter, r *http.Request, id int64) {
-	var req HardwareZipRequest
+func UploadHardwareDocumentHandler(w http.ResponseWriter, r *http.Request, id int64) {
+	var req HardwareDocumentRequest
 
 	err := json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {
@@ -310,7 +325,7 @@ func UploadHardwareZipHandler(w http.ResponseWriter, r *http.Request, id int64) 
 	}
 
 	if req.ZipFileID == 0 {
-		http.Error(w, "zipFileId 不能为空", http.StatusBadRequest)
+		http.Error(w, "文件ID不能为空", http.StatusBadRequest)
 		return
 	}
 
@@ -320,7 +335,7 @@ func UploadHardwareZipHandler(w http.ResponseWriter, r *http.Request, id int64) 
 		FileContentType: req.FileContentType,
 		FileData:        req.FileData,
 	}); err != nil {
-		http.Error(w, "保存硬件压缩包失败: "+err.Error(), http.StatusBadRequest)
+		http.Error(w, "保存硬件更改文档失败: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -333,7 +348,7 @@ func UploadHardwareZipHandler(w http.ResponseWriter, r *http.Request, id int64) 
 	`, req.ZipFileID, id)
 
 	if err != nil {
-		http.Error(w, "上传硬件资料失败: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "上传硬件更改文档失败: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -345,7 +360,7 @@ func UploadHardwareZipHandler(w http.ResponseWriter, r *http.Request, id int64) 
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"code": 200,
-		"msg":  "硬件资料绑定成功",
+		"msg":  "硬件更改文档绑定成功",
 	})
 }
 

@@ -29,10 +29,10 @@ export function updateHardwareVersion(id, data) {
   })
 }
 
-// 上传硬件 ZIP
-export function uploadHardwareZip(id, data) {
+// 上传硬件更改文档
+export function uploadHardwareDocument(id, data) {
   return request({
-    url: `/hardware-versions/${id}/upload-zip`,
+    url: `/hardware-versions/${id}/upload-document`,
     method: 'post',
     data,
     timeout: 120000

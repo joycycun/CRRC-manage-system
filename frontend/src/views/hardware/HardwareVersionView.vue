@@ -46,88 +46,93 @@
       <button class="reset-btn" @click="resetFilters">重置</button>
     </div>
 
-    <!-- 数据表格 -->
-    <div class="table-card">
-      <table>
-        <thead>
-          <tr>
-            <th>硬件版本</th>
-            <th>终端类型</th>
-            <th>绑定项目</th>
-            <th>版本状态</th>
-            <th>负责人</th>
-            <th>更新时间</th>
-            <th>压缩包文件</th>
-            <th class="operation-col">操作</th>
-          </tr>
-        </thead>
+    <!-- 项目折叠列表 -->
+    <div class="project-version-groups">
+      <div
+        v-for="group in groupedHardwareVersions"
+        :key="group.projectName"
+        class="project-version-group"
+      >
+        <button class="project-group-header" @click="toggleProjectGroup(group.projectName)">
+          <span class="fold-icon">{{ isProjectCollapsed(group.projectName) ? '›' : '⌄' }}</span>
+          <span class="project-group-title">{{ group.projectName }}</span>
+          <span class="project-group-count">{{ group.items.length }} 个硬件版本</span>
+        </button>
 
-        <tbody>
-          <tr v-for="item in filteredHardwareList" :key="item.id">
-            <td>
-              <button class="version-link" @click="viewHardware(item)">
-                {{ item.hardwareVersion }}
-              </button>
-              <div class="version-desc">{{ item.description }}</div>
-            </td>
+        <div v-show="!isProjectCollapsed(group.projectName)" class="table-card">
+          <table>
+            <thead>
+              <tr>
+                <th>硬件版本</th>
+                <th>终端类型</th>
+                <th>版本状态</th>
+                <th>负责人</th>
+                <th>更新时间</th>
+                <th>硬件更改文档</th>
+                <th class="operation-col">操作</th>
+              </tr>
+            </thead>
 
-            <td>
-              <span class="device-tag">
-                {{ item.deviceType }}
-              </span>
-            </td>
+            <tbody>
+              <tr v-for="item in group.items" :key="`${group.projectName}-${item.id}`">
+                <td>
+                  <button class="version-link" @click="viewHardware(item)">
+                    {{ item.hardwareVersion }}
+                  </button>
+                  <div class="version-desc">{{ item.description }}</div>
+                </td>
 
-            <td>
-              <div class="project-list">
-                <span
-                  v-for="project in item.bindProjects"
-                  :key="project"
-                  class="project-tag"
-                >
-                  {{ project }}
-                </span>
-              </div>
-            </td>
+                <td>
+                  <span class="device-tag">
+                    {{ item.deviceType }}
+                  </span>
+                </td>
 
-            <td>
-              <span class="status-tag" :class="item.status">
-                {{ getStatusText(item.status) }}
-              </span>
-            </td>
+                <td>
+                  <span class="status-tag" :class="item.status">
+                    {{ getStatusText(item.status) }}
+                  </span>
+                </td>
 
-            <td>{{ item.owner }}</td>
+                <td>{{ item.owner }}</td>
 
-            <td class="muted">{{ item.updateTime }}</td>
+                <td class="muted">{{ item.updateTime }}</td>
 
-            <td>
-              <span v-if="item.zipFileName" class="file-name">
-                {{ item.zipFileName }}
-              </span>
-              <span v-else class="muted">未上传</span>
-            </td>
+                <td>
+                  <span v-if="item.zipFileName" class="file-name">
+                    {{ item.zipFileName }}
+                  </span>
+                  <span v-else class="muted">未上传</span>
+                </td>
 
-            <td class="operation-col">
-              <div class="action-group">
-                <button class="text-btn" @click="viewHardware(item)">
-                  查看
-                </button>
+                <td class="operation-col">
+                  <div class="action-group">
+                    <button class="text-btn" @click="viewHardware(item)">
+                      查看
+                    </button>
 
-                <button v-if="canUseAction('hardware:update')" class="text-btn blue" @click="openEditDialog(item)">
-                  修改
-                </button>
+                    <button v-if="canUseAction('hardware:update')" class="text-btn blue" @click="openEditDialog(item)">
+                      修改
+                    </button>
 
-                <button v-if="canUseAction('hardware:upload')" class="text-btn yellow" @click="openZipUploadDialog(item)">
-                  上传压缩包
-                </button>
+                    <button v-if="canUseAction('hardware:upload')" class="text-btn yellow" @click="openDocumentUploadDialog(item)">
+                      上传文档
+                    </button>
 
-                <button v-if="canUseAction('hardware:download')" class="text-btn green" @click="downloadZip(item)">
-                  下载
-                </button>
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+                    <button v-if="canUseAction('hardware:download')" class="text-btn green" @click="downloadDocument(item)">
+                      下载
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div v-if="groupedHardwareVersions.length === 0" class="empty-card">
+        暂无硬件版本记录
+      </div>
 
       <div class="table-footer">
         共 {{ filteredHardwareList.length }} 条硬件版本记录
@@ -201,10 +206,10 @@
           </label>
 
           <label class="full-row">
-            硬件文件压缩包
+            硬件更改文档
             <input
               type="file"
-              accept=".zip,.rar,application/zip,application/x-zip-compressed,application/vnd.rar,application/x-rar-compressed"
+              accept=".doc,.docx,.txt,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
               @change="handleHardwareFileChange"
             />
 
@@ -213,7 +218,7 @@
             </span>
 
             <span v-else class="file-tip">
-              可在新增硬件版本时直接上传硬件原理图、PCB资料、BOM清单、生产资料等 ZIP/RAR 压缩包。
+              支持上传 Word 或 TXT 格式的硬件更改说明文档。
             </span>
           </label>
 
@@ -238,43 +243,43 @@
       </div>
     </div>
 
-    <!-- 单独上传压缩包弹窗 -->
-    <div v-if="showZipDialog" class="dialog-mask">
+    <!-- 单独上传硬件更改文档弹窗 -->
+    <div v-if="showDocumentDialog" class="dialog-mask">
       <div class="dialog">
         <div class="dialog-header">
-          <h3>上传硬件版本压缩包</h3>
-          <button @click="showZipDialog = false">×</button>
+          <h3>上传硬件更改文档</h3>
+          <button @click="showDocumentDialog = false">×</button>
         </div>
 
         <div class="detail-card">
           <div>
             <span>硬件版本</span>
-            <strong>{{ currentZipHardware?.hardwareVersion }}</strong>
+            <strong>{{ currentDocumentHardware?.hardwareVersion }}</strong>
           </div>
 
           <div>
             <span>终端类型</span>
-            <strong>{{ currentZipHardware?.deviceType }}</strong>
+            <strong>{{ currentDocumentHardware?.deviceType }}</strong>
           </div>
 
           <div>
-            <span>当前压缩包文件</span>
-            <strong>{{ currentZipHardware?.zipFileName || '未上传' }}</strong>
+            <span>当前更改文档</span>
+            <strong>{{ currentDocumentHardware?.zipFileName || '未上传' }}</strong>
           </div>
 
           <div>
             <span>更新时间</span>
-            <strong>{{ currentZipHardware?.updateTime }}</strong>
+            <strong>{{ currentDocumentHardware?.updateTime }}</strong>
           </div>
         </div>
 
         <div class="form-grid zip-form">
           <label class="full-row">
-            ZIP/RAR 压缩包
+            Word/TXT 文档
             <input
               type="file"
-              accept=".zip,.rar,application/zip,application/x-zip-compressed,application/vnd.rar,application/x-rar-compressed"
-              @change="handleZipFileChange"
+              accept=".doc,.docx,.txt,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+              @change="handleDocumentFileChange"
             />
           </label>
 
@@ -282,18 +287,18 @@
             上传说明
             <textarea
               v-model="zipForm.remark"
-              placeholder="例如：上传硬件原理图、PCB资料、BOM清单、生产资料等"
+              placeholder="例如：记录本版本硬件更改点、适配说明、注意事项"
             ></textarea>
           </label>
         </div>
 
         <div class="dialog-footer">
-          <button class="reset-btn" @click="showZipDialog = false">
+          <button class="reset-btn" @click="showDocumentDialog = false">
             取消
           </button>
 
-          <button class="primary-btn" @click="saveZipFile">
-            保存压缩包
+          <button class="primary-btn" @click="saveDocumentFile">
+            保存文档
           </button>
         </div>
       </div>
@@ -334,7 +339,7 @@
           </div>
 
           <div>
-            <span>压缩包文件</span>
+            <span>硬件更改文档</span>
             <strong>{{ selectedHardware.zipFileName || '未上传' }}</strong>
           </div>
         </div>
@@ -359,8 +364,8 @@
         </div>
 
         <div class="dialog-footer">
-          <button v-if="canUseAction('hardware:download')" class="reset-btn" @click="downloadZip(selectedHardware)">
-            下载压缩包
+          <button v-if="canUseAction('hardware:download')" class="reset-btn" @click="downloadDocument(selectedHardware)">
+            下载文档
           </button>
 
           <button class="primary-btn" @click="selectedHardware = null">
@@ -383,7 +388,7 @@ import {
   getHardwareVersions,
   createHardwareVersion,
   updateHardwareVersion,
-  uploadHardwareZip
+  uploadHardwareDocument
 } from '@/api/hardware'
 
 const currentUserName = ref(
@@ -400,10 +405,10 @@ const filters = reactive({
 })
 
 const showEditDialog = ref(false)
-const showZipDialog = ref(false)
+const showDocumentDialog = ref(false)
 const selectedHardware = ref(null)
 const currentEditHardware = ref(null)
-const currentZipHardware = ref(null)
+const currentDocumentHardware = ref(null)
 
 const editMode = ref('create')
 
@@ -420,6 +425,7 @@ const deviceTypeOptions = [
 
 const projectOptions = ref([])
 const projectMap = ref({})
+const collapsedProjects = reactive({})
 
 const hardwareForm = reactive({
   hardwareVersion: '',
@@ -574,7 +580,7 @@ function normalizeHardware(item) {
       item.zipFileName ||
       item.fileName ||
       item.fileDisplayName ||
-      (item.zipFileId || item.zipFileID ? `文件ID-${item.zipFileId || item.zipFileID}.zip` : ''),
+      (item.zipFileId || item.zipFileID ? `文件ID-${item.zipFileId || item.zipFileID}.docx` : ''),
     zipFileUrl: item.zipFileUrl || item.fileUrl || getFilePreviewUrl(item.zipFileId || item.zipFileID),
     zipDownloadUrl: item.zipDownloadUrl || '',
     description: item.description || ''
@@ -600,6 +606,34 @@ const filteredHardwareList = computed(() => {
     return keywordMatch && deviceTypeMatch && statusMatch
   })
 })
+
+const groupedHardwareVersions = computed(() => {
+  const groupMap = new Map()
+
+  filteredHardwareList.value.forEach(item => {
+    const projects = item.bindProjects.length > 0 ? item.bindProjects : ['未绑定项目']
+
+    projects.forEach(projectName => {
+      if (!groupMap.has(projectName)) {
+        groupMap.set(projectName, [])
+      }
+      groupMap.get(projectName).push(item)
+    })
+  })
+
+  return Array.from(groupMap.entries()).map(([projectName, items]) => ({
+    projectName,
+    items
+  }))
+})
+
+function toggleProjectGroup(projectName) {
+  collapsedProjects[projectName] = !collapsedProjects[projectName]
+}
+
+function isProjectCollapsed(projectName) {
+  return Boolean(collapsedProjects[projectName])
+}
 
 function getStatusText(status) {
   const map = {
@@ -662,8 +696,8 @@ async function handleHardwareFileChange(event) {
   const file = event.target.files[0]
   if (!file) return
 
-  if (!isArchiveFile(file)) {
-    alert('只能上传 ZIP 或 RAR 压缩包文件')
+  if (!isChangeDocumentFile(file)) {
+    alert('只能上传 Word 或 TXT 格式的硬件更改文档')
     event.target.value = ''
     return
   }
@@ -677,13 +711,13 @@ async function handleHardwareFileChange(event) {
     hardwareForm.zipFileContentType = payload.fileContentType
     hardwareForm.zipFileData = payload.fileData
   } catch (err) {
-    alert('读取硬件压缩包失败，请重新选择')
+    alert('读取硬件更改文档失败，请重新选择')
   }
 }
 
-function isArchiveFile(file) {
+function isChangeDocumentFile(file) {
   const name = (file?.name || '').toLowerCase()
-  return name.endsWith('.zip') || name.endsWith('.rar')
+  return name.endsWith('.doc') || name.endsWith('.docx') || name.endsWith('.txt')
 }
 
 async function saveHardwareVersion() {
@@ -753,7 +787,7 @@ async function saveHardwareVersion() {
   } catch (err) {
     console.error('保存硬件版本失败：', err)
     if (err.code === 'ECONNABORTED') {
-      alert('保存硬件版本超时：压缩包较大或网络较慢，请稍后重试')
+      alert('保存硬件版本超时：文档较大或网络较慢，请稍后重试')
       return
     }
     alert('保存硬件版本失败，请检查后端接口')
@@ -764,8 +798,8 @@ function viewHardware(item) {
   selectedHardware.value = item
 }
 
-function openZipUploadDialog(item) {
-  currentZipHardware.value = item
+function openDocumentUploadDialog(item) {
+  currentDocumentHardware.value = item
 
   zipForm.file = null
   zipForm.fileId = 0
@@ -775,15 +809,15 @@ function openZipUploadDialog(item) {
   zipForm.fileData = ''
   zipForm.remark = ''
 
-  showZipDialog.value = true
+  showDocumentDialog.value = true
 }
 
-async function handleZipFileChange(event) {
+async function handleDocumentFileChange(event) {
   const file = event.target.files[0]
   if (!file) return
 
-  if (!isArchiveFile(file)) {
-    alert('只能上传 ZIP 或 RAR 压缩包文件')
+  if (!isChangeDocumentFile(file)) {
+    alert('只能上传 Word 或 TXT 格式的硬件更改文档')
     event.target.value = ''
     return
   }
@@ -797,15 +831,15 @@ async function handleZipFileChange(event) {
     zipForm.fileContentType = payload.fileContentType
     zipForm.fileData = payload.fileData
   } catch (err) {
-    alert('读取硬件压缩包失败，请重新选择')
+    alert('读取硬件更改文档失败，请重新选择')
   }
 }
 
-async function saveZipFile() {
-  if (!currentZipHardware.value) return
+async function saveDocumentFile() {
+  if (!currentDocumentHardware.value) return
 
   if (!zipForm.file) {
-    alert('请选择 ZIP 或 RAR 压缩包文件')
+    alert('请选择 Word 或 TXT 格式的硬件更改文档')
     return
   }
 
@@ -818,29 +852,29 @@ async function saveZipFile() {
   }
 
   try {
-    const res = await uploadHardwareZip(currentZipHardware.value.id, payload)
+    const res = await uploadHardwareDocument(currentDocumentHardware.value.id, payload)
     const result = getResponseData(res)
 
-    console.log('上传硬件压缩包返回：', result)
+    console.log('上传硬件更改文档返回：', result)
 
     if (result.code === 200) {
-      alert(`硬件版本【${currentZipHardware.value.hardwareVersion}】压缩包已上传`)
-      showZipDialog.value = false
+      alert(`硬件版本【${currentDocumentHardware.value.hardwareVersion}】更改文档已上传`)
+      showDocumentDialog.value = false
       await loadHardwareVersions()
     } else {
-      alert(result.msg || '上传压缩包失败')
+      alert(result.msg || '上传硬件更改文档失败')
     }
   } catch (err) {
-    console.error('上传硬件压缩包失败：', err)
+    console.error('上传硬件更改文档失败：', err)
     if (err.code === 'ECONNABORTED') {
-      alert('上传硬件压缩包超时：文件较大或网络较慢，请稍后重试')
+      alert('上传硬件更改文档超时：文件较大或网络较慢，请稍后重试')
       return
     }
-    alert('上传压缩包失败，请检查后端接口')
+    alert('上传硬件更改文档失败，请检查后端接口')
   }
 }
 
-function downloadZip(item) {
+function downloadDocument(item) {
   if (!item.zipFileUrl) {
     alert('当前文件暂无可下载内容')
     return
@@ -848,7 +882,7 @@ function downloadZip(item) {
 
   const link = document.createElement('a')
   link.href = item.zipFileUrl
-  link.download = item.zipFileName || `${item.hardwareVersion}.zip`
+  link.download = item.zipFileName || `${item.hardwareVersion}.docx`
   document.body.appendChild(link)
   link.click()
   document.body.removeChild(link)
@@ -862,7 +896,7 @@ function exportHardwareVersions() {
     '版本状态',
     '负责人',
     '更新时间',
-    '压缩包文件'
+    '硬件更改文档'
   ]
 
   const rows = hardwareVersionList.value.map(item => [
@@ -1034,6 +1068,72 @@ function exportHardwareVersions() {
   border: 1px solid #1e293b;
   border-radius: 14px;
   overflow: hidden;
+}
+
+.project-version-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.project-version-group {
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.project-group-header {
+  width: 100%;
+  height: 48px;
+  padding: 0 16px;
+  border: none;
+  border-bottom: 1px solid #1e293b;
+  background: #020617;
+  color: #e2e8f0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.project-group-header:hover {
+  background: #0b1120;
+}
+
+.fold-icon {
+  width: 18px;
+  color: #60a5fa;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.project-group-title {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.project-group-count {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.project-version-group .table-card {
+  border: none;
+  border-radius: 0;
+}
+
+.empty-card {
+  padding: 28px 16px;
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 14px;
+  color: #94a3b8;
+  text-align: center;
+  font-size: 13px;
 }
 
 .table-card table {
