@@ -159,7 +159,7 @@ CREATE TABLE `hardware_versions` (
   `status` varchar(32) COLLATE utf8mb4_general_ci DEFAULT '样品',
   `owner_id` bigint DEFAULT NULL,
   `owner_name` varchar(64) COLLATE utf8mb4_general_ci DEFAULT NULL,
-  `zip_file_id` bigint DEFAULT NULL,
+  `change_doc_file_id` bigint DEFAULT NULL COMMENT '硬件更改文档文件ID',
   `description` text COLLATE utf8mb4_general_ci,
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

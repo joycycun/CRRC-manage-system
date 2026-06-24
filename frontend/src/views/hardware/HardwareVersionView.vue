@@ -99,8 +99,8 @@
                 <td class="muted">{{ item.updateTime }}</td>
 
                 <td>
-                  <span v-if="item.zipFileName" class="file-name">
-                    {{ item.zipFileName }}
+                  <span v-if="item.changeDocFileName" class="file-name">
+                    {{ item.changeDocFileName }}
                   </span>
                   <span v-else class="muted">未上传</span>
                 </td>
@@ -213,8 +213,8 @@
               @change="handleHardwareFileChange"
             />
 
-            <span v-if="hardwareForm.zipFileName" class="selected-file">
-              已选择：{{ hardwareForm.zipFileName }}
+            <span v-if="hardwareForm.changeDocFileName" class="selected-file">
+              已选择：{{ hardwareForm.changeDocFileName }}
             </span>
 
             <span v-else class="file-tip">
@@ -264,7 +264,7 @@
 
           <div>
             <span>当前更改文档</span>
-            <strong>{{ currentDocumentHardware?.zipFileName || '未上传' }}</strong>
+            <strong>{{ currentDocumentHardware?.changeDocFileName || '未上传' }}</strong>
           </div>
 
           <div>
@@ -273,7 +273,7 @@
           </div>
         </div>
 
-        <div class="form-grid zip-form">
+        <div class="form-grid document-form">
           <label class="full-row">
             Word/TXT 文档
             <input
@@ -286,7 +286,7 @@
           <label class="full-row">
             上传说明
             <textarea
-              v-model="zipForm.remark"
+              v-model="documentForm.remark"
               placeholder="例如：记录本版本硬件更改点、适配说明、注意事项"
             ></textarea>
           </label>
@@ -340,7 +340,7 @@
 
           <div>
             <span>硬件更改文档</span>
-            <strong>{{ selectedHardware.zipFileName || '未上传' }}</strong>
+            <strong>{{ selectedHardware.changeDocFileName || '未上传' }}</strong>
           </div>
         </div>
 
@@ -434,15 +434,15 @@ const hardwareForm = reactive({
   status: 'trial',
   bindProjects: [],
   description: '',
-  zipFile: null,
-  zipFileId: 0,
-  zipFileName: '',
-  zipFileUrl: '',
-  zipFileContentType: '',
-  zipFileData: ''
+  changeDocFile: null,
+  changeDocFileId: 0,
+  changeDocFileName: '',
+  changeDocFileUrl: '',
+  changeDocFileContentType: '',
+  changeDocFileData: ''
 })
 
-const zipForm = reactive({
+const documentForm = reactive({
   file: null,
   fileId: 0,
   fileName: '',
@@ -575,14 +575,14 @@ function normalizeHardware(item) {
     owner: item.owner || item.ownerName || '未分配',
     ownerName: item.ownerName || item.owner || '未分配',
     updateTime: formatDate(item.updateTime || item.updatedAt || item.createdAt),
-    zipFileId: item.zipFileId || item.zipFileID || 0,
-    zipFileName:
-      item.zipFileName ||
+    changeDocFileId: item.changeDocFileId || item.changeDocFileID || 0,
+    changeDocFileName:
+      item.changeDocFileName ||
       item.fileName ||
       item.fileDisplayName ||
-      (item.zipFileId || item.zipFileID ? `文件ID-${item.zipFileId || item.zipFileID}.docx` : ''),
-    zipFileUrl: item.zipFileUrl || item.fileUrl || getFilePreviewUrl(item.zipFileId || item.zipFileID),
-    zipDownloadUrl: item.zipDownloadUrl || '',
+      (item.changeDocFileId || item.changeDocFileID ? `文件ID-${item.changeDocFileId || item.changeDocFileID}.docx` : ''),
+    changeDocFileUrl: item.changeDocFileUrl || item.fileUrl || getFilePreviewUrl(item.changeDocFileId || item.changeDocFileID),
+    changeDocDownloadUrl: item.changeDocDownloadUrl || '',
     description: item.description || ''
   }
 }
@@ -595,7 +595,7 @@ const filteredHardwareList = computed(() => {
       item.deviceType.includes(filters.keyword) ||
       item.owner.includes(filters.keyword) ||
       item.bindProjects.some(project => project.includes(filters.keyword)) ||
-      (item.zipFileName && item.zipFileName.includes(filters.keyword))
+      (item.changeDocFileName && item.changeDocFileName.includes(filters.keyword))
 
     const deviceTypeMatch =
       !filters.deviceType || item.deviceType === filters.deviceType
@@ -658,12 +658,12 @@ function resetHardwareForm() {
   hardwareForm.status = 'trial'
   hardwareForm.bindProjects = []
   hardwareForm.description = ''
-  hardwareForm.zipFile = null
-  hardwareForm.zipFileId = 0
-  hardwareForm.zipFileName = ''
-  hardwareForm.zipFileUrl = ''
-  hardwareForm.zipFileContentType = ''
-  hardwareForm.zipFileData = ''
+  hardwareForm.changeDocFile = null
+  hardwareForm.changeDocFileId = 0
+  hardwareForm.changeDocFileName = ''
+  hardwareForm.changeDocFileUrl = ''
+  hardwareForm.changeDocFileContentType = ''
+  hardwareForm.changeDocFileData = ''
 }
 
 function openCreateDialog() {
@@ -685,9 +685,9 @@ function openEditDialog(item) {
   hardwareForm.status = item.status
   hardwareForm.bindProjects = [...item.bindProjects]
   hardwareForm.description = item.description
-  hardwareForm.zipFile = null
-  hardwareForm.zipFileName = item.zipFileName || ''
-  hardwareForm.zipFileUrl = item.zipFileUrl || ''
+  hardwareForm.changeDocFile = null
+  hardwareForm.changeDocFileName = item.changeDocFileName || ''
+  hardwareForm.changeDocFileUrl = item.changeDocFileUrl || ''
 
   showEditDialog.value = true
 }
@@ -702,14 +702,14 @@ async function handleHardwareFileChange(event) {
     return
   }
 
-  hardwareForm.zipFile = file
-  hardwareForm.zipFileName = file.name
+  hardwareForm.changeDocFile = file
+  hardwareForm.changeDocFileName = file.name
   try {
     const payload = await buildUploadFilePayload(file)
-    hardwareForm.zipFileId = payload.fileId
-    hardwareForm.zipFileUrl = payload.fileUrl
-    hardwareForm.zipFileContentType = payload.fileContentType
-    hardwareForm.zipFileData = payload.fileData
+    hardwareForm.changeDocFileId = payload.fileId
+    hardwareForm.changeDocFileUrl = payload.fileUrl
+    hardwareForm.changeDocFileContentType = payload.fileContentType
+    hardwareForm.changeDocFileData = payload.fileData
   } catch (err) {
     alert('读取硬件更改文档失败，请重新选择')
   }
@@ -757,10 +757,10 @@ async function saveHardwareVersion() {
     ownerName: editMode.value === 'create'
       ? currentUserName.value
       : (hardwareForm.owner || currentUserName.value),
-    zipFileId: hardwareForm.zipFileId,
-    zipFileName: hardwareForm.zipFileName || '',
-    fileContentType: hardwareForm.zipFileContentType,
-    fileData: hardwareForm.zipFileData,
+    changeDocFileId: hardwareForm.changeDocFileId,
+    changeDocFileName: hardwareForm.changeDocFileName || '',
+    fileContentType: hardwareForm.changeDocFileContentType,
+    fileData: hardwareForm.changeDocFileData,
     description: hardwareForm.description || ''
   }
 
@@ -801,13 +801,13 @@ function viewHardware(item) {
 function openDocumentUploadDialog(item) {
   currentDocumentHardware.value = item
 
-  zipForm.file = null
-  zipForm.fileId = 0
-  zipForm.fileName = ''
-  zipForm.fileUrl = ''
-  zipForm.fileContentType = ''
-  zipForm.fileData = ''
-  zipForm.remark = ''
+  documentForm.file = null
+  documentForm.fileId = 0
+  documentForm.fileName = ''
+  documentForm.fileUrl = ''
+  documentForm.fileContentType = ''
+  documentForm.fileData = ''
+  documentForm.remark = ''
 
   showDocumentDialog.value = true
 }
@@ -822,14 +822,14 @@ async function handleDocumentFileChange(event) {
     return
   }
 
-  zipForm.file = file
-  zipForm.fileName = file.name
+  documentForm.file = file
+  documentForm.fileName = file.name
   try {
     const payload = await buildUploadFilePayload(file)
-    zipForm.fileId = payload.fileId
-    zipForm.fileUrl = payload.fileUrl
-    zipForm.fileContentType = payload.fileContentType
-    zipForm.fileData = payload.fileData
+    documentForm.fileId = payload.fileId
+    documentForm.fileUrl = payload.fileUrl
+    documentForm.fileContentType = payload.fileContentType
+    documentForm.fileData = payload.fileData
   } catch (err) {
     alert('读取硬件更改文档失败，请重新选择')
   }
@@ -838,17 +838,17 @@ async function handleDocumentFileChange(event) {
 async function saveDocumentFile() {
   if (!currentDocumentHardware.value) return
 
-  if (!zipForm.file) {
+  if (!documentForm.file) {
     alert('请选择 Word 或 TXT 格式的硬件更改文档')
     return
   }
 
   const payload = {
-    zipFileId: zipForm.fileId,
-    zipFileName: zipForm.fileName,
-    fileContentType: zipForm.fileContentType,
-    fileData: zipForm.fileData,
-    remark: zipForm.remark || ''
+    changeDocFileId: documentForm.fileId,
+    changeDocFileName: documentForm.fileName,
+    fileContentType: documentForm.fileContentType,
+    fileData: documentForm.fileData,
+    remark: documentForm.remark || ''
   }
 
   try {
@@ -875,14 +875,14 @@ async function saveDocumentFile() {
 }
 
 function downloadDocument(item) {
-  if (!item.zipFileUrl) {
+  if (!item.changeDocFileUrl) {
     alert('当前文件暂无可下载内容')
     return
   }
 
   const link = document.createElement('a')
-  link.href = item.zipFileUrl
-  link.download = item.zipFileName || `${item.hardwareVersion}.docx`
+  link.href = item.changeDocFileUrl
+  link.download = item.changeDocFileName || `${item.hardwareVersion}.docx`
   document.body.appendChild(link)
   link.click()
   document.body.removeChild(link)
@@ -906,7 +906,7 @@ function exportHardwareVersions() {
     getStatusText(item.status),
     item.owner,
     item.updateTime,
-    item.zipFileName || '未上传'
+    item.changeDocFileName || '未上传'
   ])
 
   const csvContent = [header, ...rows]
@@ -1436,7 +1436,7 @@ function exportHardwareVersions() {
   line-height: 1.6;
 }
 
-.zip-form {
+.document-form {
   padding-top: 0;
 }
 

@@ -61,13 +61,19 @@ func HardwareVersionActionHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// POST /api/hardware-versions/1/upload-document
-	// 保留 upload-zip 兼容旧前端缓存和旧接口调用。
-	if len(parts) == 2 && r.Method == http.MethodPost && (parts[1] == "upload-document" || parts[1] == "upload-zip") {
+	if len(parts) == 2 && r.Method == http.MethodPost && parts[1] == "upload-document" {
 		UploadHardwareDocumentHandler(w, r, id)
 		return
 	}
 
 	http.Error(w, "接口不存在", http.StatusNotFound)
+}
+
+func ensureHardwareVersionDocumentColumn() {
+	_, _ = config.DB.Exec(`
+		ALTER TABLE hardware_versions
+		ADD COLUMN change_doc_file_id BIGINT DEFAULT NULL AFTER owner_name
+	`)
 }
 
 // ==========================
@@ -76,6 +82,7 @@ func HardwareVersionActionHandler(w http.ResponseWriter, r *http.Request) {
 
 func GetHardwareVersionsHandler(w http.ResponseWriter, r *http.Request) {
 	ensureUploadedFilesTable()
+	ensureHardwareVersionDocumentColumn()
 
 	rows, err := config.DB.Query(`
 		SELECT
@@ -86,13 +93,13 @@ func GetHardwareVersionsHandler(w http.ResponseWriter, r *http.Request) {
 			IFNULL(hv.status, ''),
 			IFNULL(hv.owner_id, 0),
 			IFNULL(hv.owner_name, ''),
-			IFNULL(hv.zip_file_id, 0),
+			IFNULL(hv.change_doc_file_id, 0),
 			IFNULL(uf.file_name, ''),
 			IFNULL(hv.description, ''),
 			hv.created_at,
 			hv.updated_at
 		FROM hardware_versions hv
-		LEFT JOIN uploaded_files uf ON uf.id = hv.zip_file_id
+		LEFT JOIN uploaded_files uf ON uf.id = hv.change_doc_file_id
 		ORDER BY hv.id DESC
 	`)
 	if err != nil {
@@ -114,8 +121,8 @@ func GetHardwareVersionsHandler(w http.ResponseWriter, r *http.Request) {
 			&item.Status,
 			&item.OwnerID,
 			&item.OwnerName,
-			&item.ZipFileID,
-			&item.ZipFileName,
+			&item.ChangeDocFileID,
+			&item.ChangeDocFileName,
 			&item.Description,
 			&item.CreatedAt,
 			&item.UpdatedAt,
@@ -125,8 +132,8 @@ func GetHardwareVersionsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		item.ZipFileURL = filePreviewURL(item.ZipFileID)
-		item.ZipDownloadURL = fileDownloadURL(item.ZipFileID)
+		item.ChangeDocFileURL = filePreviewURL(item.ChangeDocFileID)
+		item.ChangeDocDownloadURL = fileDownloadURL(item.ChangeDocFileID)
 		list = append(list, item)
 	}
 
@@ -142,6 +149,8 @@ func GetHardwareVersionsHandler(w http.ResponseWriter, r *http.Request) {
 // ==========================
 
 func CreateHardwareVersionHandler(w http.ResponseWriter, r *http.Request) {
+	ensureHardwareVersionDocumentColumn()
+
 	var req struct {
 		model.HardwareVersion
 		FileContentType string `json:"fileContentType"`
@@ -156,8 +165,8 @@ func CreateHardwareVersionHandler(w http.ResponseWriter, r *http.Request) {
 
 	item := req.HardwareVersion
 	if err := saveUploadedFile(UploadedFilePayload{
-		FileID:          item.ZipFileID,
-		FileName:        item.ZipFileName,
+		FileID:          item.ChangeDocFileID,
+		FileName:        item.ChangeDocFileName,
 		FileContentType: req.FileContentType,
 		FileData:        req.FileData,
 	}); err != nil {
@@ -189,7 +198,7 @@ func CreateHardwareVersionHandler(w http.ResponseWriter, r *http.Request) {
 			status,
 			owner_id,
 			owner_name,
-			zip_file_id,
+			change_doc_file_id,
 			description,
 			created_at,
 			updated_at
@@ -201,7 +210,7 @@ func CreateHardwareVersionHandler(w http.ResponseWriter, r *http.Request) {
 		item.Status,
 		item.OwnerID,
 		item.OwnerName,
-		item.ZipFileID,
+		item.ChangeDocFileID,
 		item.Description,
 		now,
 		now,
@@ -228,6 +237,8 @@ func CreateHardwareVersionHandler(w http.ResponseWriter, r *http.Request) {
 // ==========================
 
 func UpdateHardwareVersionHandler(w http.ResponseWriter, r *http.Request, id int64) {
+	ensureHardwareVersionDocumentColumn()
+
 	var req struct {
 		model.HardwareVersion
 		FileContentType string `json:"fileContentType"`
@@ -242,8 +253,8 @@ func UpdateHardwareVersionHandler(w http.ResponseWriter, r *http.Request, id int
 
 	item := req.HardwareVersion
 	if err := saveUploadedFile(UploadedFilePayload{
-		FileID:          item.ZipFileID,
-		FileName:        item.ZipFileName,
+		FileID:          item.ChangeDocFileID,
+		FileName:        item.ChangeDocFileName,
 		FileContentType: req.FileContentType,
 		FileData:        req.FileData,
 	}); err != nil {
@@ -270,7 +281,7 @@ func UpdateHardwareVersionHandler(w http.ResponseWriter, r *http.Request, id int
 			status = ?,
 			owner_id = ?,
 			owner_name = ?,
-			zip_file_id = ?,
+			change_doc_file_id = ?,
 			description = ?,
 			updated_at = NOW()
 		WHERE id = ?
@@ -281,7 +292,7 @@ func UpdateHardwareVersionHandler(w http.ResponseWriter, r *http.Request, id int
 		item.Status,
 		item.OwnerID,
 		item.OwnerName,
-		item.ZipFileID,
+		item.ChangeDocFileID,
 		item.Description,
 		id,
 	)
@@ -305,17 +316,18 @@ func UpdateHardwareVersionHandler(w http.ResponseWriter, r *http.Request, id int
 
 // ==========================
 // POST /api/hardware-versions/{id}/upload-document
-// 当前沿用 zip_file_id 字段保存文件 ID，语义为硬件更改文档。
 // ==========================
 
 type HardwareDocumentRequest struct {
-	ZipFileID       int64  `json:"zipFileId"`
-	ZipFileName     string `json:"zipFileName"`
-	FileContentType string `json:"fileContentType"`
-	FileData        string `json:"fileData"`
+	ChangeDocFileID   int64  `json:"changeDocFileId"`
+	ChangeDocFileName string `json:"changeDocFileName"`
+	FileContentType   string `json:"fileContentType"`
+	FileData          string `json:"fileData"`
 }
 
 func UploadHardwareDocumentHandler(w http.ResponseWriter, r *http.Request, id int64) {
+	ensureHardwareVersionDocumentColumn()
+
 	var req HardwareDocumentRequest
 
 	err := json.NewDecoder(r.Body).Decode(&req)
@@ -324,14 +336,14 @@ func UploadHardwareDocumentHandler(w http.ResponseWriter, r *http.Request, id in
 		return
 	}
 
-	if req.ZipFileID == 0 {
+	if req.ChangeDocFileID == 0 {
 		http.Error(w, "文件ID不能为空", http.StatusBadRequest)
 		return
 	}
 
 	if err := saveUploadedFile(UploadedFilePayload{
-		FileID:          req.ZipFileID,
-		FileName:        req.ZipFileName,
+		FileID:          req.ChangeDocFileID,
+		FileName:        req.ChangeDocFileName,
 		FileContentType: req.FileContentType,
 		FileData:        req.FileData,
 	}); err != nil {
@@ -342,10 +354,10 @@ func UploadHardwareDocumentHandler(w http.ResponseWriter, r *http.Request, id in
 	result, err := config.DB.Exec(`
 		UPDATE hardware_versions
 		SET
-			zip_file_id = ?,
+			change_doc_file_id = ?,
 			updated_at = NOW()
 		WHERE id = ?
-	`, req.ZipFileID, id)
+	`, req.ChangeDocFileID, id)
 
 	if err != nil {
 		http.Error(w, "上传硬件更改文档失败: "+err.Error(), http.StatusInternalServerError)

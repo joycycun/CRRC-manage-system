@@ -6,20 +6,20 @@ import (
 )
 
 type HardwareVersion struct {
-	ID              int64     `json:"id"`
-	HardwareVersion string    `json:"hardwareVersion"`
-	ProjectID       int64     `json:"projectId"`
-	DeviceType      string    `json:"deviceType"`
-	Status          string    `json:"status"`
-	OwnerID         int64     `json:"ownerId"`
-	OwnerName       string    `json:"ownerName"`
-	ZipFileID       int64     `json:"zipFileId"`
-	ZipFileName     string    `json:"zipFileName"`
-	ZipFileURL      string    `json:"zipFileUrl"`
-	ZipDownloadURL  string    `json:"zipDownloadUrl"`
-	Description     string    `json:"description"`
-	CreatedAt       time.Time `json:"createdAt"`
-	UpdatedAt       time.Time `json:"updatedAt"`
+	ID                   int64     `json:"id"`
+	HardwareVersion      string    `json:"hardwareVersion"`
+	ProjectID            int64     `json:"projectId"`
+	DeviceType           string    `json:"deviceType"`
+	Status               string    `json:"status"`
+	OwnerID              int64     `json:"ownerId"`
+	OwnerName            string    `json:"ownerName"`
+	ChangeDocFileID      int64     `json:"changeDocFileId"`
+	ChangeDocFileName    string    `json:"changeDocFileName"`
+	ChangeDocFileURL     string    `json:"changeDocFileUrl"`
+	ChangeDocDownloadURL string    `json:"changeDocDownloadUrl"`
+	Description          string    `json:"description"`
+	CreatedAt            time.Time `json:"createdAt"`
+	UpdatedAt            time.Time `json:"updatedAt"`
 }
 
 type HardwareTest struct {
