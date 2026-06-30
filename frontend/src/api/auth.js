@@ -24,3 +24,11 @@ export const getRoleOptionsApi = () => {
 export const createUserApi = data => {
   return request.post("/users", data);
 };
+
+export const getUsersApi = () => {
+  return request.get("/users");
+};
+
+export const deleteUserApi = id => {
+  return request.delete(`/users/${id}`);
+};

@@ -122,6 +122,10 @@
                     <button v-if="canUseAction('hardware:download')" class="text-btn green" @click="downloadDocument(item)">
                       下载
                     </button>
+
+                    <button v-if="isSystemAdmin" class="text-btn danger" @click="deleteHardware(item)">
+                      删除
+                    </button>
                   </div>
                 </td>
               </tr>
@@ -226,7 +230,7 @@
             版本说明
             <textarea
               v-model="hardwareForm.description"
-              placeholder="例如：适配广播控制盒新板卡，修改电源模块和音频接口"
+              placeholder="例如：适配控制盒（主）新板卡，修改电源模块和音频接口"
             ></textarea>
           </label>
         </div>
@@ -379,8 +383,9 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { canUseAction } from '@/utils/permission'
+import { canUseAction, getStoredRoles } from '@/utils/permission'
 import { buildUploadFilePayload, getFilePreviewUrl } from '@/utils/filePreview'
+import { DEVICE_TYPE_OPTIONS } from '@/constants/deviceTypes'
 
 import { getProjects } from '@/api/project'
 
@@ -388,7 +393,8 @@ import {
   getHardwareVersions,
   createHardwareVersion,
   updateHardwareVersion,
-  uploadHardwareDocument
+  uploadHardwareDocument,
+  deleteHardwareVersion
 } from '@/api/hardware'
 
 const currentUserName = ref(
@@ -412,16 +418,7 @@ const currentDocumentHardware = ref(null)
 
 const editMode = ref('create')
 
-const deviceTypeOptions = [
-  '广播控制盒',
-  '客室解码板',
-  '编码板',
-  '乘客报警器',
-  '司机室广播控制盒',
-  '解码板',
-  '功放板',
-  '噪声检测器'
-]
+const deviceTypeOptions = DEVICE_TYPE_OPTIONS
 
 const projectOptions = ref([])
 const projectMap = ref({})
@@ -453,6 +450,7 @@ const documentForm = reactive({
 })
 
 const hardwareVersionList = ref([])
+const isSystemAdmin = computed(() => getStoredRoles().includes('system_admin'))
 
 onMounted(async () => {
   await loadProjects()
@@ -888,6 +886,25 @@ function downloadDocument(item) {
   document.body.removeChild(link)
 }
 
+async function deleteHardware(item) {
+  if (!item?.id) return
+  if (!confirm(`确认删除硬件版本【${item.hardwareVersion}】吗？`)) return
+
+  try {
+    const res = await deleteHardwareVersion(item.id)
+    const result = res?.data || res
+    if (result.code !== 200) {
+      alert(result.msg || '删除硬件版本失败')
+      return
+    }
+    alert('删除硬件版本成功')
+    await loadHardwareVersions()
+  } catch (err) {
+    console.error('删除硬件版本失败：', err)
+    alert(err.response?.data || '删除硬件版本失败，请检查后端接口')
+  }
+}
+
 function exportHardwareVersions() {
   const header = [
     '硬件版本',
@@ -1184,6 +1201,8 @@ function exportHardwareVersions() {
   color: #64748b;
   font-size: 12px;
   word-break: break-all;
+  white-space: pre-wrap;
+  text-align: left;
 }
 
 .device-tag,
@@ -1282,6 +1301,10 @@ function exportHardwareVersions() {
 
 .text-btn.yellow {
   color: #fbbf24;
+}
+
+.text-btn.danger {
+  color: #f87171;
 }
 
 .table-footer {
@@ -1434,6 +1457,8 @@ function exportHardwareVersions() {
   color: #cbd5e1;
   font-size: 13px;
   line-height: 1.6;
+  white-space: pre-wrap;
+  text-align: left;
 }
 
 .document-form {

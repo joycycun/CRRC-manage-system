@@ -291,6 +291,34 @@
         <p v-if="userError" class="password-error">{{ userError }}</p>
       </div>
 
+      <div class="account-section">
+        <div class="account-section-header">
+          <strong>已有账户</strong>
+          <button type="button" @click="loadUsers">刷新</button>
+        </div>
+
+        <div class="account-list">
+          <div v-for="user in userList" :key="user.id" class="account-item">
+            <div>
+              <strong>{{ user.realName || user.username }}</strong>
+              <span>{{ user.username }} · {{ user.department || '未填写部门' }} · {{ user.roles || '未绑定角色' }}</span>
+            </div>
+            <button
+              type="button"
+              class="delete-account-btn"
+              :disabled="user.username === 'admin' || deletingUserId === user.id"
+              @click="deleteUser(user)"
+            >
+              {{ deletingUserId === user.id ? '删除中' : '删除' }}
+            </button>
+          </div>
+
+          <div v-if="userList.length === 0" class="account-empty">
+            暂无账户数据
+          </div>
+        </div>
+      </div>
+
       <div class="dialog-footer">
         <button class="cancel-btn" type="button" @click="closeUserDialog">
           取消
@@ -311,7 +339,7 @@ import { getDashboardSummary, globalSearch, markNotificationRead } from '@/api/r
 import { confirmProductionRequest } from '@/api/shippingBatch'
 import { confirmIssue } from '@/api/issue'
 import { confirmRequirementChange } from '@/api/requirement'
-import { changePasswordApi, createUserApi, getRoleOptionsApi } from '@/api/auth'
+import { changePasswordApi, createUserApi, deleteUserApi, getRoleOptionsApi, getUsersApi } from '@/api/auth'
 import { getCurrentUserParams } from '@/utils/currentUser'
 import { getStoredRoles } from '@/utils/permission'
 
@@ -328,9 +356,11 @@ const showPasswordDialog = ref(false)
 const showUserDialog = ref(false)
 const passwordSaving = ref(false)
 const userSaving = ref(false)
+const deletingUserId = ref(0)
 const passwordError = ref('')
 const userError = ref('')
 const roleOptions = ref([])
+const userList = ref([])
 const departmentOptions = [
   '管理部',
   '项目助理',
@@ -575,7 +605,7 @@ async function openUserDialog() {
   userForm.status = '启用'
   userForm.roleCodes = []
   showUserDialog.value = true
-  await loadRoleOptions()
+  await Promise.all([loadRoleOptions(), loadUsers()])
 }
 
 function closeUserDialog() {
@@ -596,6 +626,43 @@ async function loadRoleOptions() {
   } catch (err) {
     console.error('加载角色失败：', err)
     userError.value = err.response?.data?.msg || err.response?.data || '加载角色失败'
+  }
+}
+
+async function loadUsers() {
+  try {
+    const res = await getUsersApi()
+    const result = res?.data || res
+    if (result.code !== 200) {
+      userError.value = result.msg || '加载用户失败'
+      return
+    }
+    userList.value = result.data || []
+  } catch (err) {
+    console.error('加载用户失败：', err)
+    userError.value = err.response?.data?.msg || err.response?.data || '加载用户失败'
+  }
+}
+
+async function deleteUser(user) {
+  if (!user?.id || user.username === 'admin') return
+  if (!confirm(`确认删除账户【${user.realName || user.username}】吗？`)) return
+
+  try {
+    deletingUserId.value = user.id
+    const res = await deleteUserApi(user.id)
+    const result = res?.data || res
+    if (result.code !== 200) {
+      userError.value = result.msg || '删除账户失败'
+      return
+    }
+    alert('删除账户成功')
+    await loadUsers()
+  } catch (err) {
+    console.error('删除账户失败：', err)
+    userError.value = err.response?.data?.msg || err.response?.data || '删除账户失败，请检查后端接口'
+  } finally {
+    deletingUserId.value = 0
   }
 }
 
@@ -635,6 +702,7 @@ async function submitCreateUser() {
       return
     }
     alert('新增用户成功')
+    await loadUsers()
     closeUserDialog()
   } catch (err) {
     console.error('新增用户失败：', err)
@@ -1248,6 +1316,91 @@ function goSearchResult(type, item) {
   color: #fecaca;
   font-size: 13px;
   padding: 9px 10px;
+}
+
+.account-section {
+  margin: 0 18px 18px;
+  border: 1px solid #263244;
+  border-radius: 8px;
+  background: #020617;
+  overflow: hidden;
+}
+
+.account-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid #1e293b;
+}
+
+.account-section-header strong {
+  color: #f8fafc;
+  font-size: 13px;
+}
+
+.account-section-header button,
+.delete-account-btn {
+  border: none;
+  background: transparent;
+  color: #38bdf8;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.account-list {
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.account-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #111827;
+}
+
+.account-item div {
+  min-width: 0;
+}
+
+.account-item strong,
+.account-item span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-item strong {
+  color: #f8fafc;
+  font-size: 13px;
+}
+
+.account-item span {
+  margin-top: 3px;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.delete-account-btn {
+  flex: 0 0 auto;
+  color: #f87171;
+}
+
+.delete-account-btn:disabled {
+  color: #64748b;
+  cursor: not-allowed;
+}
+
+.account-empty {
+  padding: 18px 12px;
+  color: #64748b;
+  font-size: 13px;
+  text-align: center;
 }
 
 .dialog-footer {

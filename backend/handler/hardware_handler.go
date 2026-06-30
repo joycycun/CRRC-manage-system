@@ -31,7 +31,8 @@ func HardwareVersionsHandler(w http.ResponseWriter, r *http.Request) {
 
 // ==========================
 // 硬件版本带 ID 操作入口
-// PUT  /api/hardware-versions/{id}
+// PUT    /api/hardware-versions/{id}
+// DELETE /api/hardware-versions/{id}
 // POST /api/hardware-versions/{id}/upload-document
 // ==========================
 
@@ -60,6 +61,12 @@ func HardwareVersionActionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// DELETE /api/hardware-versions/1
+	if len(parts) == 1 && r.Method == http.MethodDelete {
+		DeleteHardwareVersionHandler(w, r, id)
+		return
+	}
+
 	// POST /api/hardware-versions/1/upload-document
 	if len(parts) == 2 && r.Method == http.MethodPost && parts[1] == "upload-document" {
 		UploadHardwareDocumentHandler(w, r, id)
@@ -69,11 +76,58 @@ func HardwareVersionActionHandler(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "接口不存在", http.StatusNotFound)
 }
 
+func DeleteHardwareVersionHandler(w http.ResponseWriter, r *http.Request, id int64) {
+	if !hasRequestRole(r, "system_admin") {
+		http.Error(w, "只有系统管理员可以删除硬件版本", http.StatusForbidden)
+		return
+	}
+
+	result, err := config.DB.Exec(`
+		DELETE FROM hardware_versions
+		WHERE id = ?
+	`, id)
+	if err != nil {
+		http.Error(w, "删除硬件版本失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	affected, _ := result.RowsAffected()
+	if affected == 0 {
+		http.Error(w, "硬件版本不存在", http.StatusNotFound)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"code": 200,
+		"msg":  "删除成功",
+	})
+}
+
 func ensureHardwareVersionDocumentColumn() {
 	_, _ = config.DB.Exec(`
 		ALTER TABLE hardware_versions
 		ADD COLUMN change_doc_file_id BIGINT DEFAULT NULL AFTER owner_name
 	`)
+}
+
+func isAllowedHardwareDeviceType(deviceType string) bool {
+	deviceType = strings.TrimSpace(deviceType)
+	allowed := map[string]bool{
+		"控制盒（主）":  true,
+		"控制盒（辅）":  true,
+		"报警器":     true,
+		"解码板":     true,
+		"编码板":     true,
+		"解编码板":    true,
+		"司机提醒单元":  true,
+		"紧急联络电话":  true,
+		"功放板":     true,
+		"噪声检测":    true,
+		"SIP广播终端": true,
+		"SIP对讲终端": true,
+		"SIP网关":   true,
+	}
+	return allowed[deviceType]
 }
 
 // ==========================
@@ -183,6 +237,10 @@ func CreateHardwareVersionHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "终端类型不能为空", http.StatusBadRequest)
 		return
 	}
+	if !isAllowedHardwareDeviceType(item.DeviceType) {
+		http.Error(w, "终端类型不在允许范围内", http.StatusBadRequest)
+		return
+	}
 
 	if item.Status == "" {
 		item.Status = "样品"
@@ -269,6 +327,10 @@ func UpdateHardwareVersionHandler(w http.ResponseWriter, r *http.Request, id int
 
 	if item.DeviceType == "" {
 		http.Error(w, "终端类型不能为空", http.StatusBadRequest)
+		return
+	}
+	if !isAllowedHardwareDeviceType(item.DeviceType) {
+		http.Error(w, "终端类型不在允许范围内", http.StatusBadRequest)
 		return
 	}
 
@@ -592,6 +654,10 @@ func CreateHardwareTestHandler(w http.ResponseWriter, r *http.Request) {
 
 	if item.FileID == 0 {
 		http.Error(w, "测试文件ID不能为空", http.StatusBadRequest)
+		return
+	}
+	if item.DeviceType != "" && !isAllowedHardwareDeviceType(item.DeviceType) {
+		http.Error(w, "终端类型不在允许范围内", http.StatusBadRequest)
 		return
 	}
 

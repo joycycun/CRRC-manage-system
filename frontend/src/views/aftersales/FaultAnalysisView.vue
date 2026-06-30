@@ -203,7 +203,7 @@
             方案名称
             <input
               v-model="analysisForm.analysisName"
-              placeholder="例如：广播控制盒无音频输出故障分析方案"
+              placeholder="例如：控制盒（主）无音频输出故障分析方案"
             />
           </label>
 
@@ -350,6 +350,7 @@
 import { computed, reactive, ref } from 'vue'
 import { onMounted } from 'vue'
 import { canUseAction } from '@/utils/permission'
+import { DEVICE_TYPE_OPTIONS } from '@/constants/deviceTypes'
 import { buildUploadFilePayload, downloadLocalFile, getFilePreviewUrl, openLocalFilePreview } from '@/utils/filePreview'
 import { getAuditUserPayload } from '@/utils/currentUser'
 import { getProjects } from '@/api/project'
@@ -376,15 +377,7 @@ const filters = reactive({
 const showCreateDialog = ref(false)
 const selectedAnalysis = ref(null)
 
-const boardTypeOptions = [
-  '广播控制盒',
-  '客室解码板',
-  '客室编码板',
-  '乘客报警器',
-  '功放板',
-  '噪声检测板',
-  '司机提醒单元'
-]
+const boardTypeOptions = DEVICE_TYPE_OPTIONS
 
 const analysisForm = reactive({
   projectId: '',

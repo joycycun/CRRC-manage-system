@@ -417,6 +417,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { canUseAction } from '@/utils/permission'
+import { DEVICE_TYPE_OPTIONS } from '@/constants/deviceTypes'
 import { buildUploadFilePayload, downloadLocalFile, getFilePreviewUrl } from '@/utils/filePreview'
 import { getAuditUserPayload, getCurrentUserParams } from '@/utils/currentUser'
 
@@ -457,16 +458,7 @@ const projectMap = ref({})
 const hardwareVersionOptions = ref([])
 const hardwareVersionMap = ref({})
 
-const deviceTypeOptions = [
-  '广播控制盒',
-  '客室解码板',
-  '编码板',
-  '乘客报警器',
-  '司机室广播控制盒',
-  '解码板',
-  '功放板',
-  '噪声检测器'
-]
+const deviceTypeOptions = DEVICE_TYPE_OPTIONS
 
 const uploadForm = reactive({
   projectName: '',

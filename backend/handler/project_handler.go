@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -109,6 +110,8 @@ func ProjectActionHandler(w http.ResponseWriter, r *http.Request) {
 func ensureProjectProposalColumns() {
 	ensureProjectColumn("proposal_file_name", "proposal_file_name VARCHAR(255) DEFAULT ''")
 	ensureProjectColumn("proposal_content_type", "proposal_content_type VARCHAR(128) DEFAULT ''")
+	ensureProjectColumn("proposal_file_path", "proposal_file_path VARCHAR(512) DEFAULT ''")
+	ensureProjectColumn("proposal_file_size", "proposal_file_size BIGINT NOT NULL DEFAULT 0")
 	ensureProjectColumn("proposal_file_data", "proposal_file_data LONGBLOB NULL")
 }
 
@@ -339,11 +342,18 @@ func CreateProject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var proposalData []byte
+	var proposalFilePath string
+	var proposalFileSize int64
 	if strings.TrimSpace(p.ProposalFileName) != "" || strings.TrimSpace(req.ProposalFileData) != "" {
 		var err error
 		proposalData, err = parseProjectProposalFile(p.ProposalFileName, req.ProposalFileData)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		proposalFilePath, _, proposalFileSize, err = saveNamedFileBytesToUploads("projects", p.ProposalFileName, p.ProposalContentType, proposalData, "pending_"+strconv.FormatInt(time.Now().UnixNano(), 10))
+		if err != nil {
+			http.Error(w, "保存立项书文件失败: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 	}
@@ -379,12 +389,14 @@ func CreateProject(w http.ResponseWriter, r *http.Request) {
 			audit_status,
 			proposal_file_name,
 			proposal_content_type,
+			proposal_file_path,
+			proposal_file_size,
 			proposal_file_data,
 			remark,
 			created_at,
 			updated_at,
 			is_deleted
-		) VALUES (?, ?, ?, ?, ?, ?, '未提交', ?, ?, ?, ?, ?, ?, 0)
+		) VALUES (?, ?, ?, ?, ?, ?, '未提交', ?, ?, ?, ?, NULL, ?, ?, 0)
 	`,
 		p.ProjectName,
 		p.ProjectCode,
@@ -394,7 +406,8 @@ func CreateProject(w http.ResponseWriter, r *http.Request) {
 		p.Status,
 		p.ProposalFileName,
 		p.ProposalContentType,
-		proposalData,
+		proposalFilePath,
+		proposalFileSize,
 		p.Remark,
 		now,
 		now,
@@ -470,19 +483,27 @@ func UploadProjectProposal(w http.ResponseWriter, r *http.Request, id int64) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	proposalFilePath, _, proposalFileSize, err := saveNamedFileBytesToUploads("projects", req.ProposalFileName, req.ProposalContentType, proposalData, "project_"+strconv.FormatInt(id, 10))
+	if err != nil {
+		http.Error(w, "保存立项书文件失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	result, err := config.DB.Exec(`
 		UPDATE projects
 		SET
 			proposal_file_name = ?,
 			proposal_content_type = ?,
-			proposal_file_data = ?,
+			proposal_file_path = ?,
+			proposal_file_size = ?,
+			proposal_file_data = NULL,
 			updated_at = NOW()
 		WHERE id = ? AND IFNULL(is_deleted, 0) = 0
 	`,
 		req.ProposalFileName,
 		req.ProposalContentType,
-		proposalData,
+		proposalFilePath,
+		proposalFileSize,
 		id,
 	)
 	if err != nil {
@@ -507,20 +528,29 @@ func DownloadProjectProposal(w http.ResponseWriter, r *http.Request, id int64) {
 
 	var fileName string
 	var contentType string
+	var filePath string
 	var data []byte
 
 	err := config.DB.QueryRow(`
 		SELECT
 			IFNULL(proposal_file_name, ''),
 			IFNULL(proposal_content_type, ''),
+			IFNULL(proposal_file_path, ''),
 			proposal_file_data
 		FROM projects
 		WHERE id = ? AND IFNULL(is_deleted, 0) = 0
 		LIMIT 1
-	`, id).Scan(&fileName, &contentType, &data)
+	`, id).Scan(&fileName, &contentType, &filePath, &data)
 	if err != nil {
 		http.Error(w, "立项书不存在: "+err.Error(), http.StatusNotFound)
 		return
+	}
+
+	if strings.TrimSpace(filePath) != "" {
+		diskData, readErr := os.ReadFile(filePath)
+		if readErr == nil && len(diskData) > 0 {
+			data = diskData
+		}
 	}
 
 	if fileName == "" || len(data) == 0 {

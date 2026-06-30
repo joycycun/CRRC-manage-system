@@ -221,7 +221,7 @@
             问题名称
             <input
               v-model="issueForm.issueTitle"
-              placeholder="例如：广播控制盒上电后无声音输出"
+              placeholder="例如：控制盒（主）上电后无声音输出"
             />
           </label>
 
@@ -446,6 +446,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { canUseAction } from '@/utils/permission'
+import { DEVICE_TYPE_OPTIONS } from '@/constants/deviceTypes'
 import { getCurrentUser, getCurrentUserName } from '@/utils/currentUser'
 
 import { getProjects } from '@/api/project'
@@ -483,19 +484,7 @@ const projectOptions = ref([])
 const projectMap = ref({})
 const projectOwnerMap = ref({})
 
-const deviceTypeOptions = [
-  '广播控制盒',
-  '客室解码板',
-  '编码板',
-  '乘客报警器',
-  '司机室话筒',
-  '功放模块',
-  '司机广播控制盒',
-  '司机室广播控制盒',
-  '解码板',
-  '功放板',
-  '噪声检测器'
-]
+const deviceTypeOptions = DEVICE_TYPE_OPTIONS
 
 const issueForm = reactive({
   projectName: '',

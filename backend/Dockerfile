@@ -12,7 +12,9 @@ FROM alpine:3.20
 
 WORKDIR /app
 
-RUN addgroup -S app && adduser -S app -G app
+RUN addgroup -S app && adduser -S app -G app \
+    && mkdir -p /app/uploads \
+    && chown -R app:app /app/uploads
 
 COPY --from=builder /app/crrc-pm-backend /app/crrc-pm-backend
 

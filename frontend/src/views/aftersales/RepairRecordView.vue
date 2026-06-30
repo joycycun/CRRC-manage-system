@@ -343,6 +343,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { canUseAction } from '@/utils/permission'
+import { DEVICE_TYPE_OPTIONS } from '@/constants/deviceTypes'
 import { getProjects } from '@/api/project'
 import {
   createRepairRecord,
@@ -371,14 +372,7 @@ const editMode = ref('create')
 
 const projectOptions = ref([])
 
-const deviceTypeOptions = [
-  '司机室控制盒',
-  '解码板',
-  '司机提醒单元',
-  '噪声检测',
-  '编码板',
-  '功放板'
-]
+const deviceTypeOptions = DEVICE_TYPE_OPTIONS
 
 const repairForm = reactive({
   projectId: '',

@@ -233,7 +233,7 @@
             软件描述
             <textarea
               v-model="softwareForm.businessDesc"
-              placeholder="例如：实现阿根廷项目 DACU 广播控制盒的人工广播、OCC广播、PAD广播、紧急广播等业务功能"
+              placeholder="例如：实现阿根廷项目 DACU 控制盒（主）的人工广播、OCC广播、PAD广播、紧急广播等业务功能"
             ></textarea>
           </label>
 
@@ -333,6 +333,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { canUseAction } from '@/utils/permission'
+import { DEVICE_TYPE_OPTIONS } from '@/constants/deviceTypes'
 
 import { getProjects } from '@/api/project'
 import { getHardwareVersions } from '@/api/hardware'
@@ -367,18 +368,7 @@ const editMode = ref('create')
 const projectOptions = ref([])
 const projectMap = ref({})
 
-const deviceTypeOptions = [
-  '广播控制盒',
-  '客室解码板',
-  '编码板',
-  '乘客报警器',
-  '司机室话筒',
-  '功放模块',
-  '司机室广播控制盒',
-  '解码板',
-  '功放板',
-  '噪声检测器'
-]
+const deviceTypeOptions = DEVICE_TYPE_OPTIONS
 
 const hardwareVersionList = ref([])
 

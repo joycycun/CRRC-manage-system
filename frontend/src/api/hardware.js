@@ -39,6 +39,14 @@ export function uploadHardwareDocument(id, data) {
   })
 }
 
+// 删除硬件版本
+export function deleteHardwareVersion(id) {
+  return request({
+    url: `/hardware-versions/${id}`,
+    method: 'delete'
+  })
+}
+
 // =========================
 // 硬件测试记录
 // =========================

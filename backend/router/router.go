@@ -14,6 +14,7 @@ func InitRouter() http.Handler {
 	mux.HandleFunc("/api/change-password", handler.ChangePasswordHandler)
 	mux.HandleFunc("/api/roles", handler.UserRolesOptionsHandler)
 	mux.HandleFunc("/api/users", handler.UsersHandler)
+	mux.HandleFunc("/api/users/", handler.UserActionHandler)
 	mux.HandleFunc("/api/users/roles", handler.UserRolesOptionsHandler)
 	mux.HandleFunc("/api/users/software-owners", handler.SoftwareOwnersHandler)
 	mux.HandleFunc("/api/files/", handler.UploadedFileActionHandler)

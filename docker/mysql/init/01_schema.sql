@@ -430,6 +430,8 @@ CREATE TABLE `projects` (
   `is_deleted` tinyint DEFAULT '0' COMMENT '是否删除',
   `proposal_file_name` varchar(255) COLLATE utf8mb4_general_ci DEFAULT '',
   `proposal_content_type` varchar(128) COLLATE utf8mb4_general_ci DEFAULT '',
+  `proposal_file_path` varchar(512) COLLATE utf8mb4_general_ci DEFAULT '',
+  `proposal_file_size` bigint NOT NULL DEFAULT '0',
   `proposal_file_data` longblob,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
@@ -642,6 +644,9 @@ CREATE TABLE `uploaded_files` (
   `id` bigint NOT NULL,
   `file_name` varchar(255) NOT NULL DEFAULT '',
   `content_type` varchar(128) NOT NULL DEFAULT '',
+  `file_category` varchar(64) NOT NULL DEFAULT '',
+  `file_path` varchar(512) NOT NULL DEFAULT '',
+  `file_size` bigint NOT NULL DEFAULT '0',
   `file_data` longblob,
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

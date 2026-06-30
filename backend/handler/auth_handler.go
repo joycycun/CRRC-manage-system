@@ -135,7 +135,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		user.ID,
 	)
 
-	ensureUserRoleBinding("丁sir", "software_owner")
+	ensureUserRoleBinding("丁宇", "software_owner")
 	ensureUserRoleBinding("王宇", "hardware_owner")
 
 	roles, _ := queryUserRoles(user.ID)
@@ -279,11 +279,20 @@ type CreateUserRequest struct {
 func UsersHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	if r.Method != http.MethodPost {
+	switch r.Method {
+	case http.MethodGet:
+		GetUsersHandler(w, r)
+		return
+	case http.MethodPost:
+		CreateUserHandler(w, r)
+		return
+	default:
 		json.NewEncoder(w).Encode(LoginResponse{Code: 405, Msg: "请求方法错误"})
 		return
 	}
+}
 
+func CreateUserHandler(w http.ResponseWriter, r *http.Request) {
 	if !hasRequestRole(r, "system_admin") {
 		json.NewEncoder(w).Encode(LoginResponse{Code: 403, Msg: "只有系统管理员可以新增用户"})
 		return
@@ -410,6 +419,126 @@ func UsersHandler(w http.ResponseWriter, r *http.Request) {
 			"id": userID,
 		},
 	})
+}
+
+func GetUsersHandler(w http.ResponseWriter, r *http.Request) {
+	if !hasRequestRole(r, "system_admin") {
+		json.NewEncoder(w).Encode(LoginResponse{Code: 403, Msg: "只有系统管理员可以查看用户"})
+		return
+	}
+
+	rows, err := config.DB.Query(`
+		SELECT
+			u.id,
+			u.username,
+			IFNULL(u.real_name, ''),
+			IFNULL(u.department, ''),
+			IFNULL(u.status, ''),
+			IFNULL(GROUP_CONCAT(r.role_name ORDER BY r.id SEPARATOR '、'), '')
+		FROM users u
+		LEFT JOIN user_roles ur ON ur.user_id = u.id
+		LEFT JOIN roles r ON r.id = ur.role_id
+		GROUP BY u.id, u.username, u.real_name, u.department, u.status
+		ORDER BY u.id ASC
+	`)
+	if err != nil {
+		json.NewEncoder(w).Encode(LoginResponse{Code: 500, Msg: "查询用户失败: " + err.Error()})
+		return
+	}
+	defer rows.Close()
+
+	list := make([]map[string]interface{}, 0)
+	for rows.Next() {
+		var id int64
+		var username string
+		var realName string
+		var department string
+		var status string
+		var roles string
+		if err := rows.Scan(&id, &username, &realName, &department, &status, &roles); err != nil {
+			json.NewEncoder(w).Encode(LoginResponse{Code: 500, Msg: "解析用户失败: " + err.Error()})
+			return
+		}
+		list = append(list, map[string]interface{}{
+			"id":         id,
+			"username":   username,
+			"realName":   realName,
+			"department": department,
+			"status":     status,
+			"roles":      roles,
+		})
+	}
+
+	json.NewEncoder(w).Encode(LoginResponse{Code: 200, Msg: "查询成功", Data: list})
+}
+
+func UserActionHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	path := strings.TrimPrefix(r.URL.Path, "/api/users/")
+	path = strings.Trim(path, "/")
+	if path == "" {
+		json.NewEncoder(w).Encode(LoginResponse{Code: 400, Msg: "缺少用户ID"})
+		return
+	}
+
+	id, err := strconv.ParseInt(path, 10, 64)
+	if err != nil || id <= 0 {
+		json.NewEncoder(w).Encode(LoginResponse{Code: 400, Msg: "用户ID错误"})
+		return
+	}
+
+	if r.Method != http.MethodDelete {
+		json.NewEncoder(w).Encode(LoginResponse{Code: 405, Msg: "请求方法错误"})
+		return
+	}
+
+	DeleteUserHandler(w, r, id)
+}
+
+func DeleteUserHandler(w http.ResponseWriter, r *http.Request, id int64) {
+	if !hasRequestRole(r, "system_admin") {
+		json.NewEncoder(w).Encode(LoginResponse{Code: 403, Msg: "只有系统管理员可以删除用户"})
+		return
+	}
+
+	var username string
+	if err := config.DB.QueryRow("SELECT username FROM users WHERE id = ?", id).Scan(&username); err != nil {
+		json.NewEncoder(w).Encode(LoginResponse{Code: 404, Msg: "用户不存在"})
+		return
+	}
+	if username == "admin" {
+		json.NewEncoder(w).Encode(LoginResponse{Code: 400, Msg: "admin 账户不能删除"})
+		return
+	}
+
+	tx, err := config.DB.Begin()
+	if err != nil {
+		json.NewEncoder(w).Encode(LoginResponse{Code: 500, Msg: "开启事务失败: " + err.Error()})
+		return
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec("DELETE FROM user_roles WHERE user_id = ?", id); err != nil {
+		json.NewEncoder(w).Encode(LoginResponse{Code: 500, Msg: "删除用户角色失败: " + err.Error()})
+		return
+	}
+	result, err := tx.Exec("DELETE FROM users WHERE id = ?", id)
+	if err != nil {
+		json.NewEncoder(w).Encode(LoginResponse{Code: 500, Msg: "删除用户失败: " + err.Error()})
+		return
+	}
+	affected, _ := result.RowsAffected()
+	if affected == 0 {
+		json.NewEncoder(w).Encode(LoginResponse{Code: 404, Msg: "用户不存在"})
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		json.NewEncoder(w).Encode(LoginResponse{Code: 500, Msg: "提交事务失败: " + err.Error()})
+		return
+	}
+
+	json.NewEncoder(w).Encode(LoginResponse{Code: 200, Msg: "删除用户成功"})
 }
 
 func uniqueRoleCodes(values []string) []string {
@@ -573,7 +702,7 @@ func SoftwareOwnersHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ensureUserRoleBinding("丁sir", "software_owner")
+	ensureUserRoleBinding("丁宇", "software_owner")
 
 	rows, err := config.DB.Query(`
 		SELECT
