@@ -780,8 +780,19 @@ async function handleSearch() {
     searchResults.versions = result.data?.versions || []
     searchResults.devices = result.data?.devices || []
 
-    if (searchResults.projects.length === 1 && !searchResults.versions.length && !searchResults.devices.length) {
-      goSearchResult('project', searchResults.projects[0])
+    const total =
+      searchResults.projects.length +
+      searchResults.versions.length +
+      searchResults.devices.length
+
+    if (total === 1) {
+      if (searchResults.projects.length === 1) {
+        goSearchResult('project', searchResults.projects[0])
+      } else if (searchResults.versions.length === 1) {
+        goSearchResult('version', searchResults.versions[0])
+      } else if (searchResults.devices.length === 1) {
+        goSearchResult('device', searchResults.devices[0])
+      }
     }
   } catch (err) {
     console.error('全局搜索失败：', err)
@@ -796,13 +807,13 @@ function goSearchResult(type, item) {
 
   if (type === 'project') {
     const projectKeyword = item.project_name || item.projectName || text
-    router.push({ path: '/project/progress-report', query: { keyword: projectKeyword } })
+    router.push({ path: '/dashboard', query: { keyword: projectKeyword, projectId: item.id } })
     return
   }
 
   if (type === 'version') {
     const versionKeyword = item.software_version || item.hardware_version || text
-    router.push({ path: '/version/matrix', query: { keyword: versionKeyword } })
+    router.push({ path: '/version/matrix', query: { keyword: versionKeyword, type: item.version_type || '' } })
     return
   }
 

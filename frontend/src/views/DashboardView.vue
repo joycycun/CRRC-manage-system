@@ -12,6 +12,11 @@
       </button> -->
     </div>
 
+    <div v-if="projectKeyword" class="search-hint">
+      <span>当前搜索项目</span>
+      <strong>{{ projectKeyword }}</strong>
+    </div>
+
     <!-- 第一行：总览卡片 -->
     <KpiCards />
 
@@ -31,12 +36,17 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
+import { useRoute } from 'vue-router'
 import KpiCards from '@/components/KpiCards.vue'
 import ProjectProgressCard from '@/components/ProjectProgressCard.vue'
 import TodoCard from '@/components/TodoCard.vue'
 import RecentReleaseCard from '@/components/RecentReleaseCard.vue'
 import IssueChart from '@/components/IssueChart.vue'
 import VersionTable from '@/components/VersionTable.vue'
+
+const route = useRoute()
+const projectKeyword = computed(() => String(route.query.keyword || ''))
 </script>
 
 <style scoped>
@@ -63,6 +73,27 @@ import VersionTable from '@/components/VersionTable.vue'
 .page-header p {
   margin: 8px 0 0;
   color: #94a3b8;
+  font-size: 14px;
+}
+
+.search-hint {
+  margin-bottom: 18px;
+  padding: 12px 14px;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+  background: #020617;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.search-hint span {
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.search-hint strong {
+  color: #60a5fa;
   font-size: 14px;
 }
 

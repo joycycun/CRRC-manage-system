@@ -396,7 +396,7 @@ func CreateProject(w http.ResponseWriter, r *http.Request) {
 			created_at,
 			updated_at,
 			is_deleted
-		) VALUES (?, ?, ?, ?, ?, ?, '未提交', ?, ?, ?, ?, NULL, ?, ?, 0)
+		) VALUES (?, ?, ?, ?, ?, ?, '未提交', ?, ?, ?, ?, NULL, ?, ?, ?, 0)
 	`,
 		p.ProjectName,
 		p.ProjectCode,

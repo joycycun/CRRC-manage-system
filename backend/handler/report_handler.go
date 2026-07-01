@@ -1464,10 +1464,10 @@ func GlobalSearchHandler(w http.ResponseWriter, r *http.Request) {
 			project_code,
 			IFNULL(owner_name, '') AS owner_name,
 			IFNULL(stage, '') AS stage,
-			IFNULL(status, '') AS status
+			IFNULL(status, '') AS status,
+			IFNULL(audit_status, '') AS audit_status
 		FROM projects
 		WHERE IFNULL(is_deleted, 0) = 0
-		  AND IFNULL(audit_status, '未提交') = '已通过'
 		  AND (project_name LIKE ? OR project_code LIKE ? OR owner_name LIKE ?)
 		ORDER BY updated_at DESC
 		LIMIT 8
@@ -1519,8 +1519,7 @@ func GlobalSearchHandler(w http.ResponseWriter, r *http.Request) {
 			  ON p.id = hv.project_id
 			 AND IFNULL(p.is_deleted, 0) = 0
 			 AND IFNULL(p.audit_status, '未提交') = '已通过'
-			WHERE IFNULL(hv.is_deleted, 0) = 0
-			  AND (
+			WHERE (
 				hv.hardware_version LIKE ?
 				OR hv.device_type LIKE ?
 				OR p.project_name LIKE ?
