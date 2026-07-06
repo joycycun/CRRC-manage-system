@@ -184,6 +184,113 @@ func parseNullableRepairTime(value string) (interface{}, error) {
 	return parsed, nil
 }
 
+func repairInventoryMarker(method string) string {
+	method = strings.TrimSpace(method)
+	if strings.Contains(method, "返厂") {
+		return "返厂"
+	}
+	if strings.Contains(method, "更换") {
+		return "更换"
+	}
+	return ""
+}
+
+func syncRepairRecordToInventory(req RepairRecordRequest, projectID int64) error {
+	marker := repairInventoryMarker(req.RepairMethod)
+	if marker == "" {
+		return nil
+	}
+
+	sn := strings.TrimSpace(req.SN)
+	macAddress := strings.TrimSpace(req.MacAddress)
+	if sn == "" && macAddress == "" {
+		return nil
+	}
+
+	ensureInventoryBoardColumns()
+
+	deviceType := strings.TrimSpace(req.DeviceType)
+	remark := "维修记录回库，标记" + marker
+
+	result, err := config.DB.Exec(`
+		UPDATE inventory_devices
+		SET
+			project_id = IF(? > 0, ?, project_id),
+			device_type = IF(? <> '', ?, device_type),
+			inventory_status = ?,
+			inbound_type = 'repair',
+			update_time = NOW(),
+			remark = ?
+		WHERE IFNULL(is_deleted, 0) = 0
+		  AND (
+			(? <> '' AND sn = ?)
+			OR (? <> '' AND mac_address = ?)
+		  )
+	`,
+		projectID,
+		projectID,
+		deviceType,
+		deviceType,
+		marker,
+		remark,
+		sn,
+		sn,
+		macAddress,
+		macAddress,
+	)
+	if err != nil {
+		return err
+	}
+
+	affected, _ := result.RowsAffected()
+	if affected > 0 || sn == "" || macAddress == "" {
+		return nil
+	}
+
+	_, err = config.DB.Exec(`
+		INSERT INTO inventory_devices (
+			project_id,
+			device_type,
+			product_name,
+			product_model,
+			product_code,
+			sn,
+			mac_address,
+			pcb_qr_code,
+			hardware_id,
+			hardware_version,
+			software_id,
+			software_version,
+			inventory_status,
+			source_burn_record_id,
+			factory_test_id,
+			source_file_id,
+			source_file_name,
+			inbound_type,
+			in_time,
+			update_time,
+			remark,
+			is_deleted
+		) VALUES (?, ?, '', '', '', ?, ?, '', 0, '', 0, '', ?, 0, 0, 0, '', 'repair', NOW(), NOW(), ?, 0)
+		ON DUPLICATE KEY UPDATE
+			project_id = VALUES(project_id),
+			device_type = IF(VALUES(device_type) <> '', VALUES(device_type), device_type),
+			inventory_status = VALUES(inventory_status),
+			inbound_type = 'repair',
+			update_time = NOW(),
+			remark = VALUES(remark),
+			is_deleted = 0
+	`,
+		projectID,
+		deviceType,
+		sn,
+		macAddress,
+		marker,
+		remark,
+	)
+	return err
+}
+
 func GetRepairRecordsHandler(w http.ResponseWriter, r *http.Request) {
 	rows, err := config.DB.Query(`
 		SELECT
@@ -375,6 +482,11 @@ func CreateRepairRecordHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if err := syncRepairRecordToInventory(req, projectID); err != nil {
+		http.Error(w, "维修设备回库失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"code": 200,
 		"msg":  "新增成功",
@@ -485,6 +597,11 @@ func UpdateRepairRecordHandler(w http.ResponseWriter, r *http.Request, id int64)
 	affected, _ := result.RowsAffected()
 	if affected == 0 {
 		http.Error(w, "维修记录不存在或已删除", http.StatusNotFound)
+		return
+	}
+
+	if err := syncRepairRecordToInventory(req, projectID); err != nil {
+		http.Error(w, "维修设备回库失败: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -605,8 +722,13 @@ func FaultAnalysisActionHandler(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "接口不存在", http.StatusNotFound)
 }
 
+func ensureFaultAnalysisReasonColumn() {
+	_, _ = config.DB.Exec(`ALTER TABLE fault_analysis ADD COLUMN reason VARCHAR(128) DEFAULT '' AFTER board_type`)
+}
+
 func GetFaultAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 	ensureUploadedFilesTable()
+	ensureFaultAnalysisReasonColumn()
 
 	visibilitySQL := reviewVisibilitySQL(r, "fa.audit_status", "fa.submit_user_id", "fa.submit_user_name", "aftersales_staff")
 	rows, err := config.DB.Query(`
@@ -617,6 +739,7 @@ func GetFaultAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 			IFNULL(fa.issue_id, 0),
 			IFNULL(fa.repair_id, 0),
 			IFNULL(fa.board_type, ''),
+			IFNULL(fa.reason, ''),
 			fa.analysis_name,
 			IFNULL(fa.file_id, 0),
 			IFNULL(NULLIF(fa.file_name, ''), IFNULL(uf.file_name, '')),
@@ -661,6 +784,7 @@ func GetFaultAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 			&item.IssueID,
 			&item.RepairID,
 			&item.BoardType,
+			&item.Reason,
 			&item.AnalysisName,
 			&item.FileID,
 			&item.FileName,
@@ -697,6 +821,8 @@ func GetFaultAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func CreateFaultAnalysisHandler(w http.ResponseWriter, r *http.Request) {
+	ensureFaultAnalysisReasonColumn()
+
 	var req struct {
 		model.FaultAnalysis
 		FileContentType string `json:"fileContentType"`
@@ -748,6 +874,7 @@ func CreateFaultAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 			issue_id,
 			repair_id,
 			board_type,
+			reason,
 			analysis_name,
 			file_id,
 			file_name,
@@ -761,12 +888,13 @@ func CreateFaultAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 			is_deleted,
 			created_at,
 			updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
 	`,
 		projectID,
 		item.IssueID,
 		item.RepairID,
 		item.BoardType,
+		item.Reason,
 		item.AnalysisName,
 		item.FileID,
 		item.FileName,

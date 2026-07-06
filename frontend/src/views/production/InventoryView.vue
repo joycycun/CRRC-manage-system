@@ -12,7 +12,7 @@
       <div class="summary-card">
         <span>当前库存总数</span>
         <strong>{{ totalCount }}</strong>
-        <p>仅统计已完成烧录、出厂测试且当前仍在库存中的设备</p>
+        <p>统计已完成生产测试并进入库存的设备</p>
       </div>
 
       <div class="summary-card green">
@@ -26,7 +26,7 @@
     <div class="filter-card">
       <input
         v-model="filters.keyword"
-        placeholder="搜索 SN / MAC / 软件版本 / 硬件版本"
+        placeholder="搜索产品名称 / 产品型号 / 产品编码 / SN / MAC / PCB二维码 / 软件版本 / 硬件版本"
       />
 
       <select v-model="filters.deviceType">
@@ -37,6 +37,17 @@
           :value="type"
         >
           {{ type }}
+        </option>
+      </select>
+
+      <select v-model="filters.inventoryStatus">
+        <option value="">全部库存状态</option>
+        <option
+          v-for="status in inventoryStatusOptions"
+          :key="status"
+          :value="status"
+        >
+          {{ getInventoryStatusText(status) }}
         </option>
       </select>
 
@@ -93,10 +104,15 @@
           <thead>
             <tr>
               <th>终端类型</th>
+              <th>产品名称</th>
+              <th>产品型号</th>
+              <th>产品编码</th>
               <th>SN序列号</th>
               <th>MAC地址</th>
+              <th>PCB二维码</th>
               <th>软件版本</th>
               <th>硬件版本</th>
+              <th>库存状态</th>
               <th>入库时间</th>
               <th class="operation-col">操作</th>
             </tr>
@@ -109,6 +125,24 @@
               </td>
 
               <td>
+                <span class="normal-text" :title="item.productName">
+                  {{ item.productName }}
+                </span>
+              </td>
+
+              <td>
+                <span class="normal-text" :title="item.productModel">
+                  {{ item.productModel }}
+                </span>
+              </td>
+
+              <td>
+                <span class="normal-text" :title="item.productCode">
+                  {{ item.productCode }}
+                </span>
+              </td>
+
+              <td>
                 <span class="sn-tag" :title="item.sn">
                   {{ item.sn }}
                 </span>
@@ -117,6 +151,12 @@
               <td>
                 <span class="mac-text" :title="item.macAddress">
                   {{ item.macAddress }}
+                </span>
+              </td>
+
+              <td>
+                <span class="normal-text" :title="item.pcbQrCode">
+                  {{ item.pcbQrCode }}
                 </span>
               </td>
 
@@ -132,6 +172,12 @@
                 </span>
               </td>
 
+              <td>
+                <span class="status-tag" :class="getInventoryStatusClass(item.inventoryStatus)">
+                  {{ getInventoryStatusText(item.inventoryStatus) }}
+                </span>
+              </td>
+
               <td class="muted">{{ item.inTime }}</td>
 
               <td class="operation-col">
@@ -142,7 +188,7 @@
             </tr>
 
             <tr v-if="paginatedInventoryList.length === 0">
-              <td colspan="7" class="empty-table">
+              <td colspan="12" class="empty-table">
                 暂无符合条件的库存设备
               </td>
             </tr>
@@ -196,7 +242,7 @@
       </div>
 
       <div class="table-footer">
-        库存页面仅展示已完成烧录、出厂测试并处于可发货库存状态的设备。出库操作请在出库记录页面中处理。
+        库存页面仅展示已完成生产测试且尚未出库的设备。发货批次审核通过后，设备会进入出库记录并从库存情况中移除。
       </div>
     </div>
 
@@ -215,6 +261,21 @@
           </div>
 
           <div>
+            <span>产品名称</span>
+            <strong>{{ selectedInventory.productName }}</strong>
+          </div>
+
+          <div>
+            <span>产品型号</span>
+            <strong>{{ selectedInventory.productModel }}</strong>
+          </div>
+
+          <div>
+            <span>产品编码</span>
+            <strong>{{ selectedInventory.productCode }}</strong>
+          </div>
+
+          <div>
             <span>SN序列号</span>
             <strong>{{ selectedInventory.sn }}</strong>
           </div>
@@ -222,6 +283,11 @@
           <div>
             <span>MAC地址</span>
             <strong>{{ selectedInventory.macAddress }}</strong>
+          </div>
+
+          <div>
+            <span>PCB二维码</span>
+            <strong>{{ selectedInventory.pcbQrCode }}</strong>
           </div>
 
           <div>
@@ -248,6 +314,26 @@
             <span>最后更新时间</span>
             <strong>{{ selectedInventory.updateTime }}</strong>
           </div>
+
+          <div>
+            <span>废弃审核状态</span>
+            <strong>{{ selectedInventory.scrapAuditStatus || '未申请' }}</strong>
+          </div>
+
+          <div>
+            <span>废弃申请人</span>
+            <strong>{{ selectedInventory.scrapRequestUserName || '-' }}</strong>
+          </div>
+
+          <div>
+            <span>废弃申请时间</span>
+            <strong>{{ selectedInventory.scrapRequestTime || '-' }}</strong>
+          </div>
+
+          <div>
+            <span>废弃审核人</span>
+            <strong>{{ selectedInventory.scrapAuditUserName || '-' }}</strong>
+          </div>
         </div>
 
         <div class="remark-card">
@@ -255,7 +341,38 @@
           <p>{{ selectedInventory.remark || '暂无说明' }}</p>
         </div>
 
+        <div v-if="selectedInventory.scrapRejectReason" class="remark-card">
+          <span>废弃驳回原因</span>
+          <p>{{ selectedInventory.scrapRejectReason }}</p>
+        </div>
+
+        <div v-if="canSubmitScrapRequest" class="scrap-card">
+          <label>
+            <input v-model="scrapChecked" type="checkbox" />
+            <span>确认申请废弃该库存设备</span>
+          </label>
+          <button class="red-btn" :disabled="!scrapChecked" @click="submitScrapRequest">
+            提交废弃申请
+          </button>
+        </div>
+
         <div class="dialog-footer">
+          <button
+            v-if="canAuditScrapRequest"
+            class="red-btn"
+            @click="auditScrapRequest('rejected')"
+          >
+            审核驳回
+          </button>
+
+          <button
+            v-if="canAuditScrapRequest"
+            class="green-btn"
+            @click="auditScrapRequest('approved')"
+          >
+            审核通过
+          </button>
+
           <button class="primary-btn" @click="selectedInventory = null">
             关闭
           </button>
@@ -268,15 +385,18 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { getInventory } from '@/api/inventory'
+import { auditInventoryScrap, getInventory, submitInventoryScrap } from '@/api/inventory'
+import { hasLeaderRole, hasRole } from '@/utils/permission'
 
 const route = useRoute()
 const filters = reactive({
   keyword: '',
-  deviceType: ''
+  deviceType: '',
+  inventoryStatus: ''
 })
 
 const selectedInventory = ref(null)
+const scrapChecked = ref(false)
 
 const currentPage = ref(1)
 const pageSize = ref(10)
@@ -312,11 +432,16 @@ function getInventoryStatusText(status) {
     shipped: '已出库',
     repairing: '维修中',
     scrapped: '已报废',
+    board_inbound: '板卡入库',
 
     在库: '在库',
+    板卡入库: '板卡入库',
     已预占: '已预占',
     已出库: '已出库',
     维修中: '维修中',
+    返厂: '返厂',
+    更换: '更换',
+    已废弃: '已废弃',
     已报废: '已报废'
   }
 
@@ -329,11 +454,16 @@ function getInventoryStatusClass(status) {
     shipped: 'shipped',
     repairing: 'repairing',
     scrapped: 'scrapped',
+    board_inbound: 'in-stock',
 
     在库: 'in-stock',
+    板卡入库: 'in-stock',
     已预占: 'reserved',
     已出库: 'shipped',
     维修中: 'repairing',
+    返厂: 'repairing',
+    更换: 'repairing',
+    已废弃: 'scrapped',
     已报废: 'scrapped'
   }
 
@@ -367,9 +497,11 @@ function normalizeInventory(item) {
     deviceType: item.deviceType || item.device_type || '-',
     productName: item.productName || item.product_name || '-',
     productModel: item.productModel || item.product_model || '-',
+    productCode: item.productCode || item.product_code || '-',
 
     sn: item.sn || '-',
     macAddress: item.macAddress || item.mac_address || '-',
+    pcbQrCode: item.pcbQrCode || item.pcb_qr_code || '-',
 
     hardwareId: item.hardwareId || item.hardware_id || 0,
     hardwareVersion: item.hardwareVersion || item.hardware_version || '-',
@@ -378,6 +510,14 @@ function normalizeInventory(item) {
     softwareVersion: item.softwareVersion || item.software_version || '-',
 
     inventoryStatus: item.inventoryStatus || item.inventory_status || '',
+    scrapAuditStatus: item.scrapAuditStatus || item.scrap_audit_status || '',
+    scrapRequestUserId: item.scrapRequestUserId || item.scrap_request_user_id || 0,
+    scrapRequestUserName: item.scrapRequestUserName || item.scrap_request_user_name || '',
+    scrapRequestTime: formatDateTime(item.scrapRequestTime || item.scrap_request_time),
+    scrapAuditUserId: item.scrapAuditUserId || item.scrap_audit_user_id || 0,
+    scrapAuditUserName: item.scrapAuditUserName || item.scrap_audit_user_name || '',
+    scrapAuditTime: formatDateTime(item.scrapAuditTime || item.scrap_audit_time),
+    scrapRejectReason: item.scrapRejectReason || item.scrap_reject_reason || '',
 
     sourceBurnRecordId:
       item.sourceBurnRecordId ||
@@ -424,6 +564,14 @@ const deviceTypeOptions = computed(() => {
   return [...new Set(types)]
 })
 
+const inventoryStatusOptions = computed(() => {
+  const statuses = completedInventoryList.value
+    .map(item => item.inventoryStatus)
+    .filter(Boolean)
+
+  return [...new Set(statuses)]
+})
+
 const filteredInventoryList = computed(() => {
   return completedInventoryList.value.filter(item => {
     const keyword = filters.keyword.trim().toLowerCase()
@@ -437,12 +585,17 @@ const filteredInventoryList = computed(() => {
       item.deviceType.toLowerCase().includes(keyword) ||
       item.productName.toLowerCase().includes(keyword) ||
       item.productModel.toLowerCase().includes(keyword) ||
+      item.productCode.toLowerCase().includes(keyword) ||
+      item.pcbQrCode.toLowerCase().includes(keyword) ||
       item.remark.toLowerCase().includes(keyword)
 
     const deviceTypeMatch =
       !filters.deviceType || item.deviceType === filters.deviceType
 
-    return keywordMatch && deviceTypeMatch
+    const inventoryStatusMatch =
+      !filters.inventoryStatus || item.inventoryStatus === filters.inventoryStatus
+
+    return keywordMatch && deviceTypeMatch && inventoryStatusMatch
   })
 })
 
@@ -468,6 +621,19 @@ const deviceTypeSummary = computed(() => {
       count: completedInventoryList.value.filter(item => item.deviceType === type).length
     }
   })
+})
+
+const canSubmitScrapRequest = computed(() => {
+  if (!selectedInventory.value) return false
+  if (!hasRole('production_staff') && !hasRole('system_admin')) return false
+  if (selectedInventory.value.scrapAuditStatus === '待审核') return false
+  return !['已废弃', '已报废', '已出库'].includes(selectedInventory.value.inventoryStatus)
+})
+
+const canAuditScrapRequest = computed(() => {
+  if (!selectedInventory.value) return false
+  if (selectedInventory.value.scrapAuditStatus !== '待审核') return false
+  return hasLeaderRole() || hasRole('system_admin')
 })
 
 const totalPage = computed(() => {
@@ -513,11 +679,68 @@ watch(totalPage, value => {
 function resetFilters() {
   filters.keyword = ''
   filters.deviceType = ''
+  filters.inventoryStatus = ''
   currentPage.value = 1
 }
 
 function viewInventory(item) {
   selectedInventory.value = item
+  scrapChecked.value = false
+}
+
+async function submitScrapRequest() {
+  if (!selectedInventory.value || !scrapChecked.value) return
+
+  if (!confirm('确认提交该库存设备的废弃申请吗？')) {
+    return
+  }
+
+  try {
+    const res = await submitInventoryScrap(selectedInventory.value.id)
+    const result = getResponseData(res)
+    if (result.code !== 200) {
+      alert(result.msg || '提交废弃申请失败')
+      return
+    }
+    alert('废弃申请已提交，等待领导审核')
+    selectedInventory.value = null
+    await loadInventory()
+  } catch (err) {
+    console.error('提交废弃申请失败：', err)
+    alert(err.response?.data || '提交废弃申请失败')
+  }
+}
+
+async function auditScrapRequest(status) {
+  if (!selectedInventory.value) return
+
+  let rejectReason = ''
+  if (status === 'rejected') {
+    rejectReason = window.prompt('请输入驳回原因') || ''
+  }
+
+  const message = status === 'approved' ? '确认审核通过该废弃申请吗？' : '确认驳回该废弃申请吗？'
+  if (!confirm(message)) {
+    return
+  }
+
+  try {
+    const res = await auditInventoryScrap(selectedInventory.value.id, {
+      auditStatus: status,
+      rejectReason
+    })
+    const result = getResponseData(res)
+    if (result.code !== 200) {
+      alert(result.msg || '废弃审核失败')
+      return
+    }
+    alert('废弃审核已处理')
+    selectedInventory.value = null
+    await loadInventory()
+  } catch (err) {
+    console.error('废弃审核失败：', err)
+    alert(err.response?.data || '废弃审核失败')
+  }
 }
 
 function goFirstPage() {
@@ -675,6 +898,31 @@ function goLastPage() {
   background: #1d4ed8;
 }
 
+.green-btn {
+  border: none;
+  background: #16a34a;
+  color: #fff;
+}
+
+.green-btn:hover {
+  background: #15803d;
+}
+
+.red-btn {
+  border: none;
+  background: #dc2626;
+  color: #fff;
+}
+
+.red-btn:hover:not(:disabled) {
+  background: #b91c1c;
+}
+
+.red-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .reset-btn,
 .page-btn {
   border: 1px solid #334155;
@@ -698,7 +946,7 @@ function goLastPage() {
   border-radius: 14px;
   padding: 16px;
   display: grid;
-  grid-template-columns: 1.4fr 220px 90px 90px;
+  grid-template-columns: 1.4fr 200px 180px 90px 90px;
   gap: 12px;
   margin-bottom: 20px;
 }
@@ -796,7 +1044,7 @@ function goLastPage() {
 
 .version-table {
   width: 100%;
-  min-width: 1060px;
+  min-width: 1680px;
   border-collapse: collapse;
   table-layout: fixed;
 }
@@ -872,6 +1120,14 @@ function goLastPage() {
   color: #c084fc;
 }
 
+.normal-text {
+  display: inline-block;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sn-tag {
   display: inline-block;
   max-width: 170px;
@@ -899,6 +1155,41 @@ function goLastPage() {
 
 .version-cell {
   overflow: hidden;
+}
+
+.status-tag {
+  display: inline-block;
+  min-width: 58px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.status-tag.in-stock {
+  background: #16a34a33;
+  color: #4ade80;
+}
+
+.status-tag.reserved {
+  background: #eab30833;
+  color: #fde047;
+}
+
+.status-tag.shipped {
+  background: #2563eb33;
+  color: #93c5fd;
+}
+
+.status-tag.repairing {
+  background: #f9731633;
+  color: #fdba74;
+}
+
+.status-tag.scrapped {
+  background: #dc262633;
+  color: #fca5a5;
 }
 
 .muted {
@@ -1046,6 +1337,33 @@ function goLastPage() {
   color: #cbd5e1;
   font-size: 13px;
   line-height: 1.6;
+}
+
+.scrap-card {
+  margin: 0 20px 20px;
+  background: #020617;
+  border: 1px solid #7f1d1d;
+  border-radius: 10px;
+  padding: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.scrap-card label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #fecaca;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.scrap-card input {
+  width: 16px;
+  height: 16px;
+  accent-color: #dc2626;
 }
 
 .dialog-footer {

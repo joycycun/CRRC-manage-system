@@ -127,7 +127,7 @@
                 </button>
 
                 <button
-                  v-if="canUseAction('requirement:delete') && (item.auditStatus === 'draft' || item.auditStatus === 'rejected')"
+                  v-if="canDeleteChange(item)"
                   class="text-btn red"
                   @click="deleteChange(item)"
                 >
@@ -310,7 +310,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { canUseAction } from '@/utils/permission'
+import { canUseAction, hasRole } from '@/utils/permission'
 import { buildUploadFilePayload, downloadLocalFile, getFilePreviewUrl } from '@/utils/filePreview'
 import { getAuditUserPayload, getCurrentUserParams } from '@/utils/currentUser'
 
@@ -566,6 +566,12 @@ function getCloseStatusText(status) {
   }
 
   return map[status] || status
+}
+
+function canDeleteChange(item) {
+  if (!canUseAction('requirement:delete')) return false
+  if (hasRole('system_admin')) return true
+  return item.auditStatus === 'draft' || item.auditStatus === 'rejected'
 }
 
 function resetFilters() {

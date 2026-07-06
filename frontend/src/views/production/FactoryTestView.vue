@@ -132,9 +132,9 @@
                   <button
                     v-if="canAuditFactoryTest && group.auditStatus === 'submitted'"
                     class="text-btn green"
-                    @click="auditModelGroup(group)"
+                    @click="openAuditModelGroup(group)"
                   >
-                    审核通过
+                    审核
                   </button>
                   <button
                     v-if="canDeleteModelGroup(group)"
@@ -166,10 +166,10 @@
         <div class="upload-tip">
           <strong>填写说明：</strong>
           <p>
-            出厂测试文档按产品型号上传。同一个产品型号下的 MAC 使用同一份测试文档。
+            出厂测试文档直接选择生产测试大纲里的文件。同一组板卡型号下的 MAC 使用同一份测试大纲文件。
           </p>
           <p>
-            选择产品型号后，只展示该型号下生产烧录完毕的 MAC 地址。
+            选择测试大纲后，系统会自动带出对应板卡型号，并只展示这些板卡型号下生产烧录完毕的 MAC 地址。
           </p>
           <p>
             MAC 和 SN 序列号均来自生产烧录记录页面解析出的生产数据。
@@ -177,18 +177,38 @@
         </div>
 
         <div class="form-grid">
-          <label>
-            产品型号
-            <select v-model="uploadForm.productModel" @change="onProductModelChange">
-              <option value="">请选择产品型号</option>
-              <option
-                v-for="model in productionProductModelOptions"
-                :key="model"
-                :value="model"
+          <label class="full-row">
+            生产测试大纲文件
+            <div class="outline-select-panel">
+              <div v-if="selectableOutlineList.length === 0" class="empty-mac">
+                暂无可用于出厂测试的生产测试大纲，请先在生产测试大纲页面上传对应板卡型号的大纲文件。
+              </div>
+
+              <label
+                v-for="outline in selectableOutlineList"
+                v-else
+                :key="outline.id"
+                class="outline-check-item"
               >
-                {{ model }}
-              </option>
-            </select>
+                <input
+                  v-model.number="uploadForm.outlineId"
+                  type="radio"
+                  :value="outline.id"
+                  @change="onOutlineChange"
+                />
+                <span>{{ outline.fileName || '-' }}</span>
+                <b>{{ outline.boardModels || '未填写板卡型号' }}</b>
+              </label>
+            </div>
+          </label>
+
+          <label>
+            板卡型号
+            <input
+              v-model="uploadForm.boardModels"
+              disabled
+              placeholder="选择生产测试大纲后自动带出"
+            />
           </label>
 
           <label>
@@ -212,7 +232,7 @@
             关联 MAC 地址
             <div class="mac-select-panel">
               <div v-if="!uploadForm.productModel" class="empty-mac">
-                请先选择产品型号
+                请先选择生产测试大纲文件
               </div>
 
               <template v-else>
@@ -230,7 +250,7 @@
                 </div>
 
                 <div v-if="unpassedMacList.length === 0" class="empty-mac">
-                  当前产品型号暂无烧录完毕的MAC。
+                  当前板卡型号暂无烧录完毕的MAC。
                 </div>
 
                 <div v-else-if="availableMacList.length === 0" class="empty-mac">
@@ -260,15 +280,6 @@
                 </label>
               </template>
             </div>
-          </label>
-
-          <label class="full-row">
-            出厂测试文档
-            <input
-              type="file"
-              accept=".doc,.docx,.xls,.xlsx,.pdf,.txt,.csv,.zip"
-              @change="handleFileChange"
-            />
           </label>
 
           <label class="full-row">
@@ -375,8 +386,8 @@
     <div v-if="selectedFactoryTest" class="dialog-mask">
       <div class="dialog large-dialog">
         <div class="dialog-header">
-          <h3>出厂测试记录详情</h3>
-          <button @click="selectedFactoryTest = null">×</button>
+          <h3>{{ auditModelGroupRef ? '出厂测试审核' : '出厂测试记录详情' }}</h3>
+          <button @click="closeFactoryTestDialog">×</button>
         </div>
 
         <div class="detail-card">
@@ -386,13 +397,13 @@
           </div>
 
           <div>
-            <span>MAC地址</span>
-            <strong>{{ selectedFactoryTest.macAddress }}</strong>
+            <span>{{ auditModelGroupRef ? '待审核数量' : 'MAC地址' }}</span>
+            <strong>{{ auditModelGroupRef ? `${auditModelGroupRef.records.length} 条` : selectedFactoryTest.macAddress }}</strong>
           </div>
 
           <div>
-            <span>SN序列号</span>
-            <strong>{{ getBurnInfoByMac(selectedFactoryTest.macAddress).serialNumber || '-' }}</strong>
+            <span>{{ auditModelGroupRef ? '审核方式' : 'SN序列号' }}</span>
+            <strong>{{ auditModelGroupRef ? '按产品型号统一审核' : (getBurnInfoByMac(selectedFactoryTest.macAddress).serialNumber || '-') }}</strong>
           </div>
 
           <div>
@@ -459,7 +470,7 @@
             下载文件
           </button>
 
-          <button class="primary-btn" @click="selectedFactoryTest = null">
+          <button class="primary-btn" @click="closeFactoryTestDialog">
             关闭
           </button>
         </div>
@@ -471,7 +482,8 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { canUseAction } from '@/utils/permission'
-import { buildUploadFilePayload, downloadLocalFile, openLocalFilePreview } from '@/utils/filePreview'
+import { downloadLocalFile, openLocalFilePreview } from '@/utils/filePreview'
+import { getProductionTestOutlines } from '@/api/productionTestOutline'
 
 import {
   getBurnRecords
@@ -519,9 +531,12 @@ const filters = reactive({
 const showUploadDialog = ref(false)
 const selectedFactoryTest = ref(null)
 const selectedModelGroup = ref(null)
+const auditModelGroupRef = ref(null)
 
 const uploadForm = reactive({
+  outlineId: 0,
   productModel: '',
+  boardModels: '',
   excludedMacs: [],
   macKeyword: '',
   fileName: '',
@@ -535,6 +550,7 @@ const uploadForm = reactive({
 
 // 从 burn_records 读取出来的烧录记录明细
 const productionBurnRecordList = ref([])
+const productionTestOutlineList = ref([])
 
 // 从 /api/burn-records/options 读取出来的型号统计
 const burnOptionList = ref([])
@@ -543,8 +559,11 @@ const burnOptionList = ref([])
 const factoryTestList = ref([])
 
 onMounted(async () => {
-  await loadProductionBurnRecords()
-  await loadFactoryTests()
+  await Promise.all([
+    loadProductionBurnRecords(),
+    loadProductionTestOutlines(),
+    loadFactoryTests()
+  ])
 })
 
 function getResponseData(res) {
@@ -607,6 +626,36 @@ async function loadFactoryTests() {
   }
 }
 
+async function loadProductionTestOutlines() {
+  try {
+    const res = await getProductionTestOutlines()
+    const result = getResponseData(res)
+    if (result.code !== 200) {
+      alert(result.msg || '加载生产测试大纲失败')
+      return
+    }
+
+    productionTestOutlineList.value = (result.data || []).map(item => normalizeOutline(item))
+  } catch (err) {
+    console.error('加载生产测试大纲失败：', err)
+    alert(err.response?.data || '加载生产测试大纲失败，请检查 /api/production-test-outlines 接口')
+  }
+}
+
+function normalizeOutline(item) {
+  return {
+    id: Number(item.id || 0),
+    hardwareId: Number(item.hardwareId || item.hardware_id || 0),
+    hardwareVersion: item.hardwareVersion || item.hardware_version || '',
+    boardModels: item.boardModels || item.board_models || '',
+    deviceType: item.deviceType || item.device_type || '',
+    fileId: Number(item.fileId || item.file_id || 0),
+    fileName: item.fileName || item.file_name || '',
+    fileUrl: item.fileUrl || item.file_url || '',
+    downloadUrl: item.downloadUrl || item.download_url || ''
+  }
+}
+
 function normalizeBurnRecord(item) {
   const macAddress =
     item.macAddress ||
@@ -639,6 +688,19 @@ const productionProductModelOptions = computed(() => {
   return [...new Set(models)]
 })
 
+const selectableOutlineList = computed(() => {
+  return productionTestOutlineList.value.filter(item => {
+    return item.fileId > 0 && splitBoardModels(item.boardModels).length > 0
+  })
+})
+
+function splitBoardModels(value) {
+  return String(value || '')
+    .split(/[，,]/)
+    .map(item => item.trim())
+    .filter(Boolean)
+}
+
 const productModelOptions = computed(() => {
   const models = factoryTestList.value
     .map(item => item.productModel)
@@ -656,13 +718,14 @@ const testedMacSet = computed(() => {
 })
 
 const unpassedMacList = computed(() => {
-  if (!uploadForm.productModel) {
+  const boardModelSet = new Set(splitBoardModels(uploadForm.boardModels))
+  if (boardModelSet.size === 0) {
     return []
   }
 
   return productionBurnRecordList.value.filter(item => {
     return (
-      item.productModel === uploadForm.productModel &&
+      boardModelSet.has(item.productModel) &&
       item.macAddress &&
       !testedMacSet.value.has(item.macAddress)
     )
@@ -816,8 +879,16 @@ function openModelMacDialog(group) {
   selectedModelGroup.value = group
 }
 
+function closeFactoryTestDialog() {
+  selectedFactoryTest.value = null
+  auditModelGroupRef.value = null
+}
+
 async function openUploadDialog() {
+  await loadProductionTestOutlines()
   uploadForm.productModel = ''
+  uploadForm.boardModels = ''
+  uploadForm.outlineId = 0
   uploadForm.excludedMacs = []
   uploadForm.macKeyword = ''
   uploadForm.fileName = ''
@@ -837,36 +908,41 @@ function onProductModelChange() {
   uploadForm.macKeyword = ''
 }
 
-async function handleFileChange(event) {
-  const file = event.target.files[0]
-  if (!file) return
-
-  uploadForm.file = file
-  uploadForm.fileName = file.name
-  try {
-    const payload = await buildUploadFilePayload(file)
-    uploadForm.fileId = payload.fileId
-    uploadForm.fileUrl = payload.fileUrl
-    uploadForm.fileContentType = payload.fileContentType
-    uploadForm.fileData = payload.fileData
-  } catch (err) {
-    alert('读取出厂测试文档失败，请重新选择')
+function onOutlineChange() {
+  const outline = productionTestOutlineList.value.find(item => item.id === Number(uploadForm.outlineId))
+  if (!outline) {
+    uploadForm.productModel = ''
+    uploadForm.boardModels = ''
+    uploadForm.fileName = ''
+    uploadForm.file = null
+    uploadForm.fileId = 0
+    uploadForm.fileUrl = ''
+    uploadForm.fileContentType = ''
+    uploadForm.fileData = ''
+    onProductModelChange()
+    return
   }
+
+  const boardModels = splitBoardModels(outline.boardModels)
+  uploadForm.productModel = boardModels[0] || ''
+  uploadForm.boardModels = boardModels.join(', ')
+  uploadForm.fileName = outline.fileName
+  uploadForm.file = null
+  uploadForm.fileId = outline.fileId
+  uploadForm.fileUrl = outline.fileUrl || outline.downloadUrl || ''
+  uploadForm.fileContentType = ''
+  uploadForm.fileData = ''
+  onProductModelChange()
 }
 
 async function uploadFactoryTest() {
-  if (!uploadForm.productModel) {
-    alert('请选择产品型号')
+  if (!uploadForm.outlineId || !uploadForm.fileId || splitBoardModels(uploadForm.boardModels).length === 0) {
+    alert('请选择生产测试大纲文件')
     return
   }
 
   if (finalUploadMacList.value.length === 0) {
     alert('当前没有需要上传的 MAC，请至少保留一个未排除的 MAC')
-    return
-  }
-
-  if (!uploadForm.file) {
-    alert('请上传出厂测试文档')
     return
   }
 
@@ -876,7 +952,7 @@ async function uploadFactoryTest() {
 
   const records = finalUploadMacList.value.map(macItem => {
     return {
-      productModel: uploadForm.productModel,
+      productModel: macItem.productModel,
       macAddress: macItem.macAddress,
       sn: macItem.serialNumber || '',
       productName: macItem.productName || '',
@@ -974,7 +1050,7 @@ async function deleteModelGroup(group) {
       selectedModelGroup.value = null
     }
 
-    selectedFactoryTest.value = null
+    closeFactoryTestDialog()
 
     alert('删除成功')
     await loadFactoryTests()
@@ -1031,7 +1107,7 @@ async function submitModelGroup(group) {
   }
 }
 
-async function auditModelGroup(group) {
+function openAuditModelGroup(group) {
   const submittedRecords = factoryTestList.value.filter(item => {
     return item.productModel === group.productModel && item.auditStatus === 'submitted'
   })
@@ -1041,17 +1117,26 @@ async function auditModelGroup(group) {
     return
   }
 
-  const ok = confirm(
-    `确认审核通过产品型号【${group.productModel}】下的 ${submittedRecords.length} 条出厂测试记录吗？\n审核通过后会自动进入库存情况。`
-  )
-  if (!ok) return
-
-  await approveFactoryTestGroup(group.productModel, submittedRecords)
+  auditModelGroupRef.value = {
+    ...group,
+    records: submittedRecords
+  }
+  selectedFactoryTest.value = {
+    ...submittedRecords[0],
+    productModel: group.productModel,
+    macAddress: submittedRecords[0]?.macAddress || '-',
+    fileName: group.fileName,
+    auditStatus: 'submitted',
+    uploader: group.uploader,
+    uploadTime: group.uploadTime,
+    auditor: group.auditor,
+    auditTime: group.auditTime
+  }
 }
 
 async function approveFactoryTest(item) {
-  const ids = selectedModelGroup.value
-    ? selectedModelGroup.value.records.map(record => record.id)
+  const ids = auditModelGroupRef.value
+    ? auditModelGroupRef.value.records.map(record => record.id)
     : [item.id]
 
   try {
@@ -1069,8 +1154,10 @@ async function approveFactoryTest(item) {
       return
     }
 
-    selectedFactoryTest.value = null
-    alert(`出厂测试文档【${item.fileName}】审核通过，已自动入库`)
+    const auditCount = ids.length
+    const productModel = auditModelGroupRef.value?.productModel || item.productModel
+    closeFactoryTestDialog()
+    alert(`产品型号【${productModel}】共 ${auditCount} 条出厂测试记录审核通过，已自动入库`)
 
     await loadFactoryTests()
   } catch (err) {
@@ -1109,8 +1196,8 @@ async function approveFactoryTestGroup(productModel, records) {
 }
 
 async function rejectFactoryTest(item) {
-  const ids = selectedModelGroup.value
-    ? selectedModelGroup.value.records.map(record => record.id)
+  const ids = auditModelGroupRef.value
+    ? auditModelGroupRef.value.records.map(record => record.id)
     : [item.id]
 
   try {
@@ -1129,8 +1216,10 @@ async function rejectFactoryTest(item) {
       return
     }
 
-    selectedFactoryTest.value = null
-    alert(`出厂测试文档【${item.fileName}】已驳回`)
+    const auditCount = ids.length
+    const productModel = auditModelGroupRef.value?.productModel || item.productModel
+    closeFactoryTestDialog()
+    alert(`产品型号【${productModel}】共 ${auditCount} 条出厂测试记录已驳回`)
 
     await loadFactoryTests()
   } catch (err) {
@@ -1587,14 +1676,27 @@ async function rejectFactoryTest(item) {
   padding: 10px;
 }
 
+.outline-select-panel {
+  min-height: 96px;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  background: #020617;
+  padding: 10px;
+}
+
+.outline-select-panel::-webkit-scrollbar,
 .mac-select-panel::-webkit-scrollbar {
   width: 8px;
 }
 
+.outline-select-panel::-webkit-scrollbar-track,
 .mac-select-panel::-webkit-scrollbar-track {
   background: #020617;
 }
 
+.outline-select-panel::-webkit-scrollbar-thumb,
 .mac-select-panel::-webkit-scrollbar-thumb {
   background: #334155;
   border-radius: 999px;
@@ -1657,6 +1759,47 @@ async function rejectFactoryTest(item) {
 
 .mac-check-item:last-child {
   border-bottom: none;
+}
+
+.outline-check-item {
+  display: grid !important;
+  grid-template-columns: 18px minmax(180px, 1.2fr) minmax(130px, 0.8fr) minmax(160px, 1fr);
+  align-items: center;
+  gap: 10px !important;
+  padding: 9px 8px;
+  border-bottom: 1px solid #1e293b;
+  color: #cbd5e1 !important;
+  cursor: pointer;
+}
+
+.outline-check-item:last-child {
+  border-bottom: none;
+}
+
+.outline-check-item input {
+  width: 14px;
+  height: 14px;
+  accent-color: #2563eb;
+}
+
+.outline-check-item span {
+  color: #e2e8f0;
+  font-size: 13px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.outline-check-item em,
+.outline-check-item b {
+  color: #94a3b8;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mac-check-item input {

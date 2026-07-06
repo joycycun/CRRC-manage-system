@@ -17,19 +17,8 @@
     <div class="filter-card">
       <input
         v-model="filters.keyword"
-        placeholder="搜索产品型号 / 板卡型号 / 终端类型 / 文件名"
+        placeholder="搜索板卡型号 / 文件名 / 上传人 / 备注"
       />
-
-      <select v-model="filters.hardwareId">
-        <option value="">全部产品型号</option>
-        <option
-          v-for="item in hardwareOptions"
-          :key="item.id"
-          :value="String(item.id)"
-        >
-          {{ formatHardwareOption(item) }}
-        </option>
-      </select>
 
       <button class="query-btn" @click="loadOutlines">查询</button>
       <button class="reset-btn" @click="resetFilters">重置</button>
@@ -47,9 +36,7 @@
         <table class="batch-table">
           <thead>
             <tr>
-              <th>产品型号</th>
               <th>板卡型号</th>
-              <th>终端类型</th>
               <th>测试大纲文件</th>
               <th>上传人</th>
               <th>上传时间</th>
@@ -62,9 +49,6 @@
             <template v-for="item in filteredOutlines" :key="item.id">
               <tr>
                 <td>
-                  <span class="version-tag">{{ item.hardwareVersion || '-' }}</span>
-                </td>
-                <td>
                   <button
                     class="board-models-btn"
                     :class="{ active: expandedBoardRowId === item.id }"
@@ -75,7 +59,6 @@
                     <span class="expand-icon">{{ expandedBoardRowId === item.id ? '收起' : '展开' }}</span>
                   </button>
                 </td>
-                <td>{{ item.deviceType || '-' }}</td>
                 <td>
                   <span class="file-name" :title="item.fileName">{{ item.fileName || '-' }}</span>
                 </td>
@@ -90,7 +73,7 @@
               </tr>
 
               <tr v-if="expandedBoardRowId === item.id" class="board-detail-row">
-                <td colspan="8">
+                <td colspan="6">
                   <div class="board-detail-panel">
                     <span
                       v-for="model in splitBoardModels(item.boardModels)"
@@ -108,7 +91,7 @@
             </template>
 
             <tr v-if="filteredOutlines.length === 0">
-              <td colspan="8" class="empty-table">暂无生产测试大纲</td>
+              <td colspan="6" class="empty-table">暂无生产测试大纲</td>
             </tr>
           </tbody>
         </table>
@@ -126,26 +109,11 @@
         <div class="upload-tip">
           <strong>上传规则：</strong>
           <p>
-            产品型号来自硬件版本管理中已登记的数据。重复上传同一产品型号时会保留历史文件，
-            生产人员页面只展示最新一份。
+            生产测试大纲按板卡型号索引。多个板卡型号可用逗号分隔，出厂测试会根据这里填写的板卡型号匹配烧录记录。
           </p>
         </div>
 
         <div class="form-grid">
-          <label>
-            产品型号
-            <select v-model.number="uploadForm.hardwareId">
-              <option :value="0">请选择硬件版本里的产品</option>
-              <option
-                v-for="item in hardwareOptions"
-                :key="item.id"
-                :value="item.id"
-              >
-                {{ formatHardwareOption(item) }}
-              </option>
-            </select>
-          </label>
-
           <label class="full-row">
             板卡型号
             <input
@@ -192,25 +160,21 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { getHardwareVersions } from '@/api/hardware'
 import { createProductionTestOutline, getProductionTestOutlines } from '@/api/productionTestOutline'
 import { buildUploadFilePayload, downloadLocalFile } from '@/utils/filePreview'
 import { canUseAction } from '@/utils/permission'
 
 const outlineList = ref([])
-const hardwareOptions = ref([])
 const showUploadDialog = ref(false)
 const submitting = ref(false)
 const fileInputRef = ref(null)
 const expandedBoardRowId = ref(null)
 
 const filters = reactive({
-  keyword: '',
-  hardwareId: ''
+  keyword: ''
 })
 
 const uploadForm = reactive({
-  hardwareId: 0,
   boardModels: '',
   fileId: 0,
   fileName: '',
@@ -224,36 +188,19 @@ const canUpload = computed(() => canUseAction('production:outline:upload'))
 const filteredOutlines = computed(() => {
   const keyword = filters.keyword.trim().toLowerCase()
   return outlineList.value.filter(item => {
-    const matchesHardware = !filters.hardwareId || String(item.hardwareId) === filters.hardwareId
     const text = [
-      item.hardwareVersion,
       item.boardModels,
-      item.deviceType,
       item.fileName,
       item.uploaderName,
       item.remark
     ].join(' ').toLowerCase()
-    return matchesHardware && (!keyword || text.includes(keyword))
+    return !keyword || text.includes(keyword)
   })
 })
 
 onMounted(async () => {
-  await Promise.all([loadHardwareOptions(), loadOutlines()])
+  await loadOutlines()
 })
-
-function formatHardwareOption(item) {
-  return [item.hardwareVersion, item.deviceType].filter(Boolean).join(' / ') || `硬件版本 ${item.id}`
-}
-
-async function loadHardwareOptions() {
-  try {
-    const res = await getHardwareVersions()
-    hardwareOptions.value = res.data?.data || []
-  } catch (err) {
-    console.error('加载硬件版本失败：', err)
-    alert('加载硬件版本失败')
-  }
-}
 
 async function loadOutlines() {
   try {
@@ -267,7 +214,6 @@ async function loadOutlines() {
 
 function resetFilters() {
   filters.keyword = ''
-  filters.hardwareId = ''
   expandedBoardRowId.value = null
   loadOutlines()
 }
@@ -306,10 +252,6 @@ function getCurrentUser() {
 }
 
 async function submitUpload() {
-  if (!uploadForm.hardwareId) {
-    alert('请选择产品型号')
-    return
-  }
   if (!uploadForm.fileId || !uploadForm.fileName) {
     alert('请选择测试大纲文件')
     return
@@ -329,7 +271,7 @@ async function submitUpload() {
   try {
     const user = getCurrentUser()
     await createProductionTestOutline({
-      hardwareId: uploadForm.hardwareId,
+      hardwareId: 0,
       boardModels,
       fileId: uploadForm.fileId,
       fileName: uploadForm.fileName,
@@ -352,7 +294,6 @@ async function submitUpload() {
 
 function resetUploadForm() {
   Object.assign(uploadForm, {
-    hardwareId: 0,
     boardModels: '',
     fileId: 0,
     fileName: '',

@@ -20,6 +20,7 @@ import TestCaseView from "@/views/test/TestCaseView.vue";
 // import TestReportView from "@/views/test/TestReportView.vue";
 import IssueCloseLoopView from "@/views/test/IssueCloseLoopView.vue";
 
+import BoardInboundView from "@/views/production/BoardInboundView.vue";
 import ProductionTestOutlineView from "@/views/production/ProductionTestOutlineView.vue";
 import ProductionBurnRecordView from "@/views/production/ProductionBurnRecordView.vue";
 import FactoryTestView from "@/views/production/FactoryTestView.vue";
@@ -68,6 +69,7 @@ const routes = [
   // { path: "/test/report", component: TestReportView },
   { path: "/test/issue", component: IssueCloseLoopView },
 
+  { path: "/production/board-inbound", component: BoardInboundView },
   { path: "/production/test-outline", component: ProductionTestOutlineView },
   { path: "/production/burn", component: ProductionBurnRecordView },
   { path: "/production/factory-test", component: FactoryTestView },

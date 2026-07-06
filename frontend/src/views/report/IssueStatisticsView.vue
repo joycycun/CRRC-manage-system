@@ -157,6 +157,7 @@
           <thead>
             <tr>
               <th>项目名称</th>
+              <th>问题来源</th>
               <th>问题描述</th>
               <th>问题类型</th>
               <th>问题状态</th>
@@ -173,6 +174,12 @@
               <td>
                 <span class="project-tag">
                   {{ item.projectName }}
+                </span>
+              </td>
+
+              <td>
+                <span class="source-tag" :class="getSourceClass(item.issueSource)">
+                  {{ item.issueSource || '-' }}
                 </span>
               </td>
 
@@ -243,6 +250,11 @@
           <div>
             <span>项目名称</span>
             <strong>{{ selectedIssue.projectName }}</strong>
+          </div>
+
+          <div>
+            <span>问题来源</span>
+            <strong>{{ selectedIssue.issueSource || '-' }}</strong>
           </div>
 
           <div>
@@ -358,6 +370,7 @@ const filteredIssueList = computed(() => {
       !filters.keyword ||
       item.projectName.includes(filters.keyword) ||
       item.issueTitle.includes(filters.keyword) ||
+      item.issueSource.includes(filters.keyword) ||
       item.owner.includes(filters.keyword) ||
       item.remark.includes(filters.keyword)
 
@@ -437,6 +450,12 @@ function getIssueStatusText(status) {
   return map[status] || status
 }
 
+function getSourceClass(source) {
+  if (source === '维修记录') return 'repair'
+  if (source === '故障分析') return 'fault'
+  return 'issue'
+}
+
 function getPercent(count, total) {
   if (!total) return 0
   return Math.round((count / total) * 100)
@@ -456,6 +475,7 @@ function viewIssue(item) {
 function exportIssueStatistics() {
   const header = [
     '项目名称',
+    '问题来源',
     '问题描述',
     '问题类型',
     '问题状态',
@@ -468,6 +488,7 @@ function exportIssueStatistics() {
 
   const rows = filteredIssueList.value.map(item => [
     item.projectName,
+    item.issueSource || '',
     item.issueTitle,
     getIssueLevelText(item.issueLevel),
     getIssueStatusText(item.issueStatus),
@@ -770,7 +791,7 @@ function exportIssueStatistics() {
 
 .version-table {
   width: 100%;
-  min-width: 1380px;
+  min-width: 1500px;
   border-collapse: collapse;
   table-layout: fixed;
 }
@@ -804,30 +825,35 @@ function exportIssueStatistics() {
 
 .version-table th:nth-child(2),
 .version-table td:nth-child(2) {
-  width: 300px;
+  width: 110px;
 }
 
 .version-table th:nth-child(3),
-.version-table td:nth-child(3),
-.version-table th:nth-child(4),
-.version-table td:nth-child(4) {
-  width: 110px;
+.version-table td:nth-child(3) {
+  width: 300px;
 }
 
+.version-table th:nth-child(4),
+.version-table td:nth-child(4),
 .version-table th:nth-child(5),
 .version-table td:nth-child(5) {
-  width: 130px;
+  width: 110px;
 }
 
 .version-table th:nth-child(6),
-.version-table td:nth-child(6),
+.version-table td:nth-child(6) {
+  width: 130px;
+}
+
 .version-table th:nth-child(7),
-.version-table td:nth-child(7) {
+.version-table td:nth-child(7),
+.version-table th:nth-child(8),
+.version-table td:nth-child(8) {
   width: 110px;
 }
 
-.version-table th:nth-child(8),
-.version-table td:nth-child(8) {
+.version-table th:nth-child(9),
+.version-table td:nth-child(9) {
   width: 170px;
 }
 
@@ -847,6 +873,33 @@ function exportIssueStatistics() {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.source-tag {
+  display: inline-flex;
+  max-width: 90px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.source-tag.issue {
+  background: #7c3aed33;
+  color: #c4b5fd;
+}
+
+.source-tag.repair {
+  background: #0f766e33;
+  color: #5eead4;
+}
+
+.source-tag.fault {
+  background: #b4530933;
+  color: #fcd34d;
 }
 
 .record-link {

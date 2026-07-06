@@ -224,6 +224,7 @@
                     <th>终端型号</th>
                     <th>SN序列号</th>
                     <th>MAC地址</th>
+                    <th>硬件版本</th>
                   </tr>
                 </thead>
 
@@ -240,10 +241,15 @@
                     <td>{{ item.productModel || '-' }}</td>
                     <td>{{ item.sn || '-' }}</td>
                     <td>{{ item.macAddress || '-' }}</td>
+                    <td>
+                      <button class="version-edit-btn" @click="editInventoryHardwareVersion(item)">
+                        {{ getInventoryHardwareVersion(item) || '点击填写' }}
+                      </button>
+                    </td>
                   </tr>
 
                   <tr v-if="paginatedInventoryList.length === 0">
-                    <td colspan="5" class="empty-table">
+                    <td colspan="6" class="empty-table">
                       暂无可选择的在库设备
                     </td>
                   </tr>
@@ -290,6 +296,7 @@
                 <em>{{ device.productModel || '-' }}</em>
                 <em>{{ device.sn || '-' }}</em>
                 <em>{{ device.macAddress || '-' }}</em>
+                <em>{{ getInventoryHardwareVersion(device) || '-' }}</em>
               </div>
               <div v-if="selectedInventoryDevices.length > selectedInventoryPreview.length" class="empty-dialog-data">
                 还有 {{ selectedInventoryDevices.length - selectedInventoryPreview.length }} 台已选择设备未展开显示。
@@ -534,6 +541,7 @@ const showCreateDialog = ref(false)
 const showProductionRequestDialog = ref(false)
 const selectedBatch = ref(null)
 const selectedInventoryIds = ref([])
+const hardwareVersionDrafts = reactive({})
 const inventoryList = ref([])
 const batchList = ref([])
 const inventoryCurrentPage = ref(1)
@@ -841,6 +849,7 @@ async function openCreateDialog() {
   macSelectForm.startMac = ''
   macSelectForm.endMac = ''
   selectedInventoryIds.value = []
+  Object.keys(hardwareVersionDrafts).forEach(key => delete hardwareVersionDrafts[key])
 
   await loadInventory()
   showCreateDialog.value = true
@@ -945,6 +954,23 @@ function clearSelectedInventory() {
   selectedInventoryIds.value = []
 }
 
+function getInventoryHardwareVersion(item) {
+  if (!item) return ''
+  const key = String(item.id)
+  if (Object.prototype.hasOwnProperty.call(hardwareVersionDrafts, key)) {
+    return hardwareVersionDrafts[key]
+  }
+  return item.hardwareVersion || ''
+}
+
+function editInventoryHardwareVersion(item) {
+  if (!item) return
+  const current = getInventoryHardwareVersion(item)
+  const next = window.prompt(`修改 SN【${item.sn || '-'}】的硬件版本号`, current)
+  if (next === null) return
+  hardwareVersionDrafts[String(item.id)] = String(next).trim()
+}
+
 function goPrevInventoryPage() {
   if (inventoryCurrentPage.value > 1) inventoryCurrentPage.value -= 1
 }
@@ -984,7 +1010,14 @@ async function createBatch() {
       uploaderName: batchForm.uploader,
       remark: batchForm.remark,
       shippingDesc: batchForm.remark,
-      inventoryDeviceIds: selectedInventoryIds.value
+      inventoryDeviceIds: selectedInventoryIds.value,
+      inventoryVersions: selectedInventoryIds.value.map(id => {
+        const device = availableInventoryList.value.find(item => item.id === id)
+        return {
+          inventoryDeviceId: id,
+          hardwareVersion: getInventoryHardwareVersion(device)
+        }
+      })
     })
     const result = getResponseData(res)
     if (result.code !== 200) {
@@ -993,6 +1026,7 @@ async function createBatch() {
     }
 
     selectedInventoryIds.value = []
+    Object.keys(hardwareVersionDrafts).forEach(key => delete hardwareVersionDrafts[key])
     showCreateDialog.value = false
     await loadInventory()
     await loadShippingBatches()
@@ -1671,7 +1705,7 @@ async function deleteBatch(item) {
 
 .mac-check-item {
   display: grid !important;
-  grid-template-columns: 160px 180px minmax(150px, 1fr) minmax(160px, 1fr);
+  grid-template-columns: 150px 170px minmax(140px, 1fr) minmax(150px, 1fr) 150px;
   align-items: center;
   gap: 8px !important;
   padding: 8px;
@@ -1701,6 +1735,29 @@ async function deleteBatch(item) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.version-edit-btn {
+  max-width: 160px;
+  border: none;
+  background: transparent;
+  color: #93c5fd;
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.version-edit-btn:hover {
+  color: #bfdbfe;
+}
+
+.version-edit-btn::after {
+  content: ' 修改';
+  color: #64748b;
 }
 
 /* MAC 弹窗 */
@@ -1738,7 +1795,7 @@ async function deleteBatch(item) {
 
 .mac-dialog-table {
   width: 100%;
-  min-width: 640px;
+  min-width: 820px;
   border-collapse: collapse;
   table-layout: fixed;
   border: 1px solid #1e293b;
@@ -1790,7 +1847,12 @@ async function deleteBatch(item) {
 
 .mac-dialog-table th:nth-child(5),
 .mac-dialog-table td:nth-child(5) {
-  width: 200px;
+  width: 180px;
+}
+
+.mac-dialog-table th:nth-child(6),
+.mac-dialog-table td:nth-child(6) {
+  width: 150px;
 }
 
 /* 弹窗 */

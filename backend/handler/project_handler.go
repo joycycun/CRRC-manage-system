@@ -90,6 +90,9 @@ func ProjectActionHandler(w http.ResponseWriter, r *http.Request) {
 		case "close":
 			CloseProject(w, r, id)
 			return
+		case "reopen":
+			ReopenProject(w, r, id)
+			return
 		case "proposal":
 			UploadProjectProposal(w, r, id)
 			return
@@ -108,6 +111,9 @@ func ProjectActionHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func ensureProjectProposalColumns() {
+	ensureProjectColumn("has_server", "has_server TINYINT NOT NULL DEFAULT 0 COMMENT '是否有服务器'")
+	ensureProjectColumn("server_owner_id", "server_owner_id BIGINT NOT NULL DEFAULT 0 COMMENT '服务器负责人ID'")
+	ensureProjectColumn("server_owner_name", "server_owner_name VARCHAR(64) NOT NULL DEFAULT '' COMMENT '服务器负责人'")
 	ensureProjectColumn("proposal_file_name", "proposal_file_name VARCHAR(255) DEFAULT ''")
 	ensureProjectColumn("proposal_content_type", "proposal_content_type VARCHAR(128) DEFAULT ''")
 	ensureProjectColumn("proposal_file_path", "proposal_file_path VARCHAR(512) DEFAULT ''")
@@ -147,6 +153,9 @@ func GetProjects(w http.ResponseWriter, r *http.Request) {
 			project_code,
 			IFNULL(owner_id, 0),
 			IFNULL(owner_name, ''),
+			IFNULL(has_server, 0),
+			IFNULL(server_owner_id, 0),
+			IFNULL(server_owner_name, ''),
 			IFNULL(stage, ''),
 			IFNULL(status, ''),
 			submit_time,
@@ -184,6 +193,9 @@ func GetProjects(w http.ResponseWriter, r *http.Request) {
 			&p.ProjectCode,
 			&p.OwnerID,
 			&p.OwnerName,
+			&p.HasServer,
+			&p.ServerOwnerID,
+			&p.ServerOwnerName,
 			&p.Stage,
 			&p.Status,
 			&p.SubmitTime,
@@ -254,6 +266,9 @@ func GetProjectDetail(w http.ResponseWriter, r *http.Request, id int64) {
 			project_code,
 			IFNULL(owner_id, 0),
 			IFNULL(owner_name, ''),
+			IFNULL(has_server, 0),
+			IFNULL(server_owner_id, 0),
+			IFNULL(server_owner_name, ''),
 			IFNULL(stage, ''),
 			IFNULL(status, ''),
 			submit_time,
@@ -279,6 +294,9 @@ func GetProjectDetail(w http.ResponseWriter, r *http.Request, id int64) {
 		&p.ProjectCode,
 		&p.OwnerID,
 		&p.OwnerName,
+		&p.HasServer,
+		&p.ServerOwnerID,
+		&p.ServerOwnerName,
 		&p.Stage,
 		&p.Status,
 		&p.SubmitTime,
@@ -336,6 +354,19 @@ func CreateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if p.HasServer {
+		ownerID, ownerName, err := getSoftwareOwnerByName("都俊成")
+		if err != nil {
+			http.Error(w, "有服务器项目需要绑定服务器负责人都俊成，请先在用户管理中创建并绑定软件负责人角色", http.StatusBadRequest)
+			return
+		}
+		p.ServerOwnerID = ownerID
+		p.ServerOwnerName = ownerName
+	} else {
+		p.ServerOwnerID = 0
+		p.ServerOwnerName = ""
+	}
+
 	if p.OwnerID == 0 || !isSoftwareOwner(p.OwnerID) {
 		http.Error(w, "请选择已注册的软件负责人", http.StatusBadRequest)
 		return
@@ -384,6 +415,9 @@ func CreateProject(w http.ResponseWriter, r *http.Request) {
 			project_code,
 			owner_id,
 			owner_name,
+			has_server,
+			server_owner_id,
+			server_owner_name,
 			stage,
 			status,
 			audit_status,
@@ -396,12 +430,15 @@ func CreateProject(w http.ResponseWriter, r *http.Request) {
 			created_at,
 			updated_at,
 			is_deleted
-		) VALUES (?, ?, ?, ?, ?, ?, '未提交', ?, ?, ?, ?, NULL, ?, ?, ?, 0)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '未提交', ?, ?, ?, ?, NULL, ?, ?, ?, 0)
 	`,
 		p.ProjectName,
 		p.ProjectCode,
 		p.OwnerID,
 		p.OwnerName,
+		p.HasServer,
+		p.ServerOwnerID,
+		p.ServerOwnerName,
 		p.Stage,
 		p.Status,
 		p.ProposalFileName,
@@ -580,6 +617,24 @@ func isSoftwareOwner(userID int64) bool {
 		  AND IFNULL(u.status, '启用') = '启用'
 	`, userID).Scan(&count)
 	return err == nil && count > 0
+}
+
+func getSoftwareOwnerByName(name string) (int64, string, error) {
+	name = strings.TrimSpace(name)
+	var id int64
+	var realName string
+	err := config.DB.QueryRow(`
+		SELECT u.id, IFNULL(NULLIF(u.real_name, ''), u.username)
+		FROM users u
+		JOIN user_roles ur ON ur.user_id = u.id
+		JOIN roles r ON r.id = ur.role_id
+		WHERE r.role_code = 'software_owner'
+		  AND IFNULL(u.status, '启用') = '启用'
+		  AND (u.username = ? OR u.real_name = ?)
+		ORDER BY u.id
+		LIMIT 1
+	`, name, name).Scan(&id, &realName)
+	return id, realName, err
 }
 
 // ============================================================
@@ -816,6 +871,48 @@ func CloseProject(w http.ResponseWriter, r *http.Request, id int64) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"code": 200,
 		"msg":  "关闭成功",
+	})
+}
+
+// ============================================================
+// POST /api/projects/{id}/reopen
+// ============================================================
+
+func ReopenProject(w http.ResponseWriter, r *http.Request, id int64) {
+	if !requireProjectAssistantPermission(w, r) {
+		return
+	}
+
+	result, err := config.DB.Exec(`
+		UPDATE projects
+		SET
+			status = '进行中',
+			stage = CASE
+				WHEN IFNULL(stage, '') IN ('', '已关闭') THEN '立项'
+				ELSE stage
+			END,
+			close_time = NULL,
+			updated_at = NOW()
+		WHERE id = ?
+		  AND IFNULL(is_deleted, 0) = 0
+		  AND IFNULL(audit_status, '未提交') = '已通过'
+		  AND IFNULL(status, '') = '已关闭'
+	`, id)
+
+	if err != nil {
+		http.Error(w, "重新打开失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	affected, _ := result.RowsAffected()
+	if affected == 0 {
+		http.Error(w, "项目不存在、未审核通过或当前不是已关闭状态", http.StatusBadRequest)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"code": 200,
+		"msg":  "重新打开成功",
 	})
 }
 

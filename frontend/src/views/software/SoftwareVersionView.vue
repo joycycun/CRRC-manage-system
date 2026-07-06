@@ -44,104 +44,119 @@
       <button class="reset-btn" @click="resetFilters">重置</button>
     </div>
 
-    <!-- 数据表格 -->
-    <div class="table-card">
-      <div class="table-wrapper">
-        <table>
-          <thead>
-            <tr>
-              <th>软件版本</th>
-              <th>软件描述</th>
-              <th>适配项目</th>
-              <th>适配终端</th>
-              <th>适配硬件版本</th>
-              <th>负责人</th>
-              <th>发布日期</th>
-              <th>状态</th>
-              <th class="operation-col">操作</th>
-            </tr>
-          </thead>
+    <!-- 项目折叠列表 -->
+    <div class="project-version-groups">
+      <div
+        v-for="group in groupedSoftwareVersions"
+        :key="group.projectName"
+        class="project-version-group"
+      >
+        <button class="project-group-header" @click="toggleProjectGroup(group.projectName)">
+          <span class="fold-icon">{{ isProjectCollapsed(group.projectName) ? '›' : '⌄' }}</span>
+          <span class="project-group-title">{{ group.projectName }}</span>
+          <span class="project-group-count">{{ group.items.length }} 个软件版本</span>
+        </button>
 
-          <tbody>
-            <tr v-for="item in filteredSoftwareList" :key="item.id">
-              <td>
-                <button class="version-link" @click="openDownloadPage(item)">
-                  {{ item.softwareVersion }}
-                </button>
-              </td>
+        <div v-show="!isProjectCollapsed(group.projectName)" class="table-card">
+          <div class="table-wrapper">
+            <table>
+              <colgroup>
+                <col class="version-col" />
+                <col class="desc-col" />
+                <col class="device-col" />
+                <col class="hardware-col" />
+                <col class="owner-col" />
+                <col class="date-col" />
+                <col class="status-col" />
+                <col class="operation-table-col" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>软件版本</th>
+                  <th>软件描述</th>
+                  <th>适配终端</th>
+                  <th>适配硬件版本</th>
+                  <th>负责人</th>
+                  <th>发布日期</th>
+                  <th>状态</th>
+                  <th class="operation-col">操作</th>
+                </tr>
+              </thead>
 
-              <td>
-                <div class="software-desc" :title="item.businessDesc">
-                  {{ item.businessDesc }}
-                </div>
-              </td>
+              <tbody>
+                <tr v-for="item in group.items" :key="`${group.projectName}-${item.id}`">
+                  <td>
+                    <button class="version-link" @click="openDownloadPage(item)">
+                      {{ item.softwareVersion }}
+                    </button>
+                  </td>
 
-              <td>
-                <div class="project-list">
-                  <span
-                    v-for="project in getSoftwareProjects(item)"
-                    :key="project"
-                    class="project-tag"
-                  >
-                    {{ project }}
-                  </span>
-                </div>
-              </td>
+                  <td>
+                    <div class="software-desc" :title="item.businessDesc">
+                      {{ item.businessDesc }}
+                    </div>
+                  </td>
 
-              <td>
-                <span class="device-tag">
-                  {{ item.deviceType }}
-                </span>
-              </td>
+                  <td>
+                    <span class="device-tag">
+                      {{ item.deviceType }}
+                    </span>
+                  </td>
 
-              <td class="hardware-version-cell">
-                <span class="hardware-tag" :title="item.hardwareVersion">
-                  {{ item.hardwareVersion }}
-                </span>
-              </td>
+                  <td class="hardware-version-cell">
+                    <span class="hardware-tag" :title="item.hardwareVersion">
+                      {{ item.hardwareVersion }}
+                    </span>
+                  </td>
 
-              <td>{{ item.owner }}</td>
+                  <td>{{ item.owner }}</td>
 
-              <td class="muted">
-                {{ item.releaseDate || '-' }}
-              </td>
+                  <td class="muted">
+                    {{ item.releaseDate || '-' }}
+                  </td>
 
-              <td>
-                <span class="status-tag" :class="item.softwareStatus">
-                  {{ getSoftwareStatusText(item.softwareStatus) }}
-                </span>
-              </td>
+                  <td>
+                    <span class="status-tag" :class="item.softwareStatus">
+                      {{ getSoftwareStatusText(item.softwareStatus) }}
+                    </span>
+                  </td>
 
-              <td class="operation-col">
-                <div class="action-group">
-                  <button class="text-btn" @click="viewSoftware(item)">
-                    查看
-                  </button>
+                  <td class="operation-col">
+                    <div class="action-group">
+                      <button class="text-btn" @click="viewSoftware(item)">
+                        查看
+                      </button>
 
-                  <button v-if="canUseAction('software:update')" class="text-btn blue" @click="openEditDialog(item)">
-                    修改
-                  </button>
+                      <button v-if="canUseAction('software:update')" class="text-btn blue" @click="openEditDialog(item)">
+                        修改
+                      </button>
 
-                  <button
-                    v-if="canUseAction('software:release') && item.softwareStatus !== 'released'"
-                    class="text-btn green"
-                    @click="releaseSoftware(item)"
-                  >
-                    发布
-                  </button>
+                      <button
+                        v-if="canUseAction('software:release') && item.softwareStatus !== 'released'"
+                        class="text-btn green"
+                        @click="releaseSoftware(item)"
+                      >
+                        发布
+                      </button>
 
-                  <button v-if="canUseAction('software:download')" class="text-btn green" @click="openDownloadPage(item)">
-                    下载
-                  </button>
+                      <button v-if="canUseAction('software:download')" class="text-btn green" @click="openDownloadPage(item)">
+                        下载
+                      </button>
 
-                  <button v-if="canUseAction('software:delete')" class="text-btn red" @click="deleteSoftware(item)">
-                    删除
-                  </button>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+                      <button v-if="canUseAction('software:delete')" class="text-btn red" @click="deleteSoftware(item)">
+                        删除
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="groupedSoftwareVersions.length === 0" class="empty-card">
+        暂无软件版本记录
       </div>
 
       <div class="table-footer">
@@ -367,6 +382,7 @@ const editMode = ref('create')
 
 const projectOptions = ref([])
 const projectMap = ref({})
+const collapsedProjects = reactive({})
 
 const deviceTypeOptions = DEVICE_TYPE_OPTIONS
 
@@ -629,6 +645,35 @@ const filteredSoftwareList = computed(() => {
     return keywordMatch && projectMatch && deviceTypeMatch
   })
 })
+
+const groupedSoftwareVersions = computed(() => {
+  const groupMap = new Map()
+
+  filteredSoftwareList.value.forEach(item => {
+    const projects = getSoftwareProjects(item)
+    const projectNames = projects.length > 0 ? projects : ['未绑定项目']
+
+    projectNames.forEach(projectName => {
+      if (!groupMap.has(projectName)) {
+        groupMap.set(projectName, [])
+      }
+      groupMap.get(projectName).push(item)
+    })
+  })
+
+  return Array.from(groupMap.entries()).map(([projectName, items]) => ({
+    projectName,
+    items
+  }))
+})
+
+function toggleProjectGroup(projectName) {
+  collapsedProjects[projectName] = !collapsedProjects[projectName]
+}
+
+function isProjectCollapsed(projectName) {
+  return Boolean(collapsedProjects[projectName])
+}
 
 function getSoftwareProjects(item) {
   if (Array.isArray(item.projectNames) && item.projectNames.length > 0) {
@@ -1030,11 +1075,109 @@ async function deleteSoftware(item) {
   scrollbar-color: #334155 #020617;
 }
 
+.project-version-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.project-version-group {
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.project-group-header {
+  width: 100%;
+  height: 48px;
+  padding: 0 16px;
+  border: none;
+  border-bottom: 1px solid #1e293b;
+  background: #020617;
+  color: #e2e8f0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.project-group-header:hover {
+  background: #0b1120;
+}
+
+.fold-icon {
+  width: 18px;
+  color: #60a5fa;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.project-group-title {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.project-group-count {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.project-version-group .table-card {
+  border: none;
+  border-radius: 0;
+}
+
+.empty-card {
+  padding: 28px 16px;
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 14px;
+  color: #64748b;
+  text-align: center;
+  font-size: 13px;
+}
+
 .table-card table {
   width: 100%;
-  min-width: 1380px;
+  min-width: 1880px;
   border-collapse: collapse;
   table-layout: fixed;
+}
+
+.version-col {
+  width: 210px;
+}
+
+.desc-col {
+  width: 320px;
+}
+
+.device-col {
+  width: 200px;
+}
+
+.hardware-col {
+  width: 210px;
+}
+
+.owner-col {
+  width: 170px;
+}
+
+.date-col {
+  width: 140px;
+}
+
+.status-col {
+  width: 120px;
+}
+
+.operation-table-col {
+  width: 520px;
 }
 
 .table-card thead {
@@ -1096,7 +1239,7 @@ async function deleteSoftware(item) {
 
 .table-card th:nth-child(8),
 .table-card td:nth-child(8) {
-  width: 90px;
+  width: 520px;
 }
 
 .version-link {
@@ -1199,23 +1342,36 @@ async function deleteSoftware(item) {
 }
 
 .operation-col {
-  width: 360px;
+  width: 520px !important;
+  min-width: 520px !important;
   text-align: right !important;
+  overflow: visible !important;
 }
 
 .action-group {
   display: flex;
   justify-content: flex-end;
   align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
+  gap: 8px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  min-width: 0;
+  width: 100%;
 }
 
 .text-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  height: 28px;
+  padding: 0 6px;
   border: none;
   background: transparent;
   color: #cbd5e1;
-  font-size: 13px;
+  font-size: 12px;
+  line-height: 1;
   cursor: pointer;
   white-space: nowrap;
 }
@@ -1403,7 +1559,7 @@ async function deleteSoftware(item) {
   }
 
   .table-card table {
-    min-width: 1380px;
+    min-width: 1880px;
   }
 
   .form-grid,

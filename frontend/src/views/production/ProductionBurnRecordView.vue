@@ -807,7 +807,16 @@ function getFinalBatchNo(excelBatchNo) {
   )
 }
 
-function normalizeExcelRow(row) {
+function formatDuplicateMessages(duplicates) {
+  if (duplicates.length === 0) return ''
+  const lines = duplicates
+    .slice(0, 20)
+    .map(item => `${item.type}【${item.value}】：第 ${item.rowNumber} 行重复第 ${item.firstRowNumber} 行`)
+  const more = duplicates.length > 20 ? `\n还有 ${duplicates.length - 20} 条重复未显示` : ''
+  return lines.join('\n') + more
+}
+
+function normalizeExcelRow(row, rowNumber) {
   const normalizedRow = {}
 
   Object.keys(row).forEach(key => {
@@ -875,7 +884,8 @@ function normalizeExcelRow(row) {
       '说明',
       'Remark',
       'Note'
-    ])
+    ]),
+    rowNumber
   }
 }
 
@@ -925,8 +935,12 @@ async function handleExcelFileChange(event) {
         range: 2
       })
 
+      const seenSerialNumbers = new Map()
+      const seenMacAddresses = new Map()
+      const duplicateMessages = []
+
       const parsedRows = rows
-        .map(row => normalizeExcelRow(row))
+        .map((row, index) => normalizeExcelRow(row, index + 4))
         .filter(row => {
           return (
             row.batchNo ||
@@ -941,6 +955,59 @@ async function handleExcelFileChange(event) {
             row.note
           )
         })
+        .map(row => {
+          const uniqueSerialNumbers = []
+          row.serialNumbers.forEach(serialNumber => {
+            const normalizedSN = String(serialNumber || '').trim().toUpperCase()
+            if (!normalizedSN) return
+            if (seenSerialNumbers.has(normalizedSN)) {
+              duplicateMessages.push({
+                type: '序列号',
+                value: serialNumber,
+                rowNumber: row.rowNumber,
+                firstRowNumber: seenSerialNumbers.get(normalizedSN)
+              })
+              return
+            }
+            seenSerialNumbers.set(normalizedSN, row.rowNumber)
+            uniqueSerialNumbers.push(serialNumber)
+          })
+
+          const normalizedMac = String(row.macAddress || '').trim().toUpperCase()
+          if (normalizedMac) {
+            if (seenMacAddresses.has(normalizedMac)) {
+              duplicateMessages.push({
+                type: 'MAC地址',
+                value: row.macAddress,
+                rowNumber: row.rowNumber,
+                firstRowNumber: seenMacAddresses.get(normalizedMac)
+              })
+              return {
+                ...row,
+                serialNumbers: []
+              }
+            }
+            seenMacAddresses.set(normalizedMac, row.rowNumber)
+          }
+
+          if (normalizedMac && uniqueSerialNumbers.length > 1) {
+            uniqueSerialNumbers.slice(1).forEach(serialNumber => {
+              duplicateMessages.push({
+                type: 'MAC地址',
+                value: row.macAddress,
+                rowNumber: row.rowNumber,
+                firstRowNumber: row.rowNumber
+              })
+            })
+            uniqueSerialNumbers.splice(1)
+          }
+
+          return {
+            ...row,
+            serialNumbers: uniqueSerialNumbers
+          }
+        })
+        .filter(row => row.serialNumbers.length > 0)
 
       if (parsedRows.length === 0) {
         alert('Excel 中未识别到有效数据，请确认第 3 行是否包含：产品名称、产品型号、产品编码、序列号、MAC地址、硬件版本、软件版本、PCB二维码、备注')
@@ -949,6 +1016,9 @@ async function handleExcelFileChange(event) {
       }
 
       excelPreviewList.value = parsedRows
+      if (duplicateMessages.length > 0) {
+        alert(`已自动忽略 Excel 内重复的序列号或 MAC：${duplicateMessages.length} 处\n${formatDuplicateMessages(duplicateMessages)}`)
+      }
     } catch (error) {
       console.error(error)
       alert('Excel 解析失败，请检查文件格式或第 3 行表头是否正确')
@@ -972,10 +1042,6 @@ async function saveExcelBurnRecords() {
 
   const uploader = currentUserName.value
 
-  const seenSerialNumbers = new Set()
-  const seenMacAddresses = new Set()
-  let duplicateSkipCount = 0
-
   const records = []
 
   excelPreviewList.value.forEach(item => {
@@ -985,20 +1051,6 @@ async function saveExcelBurnRecords() {
         : []
 
     serialNumbers.forEach(serialNumber => {
-      const normalizedSN = String(serialNumber || '').trim().toUpperCase()
-      const normalizedMac = String(item.macAddress || '').trim().toUpperCase()
-
-      if (
-        (normalizedSN && seenSerialNumbers.has(normalizedSN)) ||
-        (normalizedMac && seenMacAddresses.has(normalizedMac))
-      ) {
-        duplicateSkipCount += 1
-        return
-      }
-
-      if (normalizedSN) seenSerialNumbers.add(normalizedSN)
-      if (normalizedMac) seenMacAddresses.add(normalizedMac)
-
       records.push({
         batchNo: getFinalBatchNo(item.batchNo),
         productName: item.productName || '-',
@@ -1048,8 +1100,7 @@ async function saveExcelBurnRecords() {
     console.log('导入烧录记录返回：', result)
 
     if (result.code === 200) {
-      const duplicateText = duplicateSkipCount > 0 ? `，已跳过重复 SN/MAC ${duplicateSkipCount} 条` : ''
-      alert(`导入成功，共导入 ${result.data?.count || records.length} 条记录${duplicateText}`)
+      alert(`导入成功，共导入 ${result.data?.count || records.length} 条记录`)
 
       const firstBatchNo = records[0]?.batchNo
       if (firstBatchNo) {

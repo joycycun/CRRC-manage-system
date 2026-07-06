@@ -1020,9 +1020,11 @@ func AuditFactoryTestHandler(w http.ResponseWriter, r *http.Request, id int64) {
 				IFNULL(br.project_id, 0),
 				IFNULL(br.product_name, ''),
 				IFNULL(br.product_model, ''),
+				IFNULL(br.product_code, ''),
 				IFNULL(br.device_type, ''),
 				br.sn,
 				br.mac_address,
+				IFNULL(br.pcb_qr_code, ''),
 				IFNULL(br.hardware_id, 0),
 				IFNULL(br.hardware_version, ''),
 				IFNULL(br.software_id, 0),
@@ -1035,9 +1037,11 @@ func AuditFactoryTestHandler(w http.ResponseWriter, r *http.Request, id int64) {
 			&burn.ProjectID,
 			&burn.ProductName,
 			&burn.ProductModel,
+			&burn.ProductCode,
 			&burn.DeviceType,
 			&burn.SN,
 			&burn.MacAddress,
+			&burn.PCBQRCode,
 			&burn.HardwareID,
 			&burn.HardwareVersion,
 			&burn.SoftwareID,
@@ -1055,8 +1059,10 @@ func AuditFactoryTestHandler(w http.ResponseWriter, r *http.Request, id int64) {
 				device_type,
 				product_name,
 				product_model,
+				product_code,
 				sn,
 				mac_address,
+				pcb_qr_code,
 				hardware_id,
 				hardware_version,
 				software_id,
@@ -1064,22 +1070,37 @@ func AuditFactoryTestHandler(w http.ResponseWriter, r *http.Request, id int64) {
 				inventory_status,
 				source_burn_record_id,
 				factory_test_id,
+				inbound_type,
 				in_time,
 				update_time,
 				remark,
 				is_deleted
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '在库', ?, ?, NOW(), NOW(), '', 0)
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '在库', ?, ?, 'factory', NOW(), NOW(), '', 0)
 			ON DUPLICATE KEY UPDATE
+				project_id = VALUES(project_id),
+				device_type = VALUES(device_type),
+				product_name = VALUES(product_name),
+				product_model = VALUES(product_model),
+				product_code = VALUES(product_code),
+				pcb_qr_code = VALUES(pcb_qr_code),
+				hardware_id = VALUES(hardware_id),
+				hardware_version = VALUES(hardware_version),
+				software_id = VALUES(software_id),
+				software_version = VALUES(software_version),
 				inventory_status = '在库',
+				source_burn_record_id = VALUES(source_burn_record_id),
 				factory_test_id = VALUES(factory_test_id),
+				inbound_type = 'factory',
 				update_time = NOW()
 		`,
 			burn.ProjectID,
 			burn.DeviceType,
 			burn.ProductName,
 			burn.ProductModel,
+			burn.ProductCode,
 			burn.SN,
 			burn.MacAddress,
+			burn.PCBQRCode,
 			burn.HardwareID,
 			burn.HardwareVersion,
 			burn.SoftwareID,
@@ -1144,6 +1165,35 @@ func InventoryHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func BoardInboundHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	switch r.Method {
+	case http.MethodGet:
+		GetBoardInboundHandler(w, r)
+	case http.MethodPost:
+		ImportBoardInboundHandler(w, r)
+	default:
+		http.Error(w, "不支持该请求方法", http.StatusMethodNotAllowed)
+	}
+}
+
+func ensureInventoryBoardColumns() {
+	_, _ = config.DB.Exec(`ALTER TABLE inventory_devices ADD COLUMN product_code VARCHAR(128) DEFAULT '' AFTER product_model`)
+	_, _ = config.DB.Exec(`ALTER TABLE inventory_devices ADD COLUMN pcb_qr_code VARCHAR(255) DEFAULT '' AFTER mac_address`)
+	_, _ = config.DB.Exec(`ALTER TABLE inventory_devices ADD COLUMN source_file_id BIGINT DEFAULT 0 AFTER factory_test_id`)
+	_, _ = config.DB.Exec(`ALTER TABLE inventory_devices ADD COLUMN source_file_name VARCHAR(255) DEFAULT '' AFTER source_file_id`)
+	_, _ = config.DB.Exec(`ALTER TABLE inventory_devices ADD COLUMN inbound_type VARCHAR(32) DEFAULT '' AFTER source_file_name`)
+	_, _ = config.DB.Exec(`ALTER TABLE inventory_devices ADD COLUMN scrap_audit_status VARCHAR(32) DEFAULT '' AFTER inbound_type`)
+	_, _ = config.DB.Exec(`ALTER TABLE inventory_devices ADD COLUMN scrap_request_user_id BIGINT DEFAULT 0 AFTER scrap_audit_status`)
+	_, _ = config.DB.Exec(`ALTER TABLE inventory_devices ADD COLUMN scrap_request_user_name VARCHAR(64) DEFAULT '' AFTER scrap_request_user_id`)
+	_, _ = config.DB.Exec(`ALTER TABLE inventory_devices ADD COLUMN scrap_request_time DATETIME NULL AFTER scrap_request_user_name`)
+	_, _ = config.DB.Exec(`ALTER TABLE inventory_devices ADD COLUMN scrap_audit_user_id BIGINT DEFAULT 0 AFTER scrap_request_time`)
+	_, _ = config.DB.Exec(`ALTER TABLE inventory_devices ADD COLUMN scrap_audit_user_name VARCHAR(64) DEFAULT '' AFTER scrap_audit_user_id`)
+	_, _ = config.DB.Exec(`ALTER TABLE inventory_devices ADD COLUMN scrap_audit_time DATETIME NULL AFTER scrap_audit_user_name`)
+	_, _ = config.DB.Exec(`ALTER TABLE inventory_devices ADD COLUMN scrap_reject_reason VARCHAR(255) DEFAULT '' AFTER scrap_audit_time`)
+}
+
 func InventoryActionHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -1167,11 +1217,23 @@ func InventoryActionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(parts) == 2 && r.Method == http.MethodPost && parts[1] == "scrap-submit" {
+		SubmitInventoryScrapHandler(w, r, id)
+		return
+	}
+
+	if len(parts) == 2 && r.Method == http.MethodPost && parts[1] == "scrap-audit" {
+		AuditInventoryScrapHandler(w, r, id)
+		return
+	}
+
 	http.Error(w, "接口不存在", http.StatusNotFound)
 }
 
 func GetInventoryHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+
+	ensureInventoryBoardColumns()
 
 	rows, err := config.DB.Query(`
 		SELECT
@@ -1180,8 +1242,10 @@ func GetInventoryHandler(w http.ResponseWriter, r *http.Request) {
 			IFNULL(device_type, ''),
 			IFNULL(product_name, ''),
 			IFNULL(product_model, ''),
+			IFNULL(product_code, ''),
 			IFNULL(sn, ''),
 			IFNULL(mac_address, ''),
+			IFNULL(pcb_qr_code, ''),
 			IFNULL(hardware_id, 0),
 			IFNULL(hardware_version, ''),
 			IFNULL(software_id, 0),
@@ -1189,12 +1253,24 @@ func GetInventoryHandler(w http.ResponseWriter, r *http.Request) {
 			IFNULL(inventory_status, ''),
 			IFNULL(source_burn_record_id, 0),
 			IFNULL(factory_test_id, 0),
+			IFNULL(source_file_id, 0),
+			IFNULL(source_file_name, ''),
+			IFNULL(inbound_type, ''),
+			IFNULL(scrap_audit_status, ''),
+			IFNULL(scrap_request_user_id, 0),
+			IFNULL(scrap_request_user_name, ''),
+			IFNULL(DATE_FORMAT(scrap_request_time, '%Y-%m-%d %H:%i:%s'), ''),
+			IFNULL(scrap_audit_user_id, 0),
+			IFNULL(scrap_audit_user_name, ''),
+			IFNULL(DATE_FORMAT(scrap_audit_time, '%Y-%m-%d %H:%i:%s'), ''),
+			IFNULL(scrap_reject_reason, ''),
 			IFNULL(DATE_FORMAT(in_time, '%Y-%m-%d %H:%i:%s'), ''),
 			IFNULL(DATE_FORMAT(update_time, '%Y-%m-%d %H:%i:%s'), ''),
 			IFNULL(remark, ''),
 			IFNULL(is_deleted, 0)
 		FROM inventory_devices
 		WHERE IFNULL(is_deleted, 0) = 0
+		  AND IFNULL(inventory_status, '') NOT IN ('板卡入库', '已烧录', '已出库')
 		ORDER BY id DESC
 	`)
 	if err != nil {
@@ -1209,8 +1285,10 @@ func GetInventoryHandler(w http.ResponseWriter, r *http.Request) {
 		DeviceType         string `json:"deviceType"`
 		ProductName        string `json:"productName"`
 		ProductModel       string `json:"productModel"`
+		ProductCode        string `json:"productCode"`
 		SN                 string `json:"sn"`
 		MacAddress         string `json:"macAddress"`
+		PcbQrCode          string `json:"pcbQrCode"`
 		HardwareID         int64  `json:"hardwareId"`
 		HardwareVersion    string `json:"hardwareVersion"`
 		SoftwareID         int64  `json:"softwareId"`
@@ -1218,6 +1296,17 @@ func GetInventoryHandler(w http.ResponseWriter, r *http.Request) {
 		InventoryStatus    string `json:"inventoryStatus"`
 		SourceBurnRecordID int64  `json:"sourceBurnRecordId"`
 		FactoryTestID      int64  `json:"factoryTestId"`
+		SourceFileID       int64  `json:"sourceFileId"`
+		SourceFileName     string `json:"sourceFileName"`
+		InboundType        string `json:"inboundType"`
+		ScrapAuditStatus   string `json:"scrapAuditStatus"`
+		ScrapRequestUserID int64  `json:"scrapRequestUserId"`
+		ScrapRequestUser   string `json:"scrapRequestUserName"`
+		ScrapRequestTime   string `json:"scrapRequestTime"`
+		ScrapAuditUserID   int64  `json:"scrapAuditUserId"`
+		ScrapAuditUser     string `json:"scrapAuditUserName"`
+		ScrapAuditTime     string `json:"scrapAuditTime"`
+		ScrapRejectReason  string `json:"scrapRejectReason"`
 		InTime             string `json:"inTime"`
 		UpdateTime         string `json:"updateTime"`
 		Remark             string `json:"remark"`
@@ -1235,8 +1324,10 @@ func GetInventoryHandler(w http.ResponseWriter, r *http.Request) {
 			&item.DeviceType,
 			&item.ProductName,
 			&item.ProductModel,
+			&item.ProductCode,
 			&item.SN,
 			&item.MacAddress,
+			&item.PcbQrCode,
 			&item.HardwareID,
 			&item.HardwareVersion,
 			&item.SoftwareID,
@@ -1244,6 +1335,17 @@ func GetInventoryHandler(w http.ResponseWriter, r *http.Request) {
 			&item.InventoryStatus,
 			&item.SourceBurnRecordID,
 			&item.FactoryTestID,
+			&item.SourceFileID,
+			&item.SourceFileName,
+			&item.InboundType,
+			&item.ScrapAuditStatus,
+			&item.ScrapRequestUserID,
+			&item.ScrapRequestUser,
+			&item.ScrapRequestTime,
+			&item.ScrapAuditUserID,
+			&item.ScrapAuditUser,
+			&item.ScrapAuditTime,
+			&item.ScrapRejectReason,
 			&item.InTime,
 			&item.UpdateTime,
 			&item.Remark,
@@ -1262,6 +1364,266 @@ func GetInventoryHandler(w http.ResponseWriter, r *http.Request) {
 		"code": 200,
 		"msg":  "查询成功",
 		"data": list,
+	})
+}
+
+func GetBoardInboundHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if !hasRequestRole(r, "production_staff") && !hasRequestRole(r, "system_admin") && !hasRequestRole(r, "leader") {
+		http.Error(w, "无板卡入库查看权限", http.StatusForbidden)
+		return
+	}
+
+	ensureInventoryBoardColumns()
+
+	rows, err := config.DB.Query(`
+		SELECT
+			id,
+			IFNULL(product_name, ''),
+			IFNULL(product_model, ''),
+			IFNULL(product_code, ''),
+			IFNULL(sn, ''),
+			IFNULL(mac_address, ''),
+			IFNULL(pcb_qr_code, ''),
+			IFNULL(remark, ''),
+			IFNULL(source_file_id, 0),
+			IFNULL(source_file_name, ''),
+			IFNULL(inventory_status, ''),
+			IFNULL(DATE_FORMAT(in_time, '%Y-%m-%d %H:%i:%s'), ''),
+			IFNULL(DATE_FORMAT(update_time, '%Y-%m-%d %H:%i:%s'), '')
+		FROM inventory_devices
+		WHERE IFNULL(is_deleted, 0) = 0
+		  AND IFNULL(inbound_type, '') = 'board'
+		  AND IFNULL(inventory_status, '') = '板卡入库'
+		ORDER BY id DESC
+	`)
+	if err != nil {
+		http.Error(w, "查询板卡入库失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	type BoardInboundVO struct {
+		ID              int64  `json:"id"`
+		ProductName     string `json:"productName"`
+		ProductModel    string `json:"productModel"`
+		ProductCode     string `json:"productCode"`
+		SN              string `json:"sn"`
+		MacAddress      string `json:"macAddress"`
+		PcbQrCode       string `json:"pcbQrCode"`
+		Remark          string `json:"remark"`
+		SourceFileID    int64  `json:"sourceFileId"`
+		SourceFileName  string `json:"sourceFileName"`
+		InventoryStatus string `json:"inventoryStatus"`
+		InTime          string `json:"inTime"`
+		UpdateTime      string `json:"updateTime"`
+	}
+
+	list := make([]BoardInboundVO, 0)
+	for rows.Next() {
+		var item BoardInboundVO
+		if err := rows.Scan(
+			&item.ID,
+			&item.ProductName,
+			&item.ProductModel,
+			&item.ProductCode,
+			&item.SN,
+			&item.MacAddress,
+			&item.PcbQrCode,
+			&item.Remark,
+			&item.SourceFileID,
+			&item.SourceFileName,
+			&item.InventoryStatus,
+			&item.InTime,
+			&item.UpdateTime,
+		); err != nil {
+			http.Error(w, "板卡入库数据解析失败: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		list = append(list, item)
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"code": 200,
+		"msg":  "查询成功",
+		"data": list,
+	})
+}
+
+func ImportBoardInboundHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if !hasRequestRole(r, "production_staff") && !hasRequestRole(r, "system_admin") {
+		http.Error(w, "无板卡入库导入权限", http.StatusForbidden)
+		return
+	}
+
+	var req struct {
+		SourceFileID    int64  `json:"sourceFileId"`
+		FileName        string `json:"fileName"`
+		FileContentType string `json:"fileContentType"`
+		FileData        string `json:"fileData"`
+		Records         []struct {
+			ProductName  string `json:"productName"`
+			ProductModel string `json:"productModel"`
+			ProductCode  string `json:"productCode"`
+			SN           string `json:"sn"`
+			SerialNumber string `json:"serialNumber"`
+			MacAddress   string `json:"macAddress"`
+			PcbQrCode    string `json:"pcbQrCode"`
+			PcbQRCode    string `json:"pcbQRCode"`
+			Remark       string `json:"remark"`
+			Note         string `json:"note"`
+		} `json:"records"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "参数解析失败: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if len(req.Records) == 0 {
+		http.Error(w, "导入数据不能为空", http.StatusBadRequest)
+		return
+	}
+
+	if err := saveUploadedFile(UploadedFilePayload{
+		FileID:          req.SourceFileID,
+		FileName:        req.FileName,
+		FileContentType: req.FileContentType,
+		FileData:        req.FileData,
+	}); err != nil {
+		http.Error(w, "保存板卡入库源文件失败: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	ensureInventoryBoardColumns()
+
+	tx, err := config.DB.Begin()
+	if err != nil {
+		http.Error(w, "开启事务失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
+	insertCount := 0
+	for _, item := range req.Records {
+		sn := strings.TrimSpace(item.SN)
+		if sn == "" {
+			sn = strings.TrimSpace(item.SerialNumber)
+		}
+		macAddress := strings.TrimSpace(item.MacAddress)
+		pcbQrCode := strings.TrimSpace(item.PcbQrCode)
+		if pcbQrCode == "" {
+			pcbQrCode = strings.TrimSpace(item.PcbQRCode)
+		}
+		remark := strings.TrimSpace(item.Remark)
+		if remark == "" {
+			remark = strings.TrimSpace(item.Note)
+		}
+
+		if sn == "" {
+			http.Error(w, "导入失败：序列号不能为空", http.StatusBadRequest)
+			return
+		}
+		if macAddress == "" {
+			http.Error(w, "导入失败：MAC地址不能为空", http.StatusBadRequest)
+			return
+		}
+
+		var occupiedCount int
+		err := tx.QueryRow(`
+			SELECT COUNT(1)
+			FROM inventory_devices
+			WHERE IFNULL(is_deleted, 0) = 0
+			  AND (
+				(? <> '' AND sn = ?)
+				OR (? <> '' AND mac_address = ?)
+			  )
+			  AND NOT (
+				IFNULL(inbound_type, '') = 'board'
+				AND IFNULL(inventory_status, '') = '板卡入库'
+			  )
+		`, sn, sn, macAddress, macAddress).Scan(&occupiedCount)
+		if err != nil {
+			http.Error(w, "检查板卡入库重复数据失败: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if occupiedCount > 0 {
+			continue
+		}
+
+		_, err = tx.Exec(`
+			INSERT INTO inventory_devices (
+				project_id,
+				device_type,
+				product_name,
+				product_model,
+				product_code,
+				sn,
+				mac_address,
+				pcb_qr_code,
+				hardware_id,
+				hardware_version,
+				software_id,
+				software_version,
+				inventory_status,
+				source_burn_record_id,
+				factory_test_id,
+				source_file_id,
+				source_file_name,
+				inbound_type,
+				in_time,
+				update_time,
+				remark,
+				is_deleted
+			) VALUES (0, ?, ?, ?, ?, ?, ?, ?, 0, '', 0, '', '板卡入库', 0, 0, ?, ?, 'board', NOW(), NOW(), ?, 0)
+			ON DUPLICATE KEY UPDATE
+				device_type = VALUES(device_type),
+				product_name = VALUES(product_name),
+				product_model = VALUES(product_model),
+				product_code = VALUES(product_code),
+				pcb_qr_code = VALUES(pcb_qr_code),
+				inventory_status = '板卡入库',
+				source_file_id = VALUES(source_file_id),
+				source_file_name = VALUES(source_file_name),
+				inbound_type = 'board',
+				update_time = NOW(),
+				remark = VALUES(remark),
+				is_deleted = 0
+		`,
+			strings.TrimSpace(item.ProductName),
+			strings.TrimSpace(item.ProductName),
+			strings.TrimSpace(item.ProductModel),
+			strings.TrimSpace(item.ProductCode),
+			sn,
+			macAddress,
+			pcbQrCode,
+			req.SourceFileID,
+			req.FileName,
+			remark,
+		)
+
+		if err != nil {
+			http.Error(w, "导入板卡入库失败: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		insertCount++
+	}
+
+	if err := tx.Commit(); err != nil {
+		http.Error(w, "提交事务失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"code": 200,
+		"msg":  "导入成功",
+		"data": map[string]interface{}{
+			"count": insertCount,
+		},
 	})
 }
 
@@ -1291,6 +1653,10 @@ func UpdateInventoryHandler(w http.ResponseWriter, r *http.Request, id int64) {
 		"锁定":  true,
 		"已出库": true,
 		"返修":  true,
+		"返厂":  true,
+		"更换":  true,
+		"已废弃": true,
+		"已报废": true,
 
 		// 兼容前端旧状态
 		"ready":        true,
@@ -1334,6 +1700,137 @@ func UpdateInventoryHandler(w http.ResponseWriter, r *http.Request, id int64) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"code": 200,
 		"msg":  "修改成功",
+	})
+}
+
+func SubmitInventoryScrapHandler(w http.ResponseWriter, r *http.Request, id int64) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if !hasRequestRole(r, "production_staff") && !hasRequestRole(r, "system_admin") {
+		http.Error(w, "无废弃申请权限：只有生产人员可以提交", http.StatusForbidden)
+		return
+	}
+
+	ensureInventoryBoardColumns()
+	userID, userName := currentRequestUser(r)
+	if strings.TrimSpace(userName) == "" {
+		userName = "生产人员"
+	}
+
+	result, err := config.DB.Exec(`
+		UPDATE inventory_devices
+		SET
+			scrap_audit_status = '待审核',
+			scrap_request_user_id = ?,
+			scrap_request_user_name = ?,
+			scrap_request_time = NOW(),
+			scrap_audit_user_id = 0,
+			scrap_audit_user_name = '',
+			scrap_audit_time = NULL,
+			scrap_reject_reason = '',
+			update_time = NOW()
+		WHERE id = ?
+		  AND IFNULL(is_deleted, 0) = 0
+		  AND IFNULL(inventory_status, '') NOT IN ('已废弃', '已报废', '已出库')
+	`,
+		userID,
+		userName,
+		id,
+	)
+	if err != nil {
+		http.Error(w, "提交废弃申请失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	affected, _ := result.RowsAffected()
+	if affected == 0 {
+		http.Error(w, "库存设备不存在，或当前状态不允许废弃", http.StatusNotFound)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"code": 200,
+		"msg":  "废弃申请已提交",
+	})
+}
+
+func AuditInventoryScrapHandler(w http.ResponseWriter, r *http.Request, id int64) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if !hasLeaderPermission(r) {
+		http.Error(w, "无废弃审核权限：只有领导可以审核", http.StatusForbidden)
+		return
+	}
+
+	var req struct {
+		AuditStatus  string `json:"auditStatus"`
+		Status       string `json:"status"`
+		RejectReason string `json:"rejectReason"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "参数解析失败: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	status := strings.TrimSpace(req.AuditStatus)
+	if status == "" {
+		status = strings.TrimSpace(req.Status)
+	}
+	approved := status == "approved" || status == "已通过" || status == "审核通过"
+	rejected := status == "rejected" || status == "已驳回" || status == "审核驳回"
+	if !approved && !rejected {
+		http.Error(w, "审核状态不合法", http.StatusBadRequest)
+		return
+	}
+
+	ensureInventoryBoardColumns()
+	auditUserID, auditUserName := currentRequestUser(r)
+	if auditUserName == "" {
+		auditUserName = "领导"
+	}
+
+	auditStatus := "已通过"
+	inventoryStatusSQL := "inventory_status"
+	if approved {
+		inventoryStatusSQL = "'已废弃'"
+	} else {
+		auditStatus = "已驳回"
+	}
+
+	result, err := config.DB.Exec(`
+		UPDATE inventory_devices
+		SET
+			inventory_status = `+inventoryStatusSQL+`,
+			scrap_audit_status = ?,
+			scrap_audit_user_id = ?,
+			scrap_audit_user_name = ?,
+			scrap_audit_time = NOW(),
+			scrap_reject_reason = ?,
+			update_time = NOW()
+		WHERE id = ?
+		  AND IFNULL(is_deleted, 0) = 0
+		  AND IFNULL(scrap_audit_status, '') = '待审核'
+	`,
+		auditStatus,
+		auditUserID,
+		auditUserName,
+		strings.TrimSpace(req.RejectReason),
+		id,
+	)
+	if err != nil {
+		http.Error(w, "废弃审核失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	affected, _ := result.RowsAffected()
+	if affected == 0 {
+		http.Error(w, "库存设备不存在，或没有待审核的废弃申请", http.StatusNotFound)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"code": 200,
+		"msg":  "审核完成",
 	})
 }
 
@@ -1460,7 +1957,7 @@ func ImportBurnRecordsHandler(w http.ResponseWriter, r *http.Request) {
 			sourceFileID = req.SourceFileID
 		}
 
-		_, err := tx.Exec(`
+		result, err := tx.Exec(`
 			INSERT INTO burn_records (
 				batch_no,
 				project_id,
@@ -1514,6 +2011,32 @@ func ImportBurnRecordsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		burnRecordID, _ := result.LastInsertId()
+		_, err = tx.Exec(`
+			UPDATE inventory_devices
+			SET
+				inventory_status = '已烧录',
+				source_burn_record_id = ?,
+				update_time = NOW(),
+				remark = CASE
+					WHEN IFNULL(remark, '') = '' THEN '已进入生产烧录'
+					WHEN remark LIKE '%已进入生产烧录%' THEN remark
+					ELSE CONCAT(remark, '；已进入生产烧录')
+				END
+			WHERE IFNULL(is_deleted, 0) = 0
+			  AND IFNULL(inbound_type, '') = 'board'
+			  AND IFNULL(inventory_status, '') = '板卡入库'
+			  AND (
+				(? <> '' AND sn = ?)
+				OR (? <> '' AND mac_address = ?)
+			  )
+		`, burnRecordID, sn, sn, macAddress, macAddress)
+		if err != nil {
+			tx.Rollback()
+			http.Error(w, "扣减板卡入库库存失败: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
 		insertCount++
 	}
 
@@ -1552,6 +2075,30 @@ func DeleteBurnBatchHandler(w http.ResponseWriter, r *http.Request, batchNo stri
 	}
 	defer tx.Rollback()
 
+	_, err = tx.Exec(`
+		UPDATE inventory_devices inv
+		JOIN burn_records br ON (
+			inv.source_burn_record_id = br.id
+			OR (inv.mac_address <> '' AND br.mac_address <> '' AND inv.mac_address = br.mac_address)
+			OR (inv.sn <> '' AND br.sn <> '' AND inv.sn = br.sn)
+		)
+		SET
+			inv.inventory_status = '板卡入库',
+			inv.source_burn_record_id = 0,
+			inv.update_time = NOW(),
+			inv.remark = CASE
+				WHEN IFNULL(inv.remark, '') = '' THEN '烧录删除后恢复板卡入库'
+				ELSE CONCAT(inv.remark, '；烧录删除后恢复板卡入库')
+			END
+		WHERE br.batch_no = ?
+		  AND IFNULL(inv.inbound_type, '') = 'board'
+		  AND IFNULL(inv.inventory_status, '') = '已烧录'
+	`, batchNo)
+	if err != nil {
+		http.Error(w, "恢复板卡入库失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	inventoryResult, err := tx.Exec(`
 		DELETE inv
 		FROM inventory_devices inv
@@ -1561,6 +2108,10 @@ func DeleteBurnBatchHandler(w http.ResponseWriter, r *http.Request, batchNo stri
 			OR (inv.sn <> '' AND br.sn <> '' AND inv.sn = br.sn)
 		)
 		WHERE br.batch_no = ?
+		  AND NOT (
+			IFNULL(inv.inbound_type, '') = 'board'
+			AND IFNULL(inv.inventory_status, '') = '板卡入库'
+		  )
 	`, batchNo)
 	if err != nil {
 		http.Error(w, "删除关联库存信息失败: "+err.Error(), http.StatusInternalServerError)
@@ -1627,6 +2178,30 @@ func DeleteBurnRecordHandler(w http.ResponseWriter, r *http.Request, id int64) {
 	defer tx.Rollback()
 
 	_, err = tx.Exec(`
+		UPDATE inventory_devices inv
+		JOIN burn_records br ON (
+			inv.source_burn_record_id = br.id
+			OR (inv.mac_address <> '' AND br.mac_address <> '' AND inv.mac_address = br.mac_address)
+			OR (inv.sn <> '' AND br.sn <> '' AND inv.sn = br.sn)
+		)
+		SET
+			inv.inventory_status = '板卡入库',
+			inv.source_burn_record_id = 0,
+			inv.update_time = NOW(),
+			inv.remark = CASE
+				WHEN IFNULL(inv.remark, '') = '' THEN '烧录删除后恢复板卡入库'
+				ELSE CONCAT(inv.remark, '；烧录删除后恢复板卡入库')
+			END
+		WHERE br.id = ?
+		  AND IFNULL(inv.inbound_type, '') = 'board'
+		  AND IFNULL(inv.inventory_status, '') = '已烧录'
+	`, id)
+	if err != nil {
+		http.Error(w, "恢复板卡入库失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	_, err = tx.Exec(`
 		DELETE inv
 		FROM inventory_devices inv
 		JOIN burn_records br ON (
@@ -1635,6 +2210,10 @@ func DeleteBurnRecordHandler(w http.ResponseWriter, r *http.Request, id int64) {
 			OR (inv.sn <> '' AND br.sn <> '' AND inv.sn = br.sn)
 		)
 		WHERE br.id = ?
+		  AND NOT (
+			IFNULL(inv.inbound_type, '') = 'board'
+			AND IFNULL(inv.inventory_status, '') = '板卡入库'
+		  )
 	`, id)
 	if err != nil {
 		http.Error(w, "删除关联库存信息失败: "+err.Error(), http.StatusInternalServerError)
@@ -2214,8 +2793,10 @@ func SyncFactoryTestToInventoryTx(tx *sql.Tx, factoryTestID int64) error {
 			device_type,
 			product_name,
 			product_model,
+			product_code,
 			sn,
 			mac_address,
+			pcb_qr_code,
 			hardware_id,
 			hardware_version,
 			software_id,
@@ -2223,6 +2804,7 @@ func SyncFactoryTestToInventoryTx(tx *sql.Tx, factoryTestID int64) error {
 			inventory_status,
 			source_burn_record_id,
 			factory_test_id,
+			inbound_type,
 			in_time,
 			update_time,
 			remark,
@@ -2233,8 +2815,10 @@ func SyncFactoryTestToInventoryTx(tx *sql.Tx, factoryTestID int64) error {
 			IFNULL(br.device_type, ''),
 			IFNULL(br.product_name, ''),
 			IFNULL(br.product_model, ''),
+			IFNULL(br.product_code, ''),
 			IFNULL(br.sn, ''),
 			IFNULL(br.mac_address, ''),
+			IFNULL(br.pcb_qr_code, ''),
 			IFNULL(br.hardware_id, 0),
 			IFNULL(br.hardware_version, ''),
 			IFNULL(br.software_id, 0),
@@ -2242,6 +2826,7 @@ func SyncFactoryTestToInventoryTx(tx *sql.Tx, factoryTestID int64) error {
 			'在库',
 			br.id,
 			ft.id,
+			'factory',
 			NOW(),
 			NOW(),
 			'出厂测试审核通过，自动入库',
@@ -2257,7 +2842,9 @@ func SyncFactoryTestToInventoryTx(tx *sql.Tx, factoryTestID int64) error {
 			device_type = VALUES(device_type),
 			product_name = VALUES(product_name),
 			product_model = VALUES(product_model),
+			product_code = VALUES(product_code),
 			mac_address = VALUES(mac_address),
+			pcb_qr_code = VALUES(pcb_qr_code),
 			hardware_id = VALUES(hardware_id),
 			hardware_version = VALUES(hardware_version),
 			software_id = VALUES(software_id),
@@ -2265,6 +2852,7 @@ func SyncFactoryTestToInventoryTx(tx *sql.Tx, factoryTestID int64) error {
 			inventory_status = '在库',
 			source_burn_record_id = VALUES(source_burn_record_id),
 			factory_test_id = VALUES(factory_test_id),
+			inbound_type = 'factory',
 			update_time = NOW(),
 			remark = VALUES(remark),
 			is_deleted = 0

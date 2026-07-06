@@ -181,7 +181,7 @@
       </div>
 
       <!-- 生产管理 -->
-      <div v-if="canAccessGroup(['/production/test-outline', '/production/burn', '/production/factory-test', '/production/inventory'])" class="menu-group">
+      <div v-if="canAccessGroup(['/production/board-inbound', '/production/test-outline', '/production/burn', '/production/factory-test', '/production/inventory'])" class="menu-group">
         <button class="menu-item menu-button" @click="toggleMenu('production')">
           <span class="menu-left">
             <span class="menu-icon">▥</span>
@@ -191,6 +191,15 @@
         </button>
 
         <div v-show="openedMenus.production" class="submenu">
+          <router-link
+            v-if="canAccess('/production/board-inbound')"
+            to="/production/board-inbound"
+            class="submenu-item"
+            :class="{ active: isActive('/production/board-inbound') }"
+          >
+            板卡入库
+          </router-link>
+
           <router-link
             v-if="canAccess('/production/test-outline')"
             to="/production/test-outline"

@@ -61,7 +61,10 @@
         <tbody>
           <tr v-for="item in filteredProjects" :key="item.id">
             <td>
-              <div class="project-name">{{ item.projectName }}</div>
+              <div class="project-name">
+                {{ item.projectName }}
+                <span v-if="item.hasServer" class="server-badge">服务器项目</span>
+              </div>
               <div class="project-code">{{ item.projectCode }}</div>
             </td>
 
@@ -129,6 +132,14 @@
               </button>
 
               <button
+                v-if="canUseAction('project:reopen') && item.status === 'closed'"
+                class="text-btn green"
+                @click="reopenProject(item)"
+              >
+                重新打开
+              </button>
+
+              <button
                 v-if="canDeleteProject(item)"
                 class="text-btn red"
                 @click="deleteProject(item)"
@@ -178,6 +189,17 @@
             </select>
           </label>
 
+          <label class="checkbox-field">
+            <span>是否有服务器</span>
+            <label class="toggle-line">
+              <input
+                v-model="projectForm.hasServer"
+                type="checkbox"
+              />
+              <span>有服务器</span>
+            </label>
+          </label>
+
           <label class="file-field full-span">
             立项书
             <input
@@ -224,6 +246,11 @@
           <div>
             <span>负责人</span>
             <strong>{{ selectedProject.owner }}</strong>
+          </div>
+
+          <div>
+            <span>服务器项目</span>
+            <strong>{{ selectedProject.hasServer ? '是' : '否' }}</strong>
           </div>
 
           <div>
@@ -299,6 +326,14 @@
             手动关闭项目
           </button>
 
+          <button
+            v-if="canUseAction('project:reopen') && selectedProject.status === 'closed'"
+            class="primary-btn"
+            @click="reopenProject(selectedProject)"
+          >
+            重新打开项目
+          </button>
+
           <button class="primary-btn" @click="selectedProject = null">
             关闭弹窗
           </button>
@@ -369,6 +404,7 @@ import {
   auditProject as auditProjectApi,
   archiveProject as archiveProjectApi,
   closeProject as closeProjectApi,
+  reopenProject as reopenProjectApi,
   deleteProject as deleteProjectApi
 } from '@/api/project'
 
@@ -393,6 +429,7 @@ const projectForm = reactive({
   projectCode: '',
   ownerId: '',
   owner: '',
+  hasServer: false,
   stage: '立项',
   status: 'draft',
   remark: '',
@@ -487,6 +524,7 @@ function normalizeProject(item) {
     ownerId: item.ownerId || 1,
     owner: item.owner || item.ownerName || '未分配',
     ownerName: item.ownerName || item.owner || '未分配',
+    hasServer: Boolean(item.hasServer),
     status: backendStatusToFrontend(item.status, item.auditStatus),
     backendStatus: item.status || '',
     auditStatus: item.auditStatus || '',
@@ -586,6 +624,7 @@ function openCreateDialog() {
   projectForm.projectCode = ''
   projectForm.ownerId = ''
   projectForm.owner = ''
+  projectForm.hasServer = false
   projectForm.stage = '立项'
   projectForm.status = 'draft'
   projectForm.remark = ''
@@ -733,6 +772,7 @@ async function createProject() {
     ownerId: Number(projectForm.ownerId),
     owner: projectForm.owner,
     ownerName: projectForm.owner,
+    hasServer: projectForm.hasServer,
     stage: '立项',
     status: frontendStatusToBackend('draft'),
     proposalFileName: projectForm.proposalFileName,
@@ -907,6 +947,27 @@ async function closeProject(item) {
   }
 }
 
+async function reopenProject(item) {
+  const ok = confirm(`确认重新打开项目【${item.projectName}】吗？`)
+  if (!ok) return
+
+  try {
+    const res = await reopenProjectApi(item.id)
+    const result = getResponseData(res)
+
+    if (result.code === 200) {
+      alert(`项目【${item.projectName}】已重新打开`)
+      selectedProject.value = null
+      await loadProjects()
+    } else {
+      alert(result.msg || '重新打开失败')
+    }
+  } catch (err) {
+    console.error('重新打开项目失败：', err)
+    alert(err.response?.data || '重新打开项目失败')
+  }
+}
+
 /**
  * 归档项目：真正调用后端
  */
@@ -1049,6 +1110,36 @@ async function deleteProject(item) {
   outline: none;
 }
 
+.form-grid select:disabled {
+  cursor: not-allowed;
+  color: #94a3b8;
+  opacity: 0.78;
+}
+
+.checkbox-field {
+  justify-content: center;
+}
+
+.toggle-line {
+  min-height: 36px;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 10px !important;
+  padding: 0 12px;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  background: #020617;
+  color: #e2e8f0 !important;
+  cursor: pointer;
+}
+
+.toggle-line input {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  accent-color: #2563eb;
+}
+
 .file-field {
   gap: 8px;
 }
@@ -1156,6 +1247,18 @@ async function deleteProject(item) {
   margin-top: 4px;
   color: #64748b;
   font-size: 12px;
+}
+
+.server-badge {
+  display: inline-flex;
+  margin-left: 8px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #7c3aed33;
+  color: #c4b5fd;
+  font-size: 11px;
+  font-weight: 800;
+  vertical-align: middle;
 }
 
 .stage-tag {

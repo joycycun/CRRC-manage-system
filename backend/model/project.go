@@ -11,6 +11,9 @@ type Project struct {
 	ProjectCode         string       `json:"projectCode"`
 	OwnerID             int64        `json:"ownerId"`
 	OwnerName           string       `json:"owner"`
+	HasServer           bool         `json:"hasServer"`
+	ServerOwnerID       int64        `json:"serverOwnerId"`
+	ServerOwnerName     string       `json:"serverOwnerName"`
 	Stage               string       `json:"stage"`
 	Status              string       `json:"status"`
 	SubmitTime          sql.NullTime `json:"-"`
@@ -34,6 +37,9 @@ type ProjectResponse struct {
 	ProjectCode         string     `json:"projectCode"`
 	OwnerID             int64      `json:"ownerId"`
 	OwnerName           string     `json:"owner"`
+	HasServer           bool       `json:"hasServer"`
+	ServerOwnerID       int64      `json:"serverOwnerId"`
+	ServerOwnerName     string     `json:"serverOwnerName"`
 	Stage               string     `json:"stage"`
 	Status              string     `json:"status"`
 	SubmitTime          *time.Time `json:"submitTime"`
@@ -65,6 +71,9 @@ func (p Project) ToResponse() ProjectResponse {
 		ProjectCode:         p.ProjectCode,
 		OwnerID:             p.OwnerID,
 		OwnerName:           p.OwnerName,
+		HasServer:           p.HasServer,
+		ServerOwnerID:       p.ServerOwnerID,
+		ServerOwnerName:     p.ServerOwnerName,
 		Stage:               p.Stage,
 		Status:              p.Status,
 		SubmitTime:          ProjectNullTimeToPtr(p.SubmitTime),

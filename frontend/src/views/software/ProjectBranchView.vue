@@ -44,80 +44,91 @@
       <button class="reset-btn" @click="resetFilters">重置</button>
     </div>
 
-    <!-- 数据表格 -->
-    <div class="table-card">
-      <div class="table-wrapper">
-        <table>
-          <thead>
-            <tr>
-              <th>项目分支</th>
-              <th>绑定项目</th>
-              <th>终端类型</th>
-              <th>软件负责人</th>
-              <th>创建时间</th>
-              <th>Clone 地址</th>
-              <th class="operation-col">操作</th>
-            </tr>
-          </thead>
+    <!-- 项目折叠列表 -->
+    <div class="project-version-groups">
+      <div
+        v-for="group in groupedBranches"
+        :key="group.projectName"
+        class="project-version-group"
+      >
+        <button class="project-group-header" @click="toggleProjectGroup(group.projectName)">
+          <span class="fold-icon">{{ isProjectCollapsed(group.projectName) ? '›' : '⌄' }}</span>
+          <span class="project-group-title">{{ group.projectName }}</span>
+          <span class="project-group-count">{{ group.items.length }} 个项目分支</span>
+        </button>
 
-          <tbody>
-            <tr v-for="item in filteredBranchList" :key="item.id">
-              <td>
-                <button class="branch-link" @click="openCloneUrl(item)">
-                  {{ item.branchName }}
-                </button>
-              </td>
+        <div v-show="!isProjectCollapsed(group.projectName)" class="table-card">
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>项目分支</th>
+                  <th>终端类型</th>
+                  <th>软件负责人</th>
+                  <th>创建时间</th>
+                  <th>Clone 地址</th>
+                  <th class="operation-col">操作</th>
+                </tr>
+              </thead>
 
-              <td>
-                <span class="project-tag">
-                  {{ item.projectName }}
-                </span>
-              </td>
+              <tbody>
+                <tr v-for="item in group.items" :key="`${group.projectName}-${item.id}`">
+                  <td>
+                    <button class="branch-link" @click="openCloneUrl(item)">
+                      {{ item.branchName }}
+                    </button>
+                  </td>
 
-              <td>
-                <span class="device-tag">
-                  {{ item.deviceType }}
-                </span>
-              </td>
+                  <td>
+                    <span class="device-tag">
+                      {{ item.deviceType }}
+                    </span>
+                  </td>
 
-              <td>
-                <span class="owner-text" :title="item.owner">
-                  {{ item.owner }}
-                </span>
-              </td>
+                  <td>
+                    <span class="owner-text" :title="item.owner">
+                      {{ item.owner }}
+                    </span>
+                  </td>
 
-              <td class="muted">
-                {{ item.createTime }}
-              </td>
+                  <td class="muted">
+                    {{ item.createTime }}
+                  </td>
 
-              <td>
-                <div class="clone-url" :title="item.cloneUrl">
-                  {{ item.cloneUrl }}
-                </div>
-              </td>
+                  <td>
+                    <div class="clone-url" :title="item.cloneUrl">
+                      {{ item.cloneUrl }}
+                    </div>
+                  </td>
 
-              <td class="operation-col">
-                <div class="action-group">
-                  <button class="text-btn" @click="viewBranch(item)">
-                    查看
-                  </button>
+                  <td class="operation-col">
+                    <div class="action-group">
+                      <button class="text-btn" @click="viewBranch(item)">
+                        查看
+                      </button>
 
-                  <button v-if="canUseAction('branch:update')" class="text-btn blue" @click="openEditDialog(item)">
-                    修改
-                  </button>
+                      <button v-if="canUseAction('branch:update')" class="text-btn blue" @click="openEditDialog(item)">
+                        修改
+                      </button>
 
-                  <button v-if="canUseAction('branch:download')" class="text-btn green" @click="openCloneUrl(item)">
-                    打开
-                  </button>
+                      <button v-if="canUseAction('branch:download')" class="text-btn green" @click="openCloneUrl(item)">
+                        打开
+                      </button>
 
-                  <button v-if="canUseAction('branch:delete')" class="text-btn red" @click="deleteBranchRecord(item)">
-                    删除
-                  </button>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+                      <button v-if="canUseAction('branch:delete')" class="text-btn red" @click="deleteBranchRecord(item)">
+                        删除
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="groupedBranches.length === 0" class="empty-card">
+        暂无项目分支记录
       </div>
 
       <div class="table-footer">
@@ -290,6 +301,7 @@ const editMode = ref('create')
 const projectOptions = ref([])
 const projectMap = ref({})
 const projectDetailMap = ref({})
+const collapsedProjects = reactive({})
 
 const deviceTypeOptions = DEVICE_TYPE_OPTIONS
 
@@ -423,6 +435,31 @@ const filteredBranchList = computed(() => {
     return keywordMatch && projectMatch && deviceTypeMatch
   })
 })
+
+const groupedBranches = computed(() => {
+  const groupMap = new Map()
+
+  filteredBranchList.value.forEach(item => {
+    const projectName = item.projectName || '未绑定项目'
+    if (!groupMap.has(projectName)) {
+      groupMap.set(projectName, [])
+    }
+    groupMap.get(projectName).push(item)
+  })
+
+  return Array.from(groupMap.entries()).map(([projectName, items]) => ({
+    projectName,
+    items
+  }))
+})
+
+function toggleProjectGroup(projectName) {
+  collapsedProjects[projectName] = !collapsedProjects[projectName]
+}
+
+function isProjectCollapsed(projectName) {
+  return Boolean(collapsedProjects[projectName])
+}
 
 function resetFilters() {
   filters.keyword = ''
@@ -692,6 +729,72 @@ async function deleteBranchRecord(item) {
 .table-wrapper {
   scrollbar-width: thin;
   scrollbar-color: #334155 #020617;
+}
+
+.project-version-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.project-version-group {
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.project-group-header {
+  width: 100%;
+  height: 48px;
+  padding: 0 16px;
+  border: none;
+  border-bottom: 1px solid #1e293b;
+  background: #020617;
+  color: #e2e8f0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.project-group-header:hover {
+  background: #0b1120;
+}
+
+.fold-icon {
+  width: 18px;
+  color: #60a5fa;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.project-group-title {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.project-group-count {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.project-version-group .table-card {
+  border: none;
+  border-radius: 0;
+}
+
+.empty-card {
+  padding: 28px 16px;
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 14px;
+  color: #64748b;
+  text-align: center;
+  font-size: 13px;
 }
 
 .table-card table {

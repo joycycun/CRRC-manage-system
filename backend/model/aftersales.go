@@ -33,6 +33,7 @@ type FaultAnalysis struct {
 	IssueID        int64        `json:"issueId"`
 	RepairID       int64        `json:"repairId"`
 	BoardType      string       `json:"boardType"`
+	Reason         string       `json:"reason"`
 	AnalysisName   string       `json:"analysisName"`
 	FileID         int64        `json:"fileId"`
 	FileName       string       `json:"fileName"`

@@ -15,3 +15,18 @@ export function updateInventory(id, data) {
     data
   })
 }
+
+export function submitInventoryScrap(id) {
+  return request({
+    url: `/inventory/${id}/scrap-submit`,
+    method: 'post'
+  })
+}
+
+export function auditInventoryScrap(id, data) {
+  return request({
+    url: `/inventory/${id}/scrap-audit`,
+    method: 'post',
+    data
+  })
+}

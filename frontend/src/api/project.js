@@ -79,6 +79,13 @@ export function closeProject(id) {
   })
 }
 
+export function reopenProject(id) {
+  return request({
+    url: `/projects/${id}/reopen`,
+    method: 'post'
+  })
+}
+
 export function deleteProject(id) {
   return request({
     url: `/projects/${id}`,

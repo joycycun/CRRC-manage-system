@@ -28,6 +28,10 @@ type CreateShippingBatchRequest struct {
 	ShippingDesc       string  `json:"shippingDesc"`
 	InventoryDeviceIDs []int64 `json:"inventoryDeviceIds"`
 	DeviceIDs          []int64 `json:"deviceIds"`
+	InventoryVersions  []struct {
+		InventoryDeviceID int64  `json:"inventoryDeviceId"`
+		HardwareVersion   string `json:"hardwareVersion"`
+	} `json:"inventoryVersions"`
 }
 
 type ShippingAuditRequest struct {
@@ -471,6 +475,13 @@ func CreateShippingBatchHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	batchID, _ := result.LastInsertId()
+	hardwareVersionOverrides := map[int64]string{}
+	for _, item := range req.InventoryVersions {
+		if item.InventoryDeviceID <= 0 {
+			continue
+		}
+		hardwareVersionOverrides[item.InventoryDeviceID] = strings.TrimSpace(item.HardwareVersion)
+	}
 
 	for _, inventoryID := range req.InventoryDeviceIDs {
 		var sn string
@@ -508,6 +519,9 @@ func CreateShippingBatchHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "库存设备不是在库状态，不能加入发货批次", http.StatusBadRequest)
 			return
 		}
+		if override, ok := hardwareVersionOverrides[inventoryID]; ok {
+			hardwareVersion = override
+		}
 
 		_, err = tx.Exec(`
 			INSERT INTO shipping_batch_devices (
@@ -539,9 +553,9 @@ func CreateShippingBatchHandler(w http.ResponseWriter, r *http.Request) {
 
 		_, err = tx.Exec(`
 			UPDATE inventory_devices
-			SET inventory_status = '已锁定', update_time = NOW()
+			SET hardware_version = ?, inventory_status = '已锁定', update_time = NOW()
 			WHERE id = ? AND is_deleted = 0
-		`, inventoryID)
+		`, hardwareVersion, inventoryID)
 
 		if err != nil {
 			http.Error(w, "锁定库存设备失败: "+err.Error(), http.StatusInternalServerError)
@@ -977,6 +991,7 @@ func OutboundRecordsHandler(w http.ResponseWriter, r *http.Request) {
 			AND IFNULL(sbd.is_deleted, 0) = 0
 		LEFT JOIN inventory_devices inv ON inv.id = o.inventory_device_id
 		WHERE IFNULL(o.is_deleted, 0) = 0
+		  AND IFNULL(inv.inventory_status, '') = '已出库'
 		ORDER BY o.id DESC
 	`)
 

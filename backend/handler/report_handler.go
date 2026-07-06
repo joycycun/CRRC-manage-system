@@ -1316,7 +1316,19 @@ func versionStatusType(status string) string {
 func IssueStatisticsReportHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	rows, err := config.DB.Query(`
+	canViewAll := hasLeaderPermission(r)
+	canViewIssueCloseLoop := canViewAll ||
+		hasRequestRole(r, "software_owner") ||
+		hasRequestRole(r, "hardware_owner") ||
+		hasRequestRole(r, "project_assistant")
+	canViewAftersales := canViewAll || hasRequestRole(r, "aftersales_staff")
+	canViewFaultAnalysis := canViewAll ||
+		hasRequestRole(r, "production_staff") ||
+		hasRequestRole(r, "shipping_staff")
+
+	queryParts := make([]string, 0, 3)
+	if canViewIssueCloseLoop {
+		queryParts = append(queryParts, `
 		SELECT
 			CONCAT('issue-', i.id) AS id,
 			IFNULL(p.id, 0) AS project_id,
@@ -1338,7 +1350,7 @@ func IssueStatisticsReportHandler(w http.ResponseWriter, r *http.Request) {
 			1 + IFNULL(i.reopen_count, 0) AS frequency,
 			IFNULL(DATE_FORMAT(i.updated_at, '%Y-%m-%d %H:%i:%s'), '') AS update_time,
 			IFNULL(i.issue_desc, '') AS remark,
-			IFNULL(i.issue_source, '测试问题') AS issue_source,
+			'问题闭环' AS issue_source,
 			IFNULL(i.reopen_count, 0) AS reopen_count
 		FROM issues i
 		INNER JOIN projects p
@@ -1346,9 +1358,11 @@ func IssueStatisticsReportHandler(w http.ResponseWriter, r *http.Request) {
 		 AND IFNULL(p.is_deleted, 0) = 0
 		 AND IFNULL(p.audit_status, '未提交') = '已通过'
 		WHERE IFNULL(i.is_deleted, 0) = 0
+		`)
+	}
 
-		UNION ALL
-
+	if canViewAftersales {
+		queryParts = append(queryParts, `
 		SELECT
 			CONCAT('repair-', rr.id) AS id,
 			IFNULL(p.id, 0) AS project_id,
@@ -1368,8 +1382,54 @@ func IssueStatisticsReportHandler(w http.ResponseWriter, r *http.Request) {
 		 AND IFNULL(p.is_deleted, 0) = 0
 		 AND IFNULL(p.audit_status, '未提交') = '已通过'
 		WHERE IFNULL(rr.is_deleted, 0) = 0
-		ORDER BY update_time DESC
-	`)
+		`)
+	}
+
+	if canViewFaultAnalysis {
+		queryParts = append(queryParts, `
+		SELECT
+			CONCAT('fault-', fa.id) AS id,
+			IFNULL(p.id, 0) AS project_id,
+			IFNULL(p.project_name, '') AS project_name,
+			CASE
+				WHEN IFNULL(fa.reason, '') <> '' THEN fa.reason
+				WHEN IFNULL(fa.analysis_name, '') <> '' THEN fa.analysis_name
+				WHEN IFNULL(fa.board_type, '') <> '' THEN CONCAT(fa.board_type, '故障分析')
+				ELSE '故障分析'
+			END AS issue_title,
+			'normal' AS issue_level,
+			'closed' AS issue_status,
+			IFNULL(fa.submit_user_name, '') AS owner_name,
+			1 AS frequency,
+			IFNULL(DATE_FORMAT(fa.updated_at, '%Y-%m-%d %H:%i:%s'), '') AS update_time,
+			CONCAT_WS('；',
+				NULLIF(CONCAT('方案：', IFNULL(fa.analysis_name, '')), '方案：'),
+				NULLIF(CONCAT('板卡类型：', IFNULL(fa.board_type, '')), '板卡类型：'),
+				NULLIF(CONCAT('审核状态：', IFNULL(fa.audit_status, '')), '审核状态：')
+			) AS remark,
+			'故障分析' AS issue_source,
+			0 AS reopen_count
+		FROM fault_analysis fa
+		INNER JOIN projects p
+		  ON fa.project_id = p.id
+		 AND IFNULL(p.is_deleted, 0) = 0
+		 AND IFNULL(p.audit_status, '未提交') = '已通过'
+		WHERE IFNULL(fa.is_deleted, 0) = 0
+		  AND IFNULL(fa.audit_status, '草稿') IN ('已通过', '审核通过', 'approved')
+		`)
+	}
+
+	if len(queryParts) == 0 {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"code": 200,
+			"msg":  "查询成功",
+			"data": []interface{}{},
+		})
+		return
+	}
+
+	query := strings.Join(queryParts, "\nUNION ALL\n") + "\nORDER BY update_time DESC"
+	rows, err := config.DB.Query(query)
 	if err != nil {
 		http.Error(w, "查询问题统计失败: "+err.Error(), http.StatusInternalServerError)
 		return

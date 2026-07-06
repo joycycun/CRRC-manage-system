@@ -64,6 +64,9 @@ func InitRouter() http.Handler {
 	// 生产测试大纲
 	mux.HandleFunc("/api/production-test-outlines", handler.ProductionTestOutlinesHandler)
 
+	// 板卡入库
+	mux.HandleFunc("/api/board-inbound", handler.BoardInboundHandler)
+
 	// 烧录记录
 	mux.HandleFunc("/api/burn-records", handler.BurnRecordsHandler)
 	mux.HandleFunc("/api/burn-records/", handler.BurnRecordActionHandler)

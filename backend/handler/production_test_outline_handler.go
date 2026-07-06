@@ -89,6 +89,7 @@ func splitBoardModels(value string) []string {
 func canViewProductionTestOutline(r *http.Request) bool {
 	return hasRequestRole(r, "hardware_owner") ||
 		hasRequestRole(r, "production_staff") ||
+		hasRequestRole(r, "quality_staff") ||
 		hasRequestRole(r, "system_admin") ||
 		hasRequestRole(r, "leader")
 }
@@ -119,7 +120,7 @@ func GetProductionTestOutlinesHandler(w http.ResponseWriter, r *http.Request) {
 		FROM production_test_outlines pto
 		LEFT JOIN uploaded_files uf ON uf.id = pto.file_id
 		WHERE pto.is_deleted = 0
-		ORDER BY pto.hardware_version ASC, pto.id DESC
+		ORDER BY pto.board_models ASC, pto.id DESC
 	`
 
 	if hasRequestRole(r, "production_staff") && !hasRequestRole(r, "hardware_owner") && !hasRequestRole(r, "system_admin") && !hasRequestRole(r, "leader") {
@@ -140,14 +141,14 @@ func GetProductionTestOutlinesHandler(w http.ResponseWriter, r *http.Request) {
 				pto.updated_at
 			FROM production_test_outlines pto
 			INNER JOIN (
-				SELECT hardware_id, MAX(id) AS latest_id
+				SELECT IFNULL(board_models, '') AS board_models, MAX(id) AS latest_id
 				FROM production_test_outlines
 				WHERE is_deleted = 0
-				GROUP BY hardware_id
+				GROUP BY IFNULL(board_models, '')
 			) latest ON latest.latest_id = pto.id
 			LEFT JOIN uploaded_files uf ON uf.id = pto.file_id
 			WHERE pto.is_deleted = 0
-			ORDER BY pto.hardware_version ASC, pto.id DESC
+			ORDER BY pto.board_models ASC, pto.id DESC
 		`
 	}
 
@@ -224,10 +225,6 @@ func CreateProductionTestOutlineHandler(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "参数解析失败: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if req.HardwareID == 0 {
-		http.Error(w, "请选择产品型号", http.StatusBadRequest)
-		return
-	}
 	if req.FileID == 0 || strings.TrimSpace(req.FileName) == "" {
 		http.Error(w, "请上传测试大纲文件", http.StatusBadRequest)
 		return
@@ -239,15 +236,17 @@ func CreateProductionTestOutlineHandler(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var hardwareVersion, deviceType string
-	err := config.DB.QueryRow(`
-		SELECT IFNULL(hardware_version, ''), IFNULL(device_type, '')
-		FROM hardware_versions
-		WHERE id = ?
-		LIMIT 1
-	`, req.HardwareID).Scan(&hardwareVersion, &deviceType)
-	if err != nil {
-		http.Error(w, "产品型号不存在", http.StatusBadRequest)
-		return
+	if req.HardwareID > 0 {
+		err := config.DB.QueryRow(`
+			SELECT IFNULL(hardware_version, ''), IFNULL(device_type, '')
+			FROM hardware_versions
+			WHERE id = ?
+			LIMIT 1
+		`, req.HardwareID).Scan(&hardwareVersion, &deviceType)
+		if err != nil {
+			http.Error(w, "产品型号不存在", http.StatusBadRequest)
+			return
+		}
 	}
 
 	if err := saveUploadedFile(UploadedFilePayload{

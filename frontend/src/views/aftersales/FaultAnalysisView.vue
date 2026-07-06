@@ -17,7 +17,7 @@
     <div class="filter-card">
       <input
         v-model="filters.keyword"
-        placeholder="搜索板卡类型 / 方案名称 / 提交人 / 文件名"
+        placeholder="搜索板卡类型 / 原因 / 方案名称 / 提交人 / 文件名"
       />
 
       <select v-model="filters.boardType">
@@ -57,6 +57,7 @@
           <thead>
             <tr>
               <th>板卡类型</th>
+              <th>原因</th>
               <th>方案名称</th>
               <th>方案文件</th>
               <th>提交人</th>
@@ -73,6 +74,12 @@
               <td>
                 <span class="board-tag" :title="item.boardType">
                   {{ item.boardType }}
+                </span>
+              </td>
+
+              <td>
+                <span class="reason-tag" :title="item.reason">
+                  {{ item.reason || '-' }}
                 </span>
               </td>
 
@@ -208,6 +215,39 @@
           </label>
 
           <label>
+            原因
+            <div class="tag-select-row">
+              <select v-model="analysisForm.reason">
+                <option value="">请选择原因</option>
+                <option
+                  v-for="reason in reasonOptions"
+                  :key="reason"
+                  :value="reason"
+                >
+                  {{ reason }}
+                </option>
+              </select>
+              <button class="reset-btn tag-add-btn" type="button" @click="showReasonInput = !showReasonInput">
+                新增
+              </button>
+            </div>
+          </label>
+
+          <label v-if="showReasonInput">
+            新增原因标签
+            <div class="tag-select-row">
+              <input
+                v-model="newReasonLabel"
+                placeholder="请输入原因标签"
+                @keyup.enter="addReasonLabel"
+              />
+              <button class="query-btn tag-add-btn" type="button" @click="addReasonLabel">
+                添加
+              </button>
+            </div>
+          </label>
+
+          <label>
             提交人
             <input
               v-model="currentUserName"
@@ -233,13 +273,6 @@
             />
           </label>
 
-          <label class="full-row">
-            故障分析说明
-            <textarea
-              v-model="analysisForm.remark"
-              placeholder="例如：故障现象、原因分析、处理方案、验证结果、后续预防措施等"
-            ></textarea>
-          </label>
         </div>
 
         <div class="dialog-footer">
@@ -271,6 +304,11 @@
           <div>
             <span>方案名称</span>
             <strong>{{ selectedAnalysis.analysisName }}</strong>
+          </div>
+
+          <div>
+            <span>原因</span>
+            <strong>{{ selectedAnalysis.reason || '-' }}</strong>
           </div>
 
           <div>
@@ -309,11 +347,6 @@
               点开查看文件
             </button>
           </div>
-        </div>
-
-        <div class="remark-card">
-          <span>故障分析说明</span>
-          <p>{{ selectedAnalysis.remark || '暂无说明' }}</p>
         </div>
 
         <div class="dialog-footer">
@@ -376,12 +409,16 @@ const filters = reactive({
 
 const showCreateDialog = ref(false)
 const selectedAnalysis = ref(null)
+const showReasonInput = ref(false)
+const newReasonLabel = ref('')
 
 const boardTypeOptions = DEVICE_TYPE_OPTIONS
+const customReasonOptions = ref([])
 
 const analysisForm = reactive({
   projectId: '',
   boardType: '',
+  reason: '',
   analysisName: '',
   fileName: '',
   file: null,
@@ -395,6 +432,13 @@ const analysisForm = reactive({
 const analysisList = ref([])
 const projectOptions = ref([])
 
+const reasonOptions = computed(() => {
+  const existed = analysisList.value
+    .map(item => item.reason)
+    .filter(Boolean)
+  return [...new Set([...customReasonOptions.value, ...existed])]
+})
+
 onMounted(() => {
   loadProjects()
   loadFaultAnalysis()
@@ -407,6 +451,7 @@ const filteredAnalysisList = computed(() => {
     const keywordMatch =
       !keyword ||
       item.boardType.includes(keyword) ||
+      item.reason.includes(keyword) ||
       item.analysisName.includes(keyword) ||
       item.submitUser.includes(keyword) ||
       item.fileName.includes(keyword) ||
@@ -442,6 +487,7 @@ function resetFilters() {
 function openCreateDialog() {
   analysisForm.projectId = ''
   analysisForm.boardType = ''
+  analysisForm.reason = ''
   analysisForm.analysisName = ''
   analysisForm.fileName = ''
   analysisForm.file = null
@@ -450,8 +496,24 @@ function openCreateDialog() {
   analysisForm.fileContentType = ''
   analysisForm.fileData = ''
   analysisForm.remark = ''
+  showReasonInput.value = false
+  newReasonLabel.value = ''
 
   showCreateDialog.value = true
+}
+
+function addReasonLabel() {
+  const label = newReasonLabel.value.trim()
+  if (!label) {
+    alert('请输入原因标签')
+    return
+  }
+  if (!customReasonOptions.value.includes(label)) {
+    customReasonOptions.value.push(label)
+  }
+  analysisForm.reason = label
+  newReasonLabel.value = ''
+  showReasonInput.value = false
 }
 
 async function handleFileChange(event) {
@@ -519,6 +581,7 @@ function normalizeAnalysis(item) {
     projectId: item.projectId || 0,
     projectName: item.projectName || '',
     boardType: item.boardType || '',
+    reason: item.reason || '',
     analysisName: item.analysisName || '',
     fileId: item.fileId || 0,
     fileName: item.fileName || '',
@@ -559,6 +622,11 @@ async function createAnalysis() {
     return
   }
 
+  if (!analysisForm.reason) {
+    alert('请选择原因')
+    return
+  }
+
   if (!analysisForm.analysisName) {
     alert('请输入方案名称')
     return
@@ -572,6 +640,7 @@ async function createAnalysis() {
   const payload = {
     projectId: Number(analysisForm.projectId),
     boardType: analysisForm.boardType,
+    reason: analysisForm.reason,
     analysisName: analysisForm.analysisName,
     fileId: analysisForm.fileId,
     fileName: analysisForm.fileName,
@@ -581,7 +650,7 @@ async function createAnalysis() {
     submitUserId: 1,
     submitUserName: currentUserName.value,
     auditStatus: '待审核',
-    analysisDesc: analysisForm.remark || ''
+    analysisDesc: ''
   }
 
   try {
@@ -798,6 +867,19 @@ async function deleteAnalysis(item) {
   cursor: pointer;
 }
 
+.tag-select-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.tag-add-btn {
+  height: 36px;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
 .table-card {
   background: #0f172a;
   border: 1px solid #1e293b;
@@ -861,7 +943,7 @@ async function deleteAnalysis(item) {
 
 .version-table {
   width: 100%;
-  min-width: 1420px;
+  min-width: 1560px;
   border-collapse: collapse;
   table-layout: fixed;
 }
@@ -901,7 +983,7 @@ async function deleteAnalysis(item) {
 
 .version-table th:nth-child(2),
 .version-table td:nth-child(2) {
-  width: 260px;
+  width: 180px;
 }
 
 .version-table th:nth-child(3),
@@ -911,7 +993,7 @@ async function deleteAnalysis(item) {
 
 .version-table th:nth-child(4),
 .version-table td:nth-child(4) {
-  width: 120px;
+  width: 220px;
 }
 
 .version-table th:nth-child(5),
@@ -936,7 +1018,12 @@ async function deleteAnalysis(item) {
 
 .version-table th:nth-child(9),
 .version-table td:nth-child(9) {
-  width: 280px;
+  width: 150px;
+}
+
+.version-table th:nth-child(10),
+.version-table td:nth-child(10) {
+  width: 240px;
 }
 
 .record-link {
@@ -976,9 +1063,24 @@ async function deleteAnalysis(item) {
   vertical-align: middle;
 }
 
+.reason-tag {
+  display: inline-block;
+  max-width: 150px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: #33415566;
+  color: #fde68a;
+  font-size: 12px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
 .file-tag {
   display: inline-block;
-  max-width: 200px;
+  max-width: 190px;
   padding: 4px 9px;
   border-radius: 999px;
   background: #33415566;
@@ -1038,26 +1140,39 @@ async function deleteAnalysis(item) {
 }
 
 .operation-col {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  background: #0f172a;
   text-align: right !important;
+  box-shadow: -10px 0 16px rgba(2, 6, 23, 0.26);
+}
+
+.version-table thead .operation-col {
+  z-index: 3;
+  background: #020617;
 }
 
 .action-group {
   display: flex;
   justify-content: flex-end;
   align-items: center;
-  gap: 12px;
-  flex-wrap: nowrap;
+  gap: 8px;
+  flex-wrap: wrap;
   white-space: nowrap;
+  min-width: 0;
 }
 
 .text-btn {
   border: none;
-  background: transparent;
+  background: #1e293b;
+  border-radius: 6px;
   color: #cbd5e1;
-  font-size: 13px;
+  font-size: 12px;
+  line-height: 1;
   cursor: pointer;
   white-space: nowrap;
-  padding: 0;
+  padding: 6px 8px;
 }
 
 .text-btn:hover {

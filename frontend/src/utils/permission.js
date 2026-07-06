@@ -59,10 +59,13 @@ const PAGE_ACCESS = {
   production_staff: [
     '/dashboard',
     '/project/manage',
+    '/production/board-inbound',
     '/production/test-outline',
     '/production/burn',
     '/production/factory-test',
     '/production/inventory',
+    '/aftersales/repair',
+    '/aftersales/fault-analysis',
     '/report/project-progress',
     '/report/version-matrix',
     '/report/issue-statistics',
@@ -72,6 +75,9 @@ const PAGE_ACCESS = {
   shipping_staff: [
     '/dashboard',
     '/project/manage',
+    '/hardware/version',
+    '/aftersales/repair',
+    '/aftersales/fault-analysis',
     '/shipping/out',
     '/shipping/batch',
     '/inventory/out',
@@ -116,6 +122,7 @@ const PAGE_ACCESS = {
   quality_staff: [
     '/dashboard',
     '/project/manage',
+    '/production/test-outline',
     '/production/factory-test',
     '/report/project-progress',
     '/report/version-matrix',
@@ -186,10 +193,15 @@ const ACTION_ACCESS = {
   production_staff: [
     'project:view',
     'production:*',
+    'aftersales:*',
     'report:*'
   ],
   shipping_staff: [
     'project:view',
+    'hardware:view',
+    'hardware:download',
+    'aftersales:view',
+    'aftersales:download',
     'shipping:view',
     'shipping:manage',
     'shipping:create',
@@ -225,6 +237,7 @@ const ACTION_ACCESS = {
   quality_staff: [
     'project:view',
     'production:view',
+    'production:outline:view',
     'production:audit',
     'report:*'
   ]
@@ -301,8 +314,12 @@ export function canUseAction(action) {
     return hasRole('hardware_owner') || hasRole('system_admin')
   }
 
+  if (action === 'board-inbound:import') {
+    return hasRole('production_staff') || hasRole('system_admin')
+  }
+
   if (action === 'production:outline:view') {
-    return hasRole('hardware_owner') || hasRole('production_staff') || hasRole('system_admin') || hasRole('leader')
+    return hasRole('hardware_owner') || hasRole('production_staff') || hasRole('quality_staff') || hasRole('system_admin') || hasRole('leader')
   }
 
   if (action === 'customer:delete') {
@@ -315,6 +332,10 @@ export function canUseAction(action) {
 
   if (action === 'requirement:close') {
     return hasRole('project_assistant')
+  }
+
+  if (action === 'project:reopen') {
+    return hasRole('project_assistant') || hasRole('system_admin')
   }
 
   if (action === 'burn:deleteBatch') {
