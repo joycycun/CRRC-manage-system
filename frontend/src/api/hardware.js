@@ -63,7 +63,8 @@ export function createHardwareTest(data) {
   return request({
     url: '/hardware-tests',
     method: 'post',
-    data
+    data,
+    timeout: 120000
   })
 }
 export function submitHardwareTest(id) {

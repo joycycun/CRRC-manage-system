@@ -662,6 +662,9 @@ func CreateHardwareTestHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if item.RecordName == "" {
+		item.RecordName = item.FileName
+	}
+	if item.RecordName == "" {
 		item.RecordName = "硬件测试记录"
 	}
 

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -38,6 +39,36 @@ func ProductionTestOutlinesHandler(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "不支持该请求方法", http.StatusMethodNotAllowed)
 	}
+}
+
+func ProductionTestOutlineActionHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	path := strings.TrimPrefix(r.URL.Path, "/api/production-test-outlines/")
+	path = strings.Trim(path, "/")
+	if path == "" {
+		http.Error(w, "缺少生产测试大纲ID", http.StatusBadRequest)
+		return
+	}
+
+	parts := strings.Split(path, "/")
+	if len(parts) != 1 {
+		http.Error(w, "接口不存在", http.StatusNotFound)
+		return
+	}
+
+	id, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil || id == 0 {
+		http.Error(w, "生产测试大纲ID错误", http.StatusBadRequest)
+		return
+	}
+
+	if r.Method == http.MethodDelete {
+		DeleteProductionTestOutlineHandler(w, r, id)
+		return
+	}
+
+	http.Error(w, "不支持该请求方法", http.StatusMethodNotAllowed)
 }
 
 func ensureProductionTestOutlinesTable() {
@@ -289,5 +320,37 @@ func CreateProductionTestOutlineHandler(w http.ResponseWriter, r *http.Request) 
 		"data": map[string]interface{}{
 			"id": id,
 		},
+	})
+}
+
+func DeleteProductionTestOutlineHandler(w http.ResponseWriter, r *http.Request, id int64) {
+	if !hasRequestRole(r, "system_admin") {
+		http.Error(w, "无删除生产测试大纲权限：只有管理员可以删除", http.StatusForbidden)
+		return
+	}
+
+	ensureProductionTestOutlinesTable()
+
+	result, err := config.DB.Exec(`
+		UPDATE production_test_outlines
+		SET is_deleted = 1,
+			updated_at = NOW()
+		WHERE id = ?
+		  AND is_deleted = 0
+	`, id)
+	if err != nil {
+		http.Error(w, "删除生产测试大纲失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	affected, _ := result.RowsAffected()
+	if affected == 0 {
+		http.Error(w, "生产测试大纲不存在或已删除", http.StatusNotFound)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"code": 200,
+		"msg":  "删除成功",
 	})
 }

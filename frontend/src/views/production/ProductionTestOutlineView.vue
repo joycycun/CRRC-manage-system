@@ -68,7 +68,16 @@
                   <span class="remark-text" :title="item.remark">{{ item.remark || '-' }}</span>
                 </td>
                 <td class="operation-col">
-                  <button class="text-btn" @click="downloadFile(item)">下载</button>
+                  <div class="action-group">
+                    <button class="text-btn" @click="downloadFile(item)">下载</button>
+                    <button
+                      v-if="canUseAction('production:outline:delete')"
+                      class="text-btn red"
+                      @click="deleteOutline(item)"
+                    >
+                      删除
+                    </button>
+                  </div>
                 </td>
               </tr>
 
@@ -160,7 +169,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { createProductionTestOutline, getProductionTestOutlines } from '@/api/productionTestOutline'
+import { createProductionTestOutline, deleteProductionTestOutline, getProductionTestOutlines } from '@/api/productionTestOutline'
 import { buildUploadFilePayload, downloadLocalFile } from '@/utils/filePreview'
 import { canUseAction } from '@/utils/permission'
 
@@ -308,6 +317,28 @@ function resetUploadForm() {
 
 function downloadFile(item) {
   downloadLocalFile(item, item.fileName || '生产测试大纲')
+}
+
+async function deleteOutline(item) {
+  if (!item?.id) {
+    alert('删除失败：没有拿到生产测试大纲ID')
+    return
+  }
+
+  const ok = confirm(`确认删除生产测试大纲【${item.fileName || item.boardModels || item.id}】吗？`)
+  if (!ok) return
+
+  try {
+    await deleteProductionTestOutline(item.id)
+    alert('删除成功')
+    if (expandedBoardRowId.value === item.id) {
+      expandedBoardRowId.value = null
+    }
+    await loadOutlines()
+  } catch (err) {
+    console.error('删除生产测试大纲失败：', err)
+    alert(err.response?.data || '删除生产测试大纲失败')
+  }
 }
 
 function splitBoardModels(value) {
@@ -565,6 +596,14 @@ function toggleBoardModels(item) {
   width: 150px;
 }
 
+.action-group {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  white-space: nowrap;
+}
+
 .version-tag {
   display: inline-block;
   max-width: 100%;
@@ -686,6 +725,10 @@ function toggleBoardModels(item) {
 
 .text-btn.blue {
   color: #60a5fa;
+}
+
+.text-btn.red {
+  color: #f87171;
 }
 
 .text-btn:hover {

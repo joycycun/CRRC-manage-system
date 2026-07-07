@@ -15,3 +15,10 @@ export function createProductionTestOutline(data) {
     data
   })
 }
+
+export function deleteProductionTestOutline(id) {
+  return request({
+    url: `/production-test-outlines/${id}`,
+    method: 'delete'
+  })
+}

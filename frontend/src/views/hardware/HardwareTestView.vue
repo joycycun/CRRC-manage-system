@@ -15,7 +15,7 @@
     <div class="filter-card">
       <input
         v-model="filters.keyword"
-        placeholder="搜索项目名称 / 测试记录名称 / 上传人 / 终端类型"
+        placeholder="搜索项目名称 / 文件名 / 上传人 / 终端类型"
       />
 
       <select v-model="filters.projectName">
@@ -48,7 +48,7 @@
           <thead>
             <tr>
               <th>终端类型</th>
-              <th>测试记录名称</th>
+              <th>文件名</th>
               <th>绑定项目</th>
               <th>硬件版本</th>
               <th>上传人</th>
@@ -66,8 +66,7 @@
               </td>
 
               <td>
-                <div class="record-name">{{ item.recordName }}</div>
-                <div class="file-name">{{ item.fileName }}</div>
+                <div class="file-name" :title="item.fileName">{{ item.fileName }}</div>
               </td>
 
               <td>
@@ -183,14 +182,6 @@
           </label>
 
           <label>
-            测试记录名称
-            <input
-              v-model="uploadForm.recordName"
-              placeholder="例如：香港屯马硬件测试记录"
-            />
-          </label>
-
-          <label>
             硬件版本
             <select v-model="uploadForm.hardwareVersion">
               <option value="">请选择硬件版本</option>
@@ -252,11 +243,6 @@
         </div>
 
         <div class="detail-card">
-          <div>
-            <span>测试记录名称</span>
-            <strong>{{ selectedTest.recordName }}</strong>
-          </div>
-
           <div>
             <span>绑定项目</span>
             <strong>{{ selectedTest.projectName }}</strong>
@@ -348,11 +334,6 @@
         </div>
 
         <div class="detail-card">
-          <div>
-            <span>测试记录名称</span>
-            <strong>{{ currentRejectTest?.recordName }}</strong>
-          </div>
-
           <div>
             <span>绑定项目</span>
             <strong>{{ currentRejectTest?.projectName }}</strong>
@@ -615,7 +596,7 @@ function normalizeHardwareTest(item) {
     projectId: item.projectId || 0,
     hardwareId: item.hardwareId || 0,
     projectName: item.projectName || findProjectName(item.projectId),
-    recordName: item.recordName || item.testName || item.hardwareTestName || '',
+    recordName: item.recordName || item.testName || item.hardwareTestName || item.fileName || '',
     hardwareVersion: item.hardwareVersion || findHardwareVersion(item.hardwareId),
     deviceType: item.deviceType || '',
     fileId: item.fileId || 0,
@@ -648,7 +629,7 @@ const filteredTestList = computed(() => {
     const keywordMatch =
       !filters.keyword ||
       item.projectName.includes(filters.keyword) ||
-      item.recordName.includes(filters.keyword) ||
+      item.fileName.includes(filters.keyword) ||
       item.uploader.includes(filters.keyword) ||
       item.hardwareVersion.includes(filters.keyword) ||
       item.deviceType.includes(filters.keyword) ||
@@ -730,11 +711,6 @@ async function uploadTest() {
     return
   }
 
-  if (!uploadForm.recordName) {
-    alert('请输入硬件测试记录名称')
-    return
-  }
-
   if (!uploadForm.hardwareVersion) {
     alert('请选择硬件版本')
     return
@@ -764,8 +740,8 @@ async function uploadTest() {
     projectId,
     hardwareId,
     deviceType: uploadForm.deviceType,
-    testName: uploadForm.recordName,
-    recordName: uploadForm.recordName,
+    testName: uploadForm.fileName,
+    recordName: uploadForm.fileName,
     hardwareVersion: uploadForm.hardwareVersion,
     fileId: uploadForm.fileId,
     fileName: uploadForm.fileName,
@@ -835,7 +811,7 @@ async function submitTest(item) {
     console.log('提交硬件测试记录返回：', result)
 
     if (result.code === 200) {
-      alert(`硬件测试记录【${item.recordName}】已提交领导审核`)
+      alert(`硬件测试记录【${item.fileName}】已提交领导审核`)
       await loadHardwareTests()
     } else {
       alert(result.msg || '提交失败')
@@ -868,7 +844,7 @@ async function approveTest(item) {
     console.log('硬件测试审核通过返回：', result)
 
     if (result.code === 200) {
-      alert(`硬件测试记录【${item.recordName}】审核通过`)
+      alert(`硬件测试记录【${item.fileName}】审核通过`)
       selectedTest.value = null
       await loadHardwareTests()
     } else {
@@ -906,7 +882,7 @@ async function confirmRejectTest() {
     console.log('硬件测试审核驳回返回：', result)
 
     if (result.code === 200) {
-      alert(`硬件测试记录【${currentRejectTest.value.recordName}】已驳回`)
+      alert(`硬件测试记录【${currentRejectTest.value.fileName}】已驳回`)
       showRejectDialog.value = false
       selectedTest.value = null
       await loadHardwareTests()
@@ -929,7 +905,7 @@ async function deleteTest(item) {
     return
   }
 
-  const ok = confirm(`确认删除硬件测试记录【${item.recordName}】吗？`)
+  const ok = confirm(`确认删除硬件测试记录【${item.fileName}】吗？`)
   if (!ok) return
 
   try {
@@ -1156,15 +1132,10 @@ async function deleteTest(item) {
   vertical-align: middle;
 }
 
-.record-name {
-  color: #f8fafc;
-  font-weight: 700;
-}
-
 .file-name {
-  margin-top: 4px;
-  color: #64748b;
-  font-size: 12px;
+  color: #f8fafc;
+  font-size: 13px;
+  font-weight: 700;
   word-break: break-all;
 }
 
