@@ -32,3 +32,11 @@ export const getUsersApi = () => {
 export const deleteUserApi = id => {
   return request.delete(`/users/${id}`);
 };
+
+export const getUserPermissionsApi = id => {
+  return request.get(`/users/${id}/permissions`);
+};
+
+export const saveUserPermissionsApi = (id, permissions) => {
+  return request.post(`/users/${id}/permissions`, { permissions });
+};

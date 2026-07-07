@@ -38,6 +38,8 @@ func InitRouter() http.Handler {
 
 	mux.HandleFunc("/api/hardware-tests", handler.HardwareTestsHandler)
 	mux.HandleFunc("/api/hardware-tests/", handler.HardwareTestActionHandler)
+	mux.HandleFunc("/api/hardware-dev-documents", handler.HardwareDevDocumentsHandler)
+	mux.HandleFunc("/api/hardware-dev-documents/", handler.HardwareDevDocumentActionHandler)
 
 	// 软件版本
 	mux.HandleFunc("/api/software-versions", handler.SoftwareVersionsHandler)

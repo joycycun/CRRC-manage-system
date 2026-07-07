@@ -11,6 +11,7 @@ import CustomerSuppliedView from "@/views/requirement/CustomerSuppliedView.vue";
 
 import HardwareVersionView from "@/views/hardware/HardwareVersionView.vue";
 import HardwareTestView from "@/views/hardware/HardwareTestView.vue";
+import HardwareDevDocumentView from "@/views/hardware/HardwareDevDocumentView.vue";
 
 import SoftwareVersionView from "@/views/software/SoftwareVersionView.vue";
 import ProjectBranchView from "@/views/software/ProjectBranchView.vue";
@@ -59,6 +60,7 @@ const routes = [
   { path: "/requirement/change", component: RequirementChangeView },
   { path: "/requirement/customer-supplied", component: CustomerSuppliedView },
   { path: "/hardware/version", component: HardwareVersionView },
+  { path: "/hardware/dev-docs", component: HardwareDevDocumentView },
   { path: "/hardware/test", component: HardwareTestView },
 
   { path: "/software/version", component: SoftwareVersionView },

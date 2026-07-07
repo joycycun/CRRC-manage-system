@@ -26,6 +26,7 @@ const PAGE_ACCESS = {
     '/requirement/change',
     '/requirement/customer-supplied',
     '/hardware/version',
+    '/hardware/dev-docs',
     '/hardware/test',
     '/production/test-outline',
     '/test/case',
@@ -43,6 +44,7 @@ const PAGE_ACCESS = {
     '/requirement/change',
     '/requirement/customer-supplied',
     '/hardware/version',
+    '/hardware/dev-docs',
     '/hardware/test',
     '/software/version',
     '/software/branch',
@@ -76,6 +78,7 @@ const PAGE_ACCESS = {
     '/dashboard',
     '/project/manage',
     '/hardware/version',
+    '/hardware/dev-docs',
     '/aftersales/repair',
     '/aftersales/fault-analysis',
     '/shipping/out',
@@ -106,6 +109,7 @@ const PAGE_ACCESS = {
     '/requirement/change',
     '/requirement/customer-supplied',
     '/hardware/version',
+    '/hardware/dev-docs',
     '/hardware/test',
     '/software/version',
     '/software/branch',
@@ -122,6 +126,7 @@ const PAGE_ACCESS = {
   quality_staff: [
     '/dashboard',
     '/project/manage',
+    '/hardware/test',
     '/production/test-outline',
     '/production/factory-test',
     '/report/project-progress',
@@ -150,6 +155,8 @@ const ACTION_ACCESS = {
     'requirement:download',
     'customer:view',
     'customer:download',
+    'hardware-dev-doc:view',
+    'hardware-dev-doc:download',
     'software:*',
     'testcase:view',
     'testcase:download',
@@ -165,6 +172,7 @@ const ACTION_ACCESS = {
     'customer:view',
     'customer:download',
     'hardware:*',
+    'hardware-dev-doc:*',
     'production:outline:view',
     'production:outline:upload',
     'testcase:view',
@@ -180,6 +188,8 @@ const ACTION_ACCESS = {
     'customer:*',
     'hardware:view',
     'hardware:download',
+    'hardware-dev-doc:view',
+    'hardware-dev-doc:download',
     'software:view',
     'software:download',
     'branch:view',
@@ -200,6 +210,8 @@ const ACTION_ACCESS = {
     'project:view',
     'hardware:view',
     'hardware:download',
+    'hardware-dev-doc:view',
+    'hardware-dev-doc:download',
     'aftersales:view',
     'aftersales:download',
     'shipping:view',
@@ -224,6 +236,8 @@ const ACTION_ACCESS = {
     'customer:download',
     'hardware:view',
     'hardware:download',
+    'hardware-dev-doc:view',
+    'hardware-dev-doc:download',
     'software:view',
     'software:download',
     'branch:view',
@@ -236,6 +250,8 @@ const ACTION_ACCESS = {
   ],
   quality_staff: [
     'project:view',
+    'hardware:view',
+    'hardware:download',
     'production:view',
     'production:outline:view',
     'production:audit',
@@ -270,6 +286,17 @@ export function hasFullAccessRole() {
   return roles.some(role => FULL_ACCESS_ROLES.includes(role))
 }
 
+export function getStoredPermissions() {
+  try {
+    const text = localStorage.getItem('permissions')
+    const permissions = text ? JSON.parse(text) : []
+    return permissions.filter(Boolean)
+  } catch (err) {
+    console.warn('读取用户按钮权限失败：', err)
+    return []
+  }
+}
+
 function shouldRestrictCurrentUser() {
   const roles = getStoredRoles()
   if (roles.length === 0 || hasFullAccessRole()) return false
@@ -277,6 +304,17 @@ function shouldRestrictCurrentUser() {
 }
 
 export function canAccessPage(path) {
+  const pagePermissionMap = {
+    '/hardware/dev-docs': 'hardware-dev-doc:view',
+    '/hardware/test': 'hardware:view',
+    '/aftersales/repair': 'aftersales:view',
+    '/aftersales/fault-analysis': 'aftersales:view'
+  }
+  const requiredPermission = pagePermissionMap[path]
+  if (requiredPermission && getStoredPermissions().some(permission => actionMatches(permission, requiredPermission))) {
+    return true
+  }
+
   if (!shouldRestrictCurrentUser()) return true
 
   const roles = getStoredRoles()
@@ -309,9 +347,18 @@ function actionMatches(grantedAction, action) {
 
 export function canUseAction(action) {
   if (hasRole('system_admin')) return true
+  if (getStoredPermissions().some(permission => actionMatches(permission, action))) return true
 
   if (action === 'production:outline:upload') {
     return hasRole('hardware_owner') || hasRole('system_admin')
+  }
+
+  if (action === 'hardware-dev-doc:upload' || action === 'hardware-dev-doc:delete') {
+    return hasRole('hardware_owner') || hasRole('system_admin') || getStoredPermissions().includes(action)
+  }
+
+  if (action === 'hardware-dev-doc:view' || action === 'hardware-dev-doc:download') {
+    return hasRole('hardware_owner') || hasRole('software_owner') || hasRole('project_assistant') || hasRole('shipping_staff') || hasRole('aftersales_staff') || hasRole('leader') || hasRole('system_admin') || getStoredPermissions().includes(action)
   }
 
   if (action === 'board-inbound:import') {

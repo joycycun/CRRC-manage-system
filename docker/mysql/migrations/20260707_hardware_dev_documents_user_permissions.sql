@@ -1,0 +1,22 @@
+CREATE TABLE IF NOT EXISTS hardware_dev_documents (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  project_id BIGINT NOT NULL DEFAULT 0,
+  file_id BIGINT NOT NULL DEFAULT 0,
+  upload_user_id BIGINT NOT NULL DEFAULT 0,
+  upload_user_name VARCHAR(64) NOT NULL DEFAULT '',
+  upload_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+  remark TEXT NULL,
+  is_deleted TINYINT NOT NULL DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_hdd_project_id (project_id),
+  KEY idx_hdd_file_id (file_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS user_permissions (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  user_id BIGINT NOT NULL,
+  permission_code VARCHAR(128) NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_user_permission (user_id, permission_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -600,6 +600,10 @@ func hardwareTestVisibilitySQL(r *http.Request) string {
 		return " AND IFNULL(ht.audit_status, '草稿') IN ('待审核', 'submitted', '已提交', '已通过', '审核通过', 'approved', '已驳回', '审核驳回', 'rejected')"
 	}
 
+	if hasRequestRole(r, "quality_staff") {
+		return " AND IFNULL(ht.audit_status, '草稿') IN ('待审核', 'submitted', '已提交', '已通过', '审核通过', 'approved', '已驳回', '审核驳回', 'rejected')"
+	}
+
 	userID, userName := currentRequestUser(r)
 	ownSQL := ""
 	if userID > 0 {
@@ -798,13 +802,27 @@ func AuditHardwareTestHandler(w http.ResponseWriter, r *http.Request, id int64) 
 // ============================================================
 
 func DeleteHardwareTestHandler(w http.ResponseWriter, r *http.Request, id int64) {
+	canDelete := hasRequestRole(r, "system_admin") ||
+		hasRequestRole(r, "hardware_owner") ||
+		hasRequestPermission(r, "hardware:delete")
+	if !canDelete {
+		http.Error(w, "无删除硬件测试记录权限", http.StatusForbidden)
+		return
+	}
+
+	statusSQL := ""
+	if !hasRequestRole(r, "system_admin") {
+		statusSQL = " AND IFNULL(audit_status, '草稿') IN ('草稿', 'draft', '已驳回', '审核驳回', 'rejected')"
+	}
+
 	result, err := config.DB.Exec(`
 		UPDATE hardware_tests
 		SET
 			is_deleted = 1,
 			updated_at = NOW()
 		WHERE id = ?
-	`, id)
+		  AND is_deleted = 0
+	`+statusSQL, id)
 
 	if err != nil {
 		http.Error(w, "删除失败: "+err.Error(), http.StatusInternalServerError)

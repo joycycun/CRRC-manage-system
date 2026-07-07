@@ -60,81 +60,66 @@
           </thead>
 
           <tbody>
-            <tr v-for="item in filteredTestList" :key="item.id">
-              <td>
-                <span class="device-tag">{{ item.deviceType }}</span>
-              </td>
-
-              <td>
-                <div class="file-name" :title="item.fileName">{{ item.fileName }}</div>
-              </td>
-
-              <td>
-                <span class="project-tag">{{ item.projectName }}</span>
-              </td>
-
-              <td>
-                <span class="version-tag">{{ item.hardwareVersion }}</span>
-              </td>
-
-              <td>{{ item.uploader }}</td>
-
-              <td class="muted">{{ item.uploadTime }}</td>
-
-              <td>
-                <div class="audit-cell">
-                  <span class="status-tag" :class="item.auditStatus">
-                    {{ getAuditStatusText(item.auditStatus) }}
-                  </span>
-
-                  <button
-                    v-if="item.auditStatus === 'rejected'"
-                    class="reason-btn"
-                    @click="viewRejectReason(item)"
-                  >
-                    原因
+            <template v-for="project in groupedTestList" :key="project.projectName">
+              <tr class="project-row">
+                <td colspan="2">
+                  <button class="project-name-btn" @click="toggleProject(project.projectName)">
+                    <span class="expand-icon">{{ expandedProjects.includes(project.projectName) ? '▼' : '▶' }}</span>
+                    {{ project.projectName }}
                   </button>
-                </div>
-              </td>
+                </td>
+                <td><span class="count-tag">{{ project.items.length }} 条记录</span></td>
+                <td class="muted">{{ project.latestUploadTime || '-' }}</td>
+                <td>{{ project.latestUploader || '-' }}</td>
+                <td colspan="3"></td>
+                <td class="operation-col">
+                  <div class="action-group">
+                    <button class="text-btn blue" @click="toggleProject(project.projectName)">
+                      {{ expandedProjects.includes(project.projectName) ? '收起' : '查看记录' }}
+                    </button>
+                  </div>
+                </td>
+              </tr>
 
-              <td>{{ item.auditor || '-' }}</td>
-
-              <td class="operation-col">
-                <div class="action-group">
-                  <button class="text-btn" @click="viewTest(item)">
-                    查看
-                  </button>
-
-                  <button class="text-btn blue" @click="downloadTest(item)">
-                    下载
-                  </button>
-
-                  <button
-                    v-if="canSubmitTest(item)"
-                    class="text-btn blue"
-                    @click="submitTest(item)"
-                  >
-                    提交
-                  </button>
-
-                  <button
-                    v-if="canUseAction('hardware:audit') && item.auditStatus === 'submitted'"
-                    class="text-btn green"
-                    @click="auditTest(item)"
-                  >
-                    审核
-                  </button>
-
-                  <button
-                    v-if="canUseAction('hardware:delete') && (item.auditStatus === 'draft' || item.auditStatus === 'rejected')"
-                    class="text-btn red"
-                    @click="deleteTest(item)"
-                  >
-                    删除
-                  </button>
-                </div>
-              </td>
-            </tr>
+              <template v-if="expandedProjects.includes(project.projectName)">
+                <tr v-for="item in project.items" :key="item.id" class="child-record-row">
+                  <td>
+                    <span class="device-tag">{{ item.deviceType }}</span>
+                  </td>
+                  <td>
+                    <div class="file-name" :title="item.fileName">{{ item.fileName }}</div>
+                  </td>
+                  <td>
+                    <span class="project-tag">{{ item.projectName }}</span>
+                  </td>
+                  <td>
+                    <span class="version-tag">{{ item.hardwareVersion }}</span>
+                  </td>
+                  <td>{{ item.uploader }}</td>
+                  <td class="muted">{{ item.uploadTime }}</td>
+                  <td>
+                    <div class="audit-cell">
+                      <span class="status-tag" :class="item.auditStatus">
+                        {{ getAuditStatusText(item.auditStatus) }}
+                      </span>
+                      <button v-if="item.auditStatus === 'rejected'" class="reason-btn" @click="viewRejectReason(item)">
+                        原因
+                      </button>
+                    </div>
+                  </td>
+                  <td>{{ item.auditor || '-' }}</td>
+                  <td class="operation-col">
+                    <div class="action-group">
+                      <button class="text-btn" @click="viewTest(item)">查看</button>
+                      <button class="text-btn blue" @click="downloadTest(item)">下载</button>
+                      <button v-if="canSubmitTest(item)" class="text-btn blue" @click="submitTest(item)">提交</button>
+                      <button v-if="canUseAction('hardware:audit') && item.auditStatus === 'submitted'" class="text-btn green" @click="auditTest(item)">审核</button>
+                      <button v-if="canDeleteTest(item)" class="text-btn red" @click="deleteTest(item)">删除</button>
+                    </div>
+                  </td>
+                </tr>
+              </template>
+            </template>
           </tbody>
         </table>
       </div>
@@ -397,7 +382,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { canUseAction } from '@/utils/permission'
+import { canUseAction, hasRole } from '@/utils/permission'
 import { DEVICE_TYPE_OPTIONS } from '@/constants/deviceTypes'
 import { buildUploadFilePayload, downloadLocalFile, getFilePreviewUrl } from '@/utils/filePreview'
 import { getAuditUserPayload, getCurrentUserParams } from '@/utils/currentUser'
@@ -432,6 +417,7 @@ const showRejectDialog = ref(false)
 const selectedTest = ref(null)
 const currentRejectTest = ref(null)
 const selectedRejectReason = ref(null)
+const expandedProjects = ref([])
 
 const projectOptions = ref([])
 const projectMap = ref({})
@@ -645,6 +631,26 @@ const filteredTestList = computed(() => {
   })
 })
 
+const groupedTestList = computed(() => {
+  const map = new Map()
+  filteredTestList.value.forEach(item => {
+    if (!map.has(item.projectName)) {
+      map.set(item.projectName, [])
+    }
+    map.get(item.projectName).push(item)
+  })
+
+  return Array.from(map.entries()).map(([projectName, items]) => {
+    const sortedItems = [...items].sort((a, b) => new Date(b.uploadTime) - new Date(a.uploadTime))
+    return {
+      projectName,
+      items: sortedItems,
+      latestUploadTime: sortedItems[0]?.uploadTime || '',
+      latestUploader: sortedItems[0]?.uploader || ''
+    }
+  })
+})
+
 function getAuditStatusText(status) {
   const map = {
     draft: '草稿',
@@ -660,6 +666,12 @@ function resetFilters() {
   filters.keyword = ''
   filters.projectName = ''
   filters.auditStatus = ''
+}
+
+function toggleProject(projectName) {
+  expandedProjects.value = expandedProjects.value.includes(projectName)
+    ? expandedProjects.value.filter(item => item !== projectName)
+    : [...expandedProjects.value, projectName]
 }
 
 function openUploadDialog() {
@@ -796,6 +808,11 @@ function canSubmitTest(item) {
 
   const currentNames = [currentUser.realName, currentUser.username, currentUserName.value].filter(Boolean)
   return currentNames.includes(item.uploader)
+}
+
+function canDeleteTest(item) {
+  if (hasRole('system_admin')) return true
+  return canUseAction('hardware:delete') && ['draft', 'rejected'].includes(item.auditStatus)
 }
 
 async function submitTest(item) {
@@ -1130,6 +1147,46 @@ async function deleteTest(item) {
   color: #e2e8f0;
   font-size: 13px;
   vertical-align: middle;
+}
+
+.project-row {
+  background: #020617;
+}
+
+.project-row:hover,
+.child-record-row:hover {
+  background: #1e293b80;
+}
+
+.project-name-btn {
+  border: none;
+  background: transparent;
+  color: #60a5fa;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+
+.expand-icon {
+  display: inline-block;
+  width: 18px;
+  color: #94a3b8;
+}
+
+.count-tag {
+  display: inline-flex;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: #33415566;
+  color: #cbd5e1;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.child-record-row td:first-child {
+  padding-left: 34px;
 }
 
 .file-name {

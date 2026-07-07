@@ -482,13 +482,25 @@ func UserActionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := strconv.ParseInt(path, 10, 64)
+	parts := strings.Split(path, "/")
+	id, err := strconv.ParseInt(parts[0], 10, 64)
 	if err != nil || id <= 0 {
 		json.NewEncoder(w).Encode(LoginResponse{Code: 400, Msg: "用户ID错误"})
 		return
 	}
 
-	if r.Method != http.MethodDelete {
+	if len(parts) == 2 && parts[1] == "permissions" {
+		if r.Method == http.MethodGet {
+			GetUserPermissionsHandler(w, r, id)
+			return
+		}
+		if r.Method == http.MethodPost {
+			SaveUserPermissionsHandler(w, r, id)
+			return
+		}
+	}
+
+	if len(parts) != 1 || r.Method != http.MethodDelete {
 		json.NewEncoder(w).Encode(LoginResponse{Code: 405, Msg: "请求方法错误"})
 		return
 	}
@@ -523,6 +535,7 @@ func DeleteUserHandler(w http.ResponseWriter, r *http.Request, id int64) {
 		json.NewEncoder(w).Encode(LoginResponse{Code: 500, Msg: "删除用户角色失败: " + err.Error()})
 		return
 	}
+	_, _ = tx.Exec("DELETE FROM user_permissions WHERE user_id = ?", id)
 	result, err := tx.Exec("DELETE FROM users WHERE id = ?", id)
 	if err != nil {
 		json.NewEncoder(w).Encode(LoginResponse{Code: 500, Msg: "删除用户失败: " + err.Error()})
@@ -539,6 +552,95 @@ func DeleteUserHandler(w http.ResponseWriter, r *http.Request, id int64) {
 	}
 
 	json.NewEncoder(w).Encode(LoginResponse{Code: 200, Msg: "删除用户成功"})
+}
+
+func ensureUserPermissionsTable() {
+	_, _ = config.DB.Exec(`
+		CREATE TABLE IF NOT EXISTS user_permissions (
+			id BIGINT PRIMARY KEY AUTO_INCREMENT,
+			user_id BIGINT NOT NULL,
+			permission_code VARCHAR(128) NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE KEY uk_user_permission (user_id, permission_code)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+	`)
+}
+
+func GetUserPermissionsHandler(w http.ResponseWriter, r *http.Request, id int64) {
+	if !hasRequestRole(r, "system_admin") {
+		json.NewEncoder(w).Encode(LoginResponse{Code: 403, Msg: "只有系统管理员可以查看用户权限"})
+		return
+	}
+	ensureUserPermissionsTable()
+
+	rows, err := config.DB.Query(`
+		SELECT permission_code
+		FROM user_permissions
+		WHERE user_id = ?
+		ORDER BY permission_code
+	`, id)
+	if err != nil {
+		json.NewEncoder(w).Encode(LoginResponse{Code: 500, Msg: "查询用户权限失败: " + err.Error()})
+		return
+	}
+	defer rows.Close()
+
+	list := make([]string, 0)
+	for rows.Next() {
+		var code string
+		if err := rows.Scan(&code); err != nil {
+			json.NewEncoder(w).Encode(LoginResponse{Code: 500, Msg: "解析用户权限失败: " + err.Error()})
+			return
+		}
+		list = append(list, code)
+	}
+
+	json.NewEncoder(w).Encode(LoginResponse{Code: 200, Msg: "查询成功", Data: list})
+}
+
+func SaveUserPermissionsHandler(w http.ResponseWriter, r *http.Request, id int64) {
+	if !hasRequestRole(r, "system_admin") {
+		json.NewEncoder(w).Encode(LoginResponse{Code: 403, Msg: "只有系统管理员可以配置用户权限"})
+		return
+	}
+	ensureUserPermissionsTable()
+
+	var req struct {
+		Permissions []string `json:"permissions"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		json.NewEncoder(w).Encode(LoginResponse{Code: 400, Msg: "参数解析失败"})
+		return
+	}
+
+	tx, err := config.DB.Begin()
+	if err != nil {
+		json.NewEncoder(w).Encode(LoginResponse{Code: 500, Msg: "开启事务失败: " + err.Error()})
+		return
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec("DELETE FROM user_permissions WHERE user_id = ?", id); err != nil {
+		json.NewEncoder(w).Encode(LoginResponse{Code: 500, Msg: "清空旧权限失败: " + err.Error()})
+		return
+	}
+
+	for _, code := range uniqueRoleCodes(req.Permissions) {
+		if _, err := tx.Exec(`
+			INSERT IGNORE INTO user_permissions (user_id, permission_code, created_at)
+			VALUES (?, ?, NOW())
+		`, id, code); err != nil {
+			json.NewEncoder(w).Encode(LoginResponse{Code: 500, Msg: "保存权限失败: " + err.Error()})
+			return
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		json.NewEncoder(w).Encode(LoginResponse{Code: 500, Msg: "提交权限失败: " + err.Error()})
+		return
+	}
+
+	json.NewEncoder(w).Encode(LoginResponse{Code: 200, Msg: "保存成功"})
 }
 
 func uniqueRoleCodes(values []string) []string {
@@ -895,14 +997,22 @@ func queryUserPermissions(userID int64) ([]string, error) {
 		return []string{}, nil
 	}
 
+	ensureUserPermissionsTable()
 	rows, err := config.DB.Query(`
-		SELECT DISTINCT p.permission_code
-		FROM user_roles ur
-		JOIN role_permissions rp ON ur.role_id = rp.role_id
-		JOIN permissions p ON rp.permission_id = p.id
-		WHERE ur.user_id = ?
-		ORDER BY p.permission_code
-	`, userID)
+		SELECT DISTINCT permission_code
+		FROM (
+			SELECT p.permission_code
+			FROM user_roles ur
+			JOIN role_permissions rp ON ur.role_id = rp.role_id
+			JOIN permissions p ON rp.permission_id = p.id
+			WHERE ur.user_id = ?
+			UNION
+			SELECT permission_code
+			FROM user_permissions
+			WHERE user_id = ?
+		) merged_permissions
+		ORDER BY permission_code
+	`, userID, userID)
 	if err != nil {
 		return nil, err
 	}

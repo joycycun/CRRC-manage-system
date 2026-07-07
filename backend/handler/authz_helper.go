@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"crrc_pm_backend/config"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -28,6 +29,27 @@ func hasRequestRole(r *http.Request, roleCode string) bool {
 		}
 	}
 	return false
+}
+
+func hasRequestPermission(r *http.Request, permissionCode string) bool {
+	if hasRequestRole(r, "system_admin") {
+		return true
+	}
+	userID, _ := currentRequestUser(r)
+	if userID == 0 || strings.TrimSpace(permissionCode) == "" {
+		return false
+	}
+	ensureUserPermissionsTable()
+
+	var exists int
+	err := config.DB.QueryRow(`
+		SELECT 1
+		FROM user_permissions
+		WHERE user_id = ?
+		  AND permission_code = ?
+		LIMIT 1
+	`, userID, permissionCode).Scan(&exists)
+	return err == nil && exists == 1
 }
 
 func requireLeaderPermission(w http.ResponseWriter, r *http.Request) bool {

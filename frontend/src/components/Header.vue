@@ -305,6 +305,13 @@
             </div>
             <button
               type="button"
+              class="permission-account-btn"
+              @click="openPermissionDialog(user)"
+            >
+              权限
+            </button>
+            <button
+              type="button"
               class="delete-account-btn"
               :disabled="user.username === 'admin' || deletingUserId === user.id"
               @click="deleteUser(user)"
@@ -329,6 +336,53 @@
       </div>
     </div>
   </div>
+
+  <div v-if="showPermissionDialog" class="dialog-mask">
+    <div class="account-dialog permission-dialog">
+      <div class="dialog-header">
+        <div>
+          <h3>配置用户功能权限</h3>
+          <p>{{ permissionUser?.realName || permissionUser?.username }}</p>
+        </div>
+        <button type="button" @click="closePermissionDialog">×</button>
+      </div>
+
+      <div class="permission-section">
+        <div
+          v-for="group in permissionGroups"
+          :key="group.module"
+          class="permission-group"
+        >
+          <strong>{{ group.module }}</strong>
+          <div class="permission-grid">
+            <label
+              v-for="permission in group.permissions"
+              :key="permission.code"
+              class="role-option"
+            >
+              <input
+                v-model="permissionForm.permissions"
+                type="checkbox"
+                :value="permission.code"
+              />
+              <span>{{ permission.name }}</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <p v-if="permissionError" class="password-error">{{ permissionError }}</p>
+
+      <div class="dialog-footer">
+        <button class="cancel-btn" type="button" @click="closePermissionDialog">
+          取消
+        </button>
+        <button class="save-btn" type="button" :disabled="permissionSaving" @click="savePermissionConfig">
+          {{ permissionSaving ? '保存中...' : '保存权限' }}
+        </button>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup>
@@ -339,7 +393,7 @@ import { getDashboardSummary, globalSearch, markNotificationRead } from '@/api/r
 import { confirmProductionRequest } from '@/api/shippingBatch'
 import { confirmIssue } from '@/api/issue'
 import { confirmRequirementChange } from '@/api/requirement'
-import { changePasswordApi, createUserApi, deleteUserApi, getRoleOptionsApi, getUsersApi } from '@/api/auth'
+import { changePasswordApi, createUserApi, deleteUserApi, getRoleOptionsApi, getUserPermissionsApi, getUsersApi, saveUserPermissionsApi } from '@/api/auth'
 import { getCurrentUserParams } from '@/utils/currentUser'
 import { getStoredRoles } from '@/utils/permission'
 
@@ -356,11 +410,76 @@ const showPasswordDialog = ref(false)
 const showUserDialog = ref(false)
 const passwordSaving = ref(false)
 const userSaving = ref(false)
+const permissionSaving = ref(false)
 const deletingUserId = ref(0)
 const passwordError = ref('')
 const userError = ref('')
+const permissionError = ref('')
 const roleOptions = ref([])
 const userList = ref([])
+const showPermissionDialog = ref(false)
+const permissionUser = ref(null)
+const permissionForm = reactive({
+  permissions: []
+})
+const permissionGroups = [
+  {
+    module: '项目管理',
+    permissions: [
+      { code: 'project:view', name: '查看' },
+      { code: 'project:create', name: '新增' },
+      { code: 'project:update', name: '修改' },
+      { code: 'project:delete', name: '删除' },
+      { code: 'project:audit', name: '审核' }
+    ]
+  },
+  {
+    module: '硬件管理',
+    permissions: [
+      { code: 'hardware:view', name: '硬件查看' },
+      { code: 'hardware:upload', name: '硬件上传' },
+      { code: 'hardware:download', name: '硬件下载' },
+      { code: 'hardware:delete', name: '硬件删除' },
+      { code: 'hardware:audit', name: '硬件审核' },
+      { code: 'hardware-dev-doc:view', name: '开发文档查看' },
+      { code: 'hardware-dev-doc:upload', name: '开发文档上传' },
+      { code: 'hardware-dev-doc:download', name: '开发文档下载' },
+      { code: 'hardware-dev-doc:delete', name: '开发文档删除' }
+    ]
+  },
+  {
+    module: '生产管理',
+    permissions: [
+      { code: 'production:view', name: '查看' },
+      { code: 'production:create', name: '新增' },
+      { code: 'production:update', name: '修改' },
+      { code: 'production:delete', name: '删除' },
+      { code: 'production:audit', name: '审核' }
+    ]
+  },
+  {
+    module: '发货管理',
+    permissions: [
+      { code: 'shipping:view', name: '查看' },
+      { code: 'shipping:create', name: '新增' },
+      { code: 'shipping:update', name: '修改' },
+      { code: 'shipping:delete', name: '删除' },
+      { code: 'shipping:audit', name: '审核' }
+    ]
+  },
+  {
+    module: '售后管理',
+    permissions: [
+      { code: 'aftersales:view', name: '查看' },
+      { code: 'aftersales:create', name: '新增' },
+      { code: 'aftersales:update', name: '修改' },
+      { code: 'aftersales:delete', name: '删除' },
+      { code: 'aftersales:upload', name: '上传' },
+      { code: 'aftersales:download', name: '下载' },
+      { code: 'aftersales:audit', name: '审核' }
+    ]
+  }
+]
 const departmentOptions = [
   '管理部',
   '项目助理',
@@ -663,6 +782,52 @@ async function deleteUser(user) {
     userError.value = err.response?.data?.msg || err.response?.data || '删除账户失败，请检查后端接口'
   } finally {
     deletingUserId.value = 0
+  }
+}
+
+async function openPermissionDialog(user) {
+  permissionUser.value = user
+  permissionError.value = ''
+  permissionForm.permissions = []
+  showPermissionDialog.value = true
+
+  try {
+    const res = await getUserPermissionsApi(user.id)
+    const result = res?.data || res
+    if (result.code !== 200) {
+      permissionError.value = result.msg || '加载用户权限失败'
+      return
+    }
+    permissionForm.permissions = result.data || []
+  } catch (err) {
+    console.error('加载用户权限失败：', err)
+    permissionError.value = err.response?.data?.msg || err.response?.data || '加载用户权限失败'
+  }
+}
+
+function closePermissionDialog() {
+  if (permissionSaving.value) return
+  showPermissionDialog.value = false
+  permissionUser.value = null
+}
+
+async function savePermissionConfig() {
+  if (!permissionUser.value?.id) return
+  try {
+    permissionSaving.value = true
+    const res = await saveUserPermissionsApi(permissionUser.value.id, permissionForm.permissions)
+    const result = res?.data || res
+    if (result.code !== 200) {
+      permissionError.value = result.msg || '保存权限失败'
+      return
+    }
+    alert('保存权限成功')
+    closePermissionDialog()
+  } catch (err) {
+    console.error('保存用户权限失败：', err)
+    permissionError.value = err.response?.data?.msg || err.response?.data || '保存用户权限失败'
+  } finally {
+    permissionSaving.value = false
   }
 }
 
@@ -1351,7 +1516,8 @@ function goSearchResult(type, item) {
 }
 
 .account-section-header button,
-.delete-account-btn {
+.delete-account-btn,
+.permission-account-btn {
   border: none;
   background: transparent;
   color: #38bdf8;
@@ -1402,9 +1568,46 @@ function goSearchResult(type, item) {
   color: #f87171;
 }
 
+.permission-account-btn {
+  flex: 0 0 auto;
+  color: #60a5fa;
+}
+
 .delete-account-btn:disabled {
   color: #64748b;
   cursor: not-allowed;
+}
+
+.permission-dialog {
+  width: min(860px, calc(100vw - 32px));
+}
+
+.permission-section {
+  padding: 18px;
+  display: grid;
+  gap: 14px;
+  max-height: 58vh;
+  overflow-y: auto;
+}
+
+.permission-group {
+  border: 1px solid #263244;
+  border-radius: 8px;
+  background: #020617;
+  padding: 12px;
+}
+
+.permission-group > strong {
+  display: block;
+  margin-bottom: 10px;
+  color: #f8fafc;
+  font-size: 13px;
+}
+
+.permission-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .account-empty {
