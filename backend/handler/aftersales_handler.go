@@ -121,7 +121,6 @@ func resolveAfterSalesProjectID(projectID int64, projectName string) (int64, err
 			WHERE id = ?
 			  AND IFNULL(is_deleted, 0) = 0
 			  AND IFNULL(audit_status, '未提交') = '已通过'
-			  AND status = '已关闭'
 		`, projectID).Scan(&exists)
 		if err != nil {
 			return 0, err
@@ -144,7 +143,6 @@ func resolveAfterSalesProjectID(projectID int64, projectName string) (int64, err
 		WHERE project_name = ?
 		  AND IFNULL(is_deleted, 0) = 0
 		  AND IFNULL(audit_status, '未提交') = '已通过'
-		  AND status = '已关闭'
 		LIMIT 1
 	`, projectName).Scan(&id)
 	if err != nil {
@@ -317,7 +315,6 @@ func GetRepairRecordsHandler(w http.ResponseWriter, r *http.Request) {
 			ON rr.project_id = p.id
 			AND IFNULL(p.is_deleted, 0) = 0
 			AND IFNULL(p.audit_status, '未提交') = '已通过'
-			AND p.status = '已关闭'
 		WHERE IFNULL(rr.is_deleted, 0) = 0
 		ORDER BY rr.id DESC
 	`)
@@ -380,7 +377,7 @@ func CreateRepairRecordHandler(w http.ResponseWriter, r *http.Request) {
 
 	projectID, err := resolveAfterSalesProjectID(req.ProjectID, req.ProjectName)
 	if err != nil {
-		http.Error(w, "请选择项目立项中已关闭的项目", http.StatusBadRequest)
+		http.Error(w, "请选择项目立项中已通过的项目", http.StatusBadRequest)
 		return
 	}
 
@@ -507,7 +504,7 @@ func UpdateRepairRecordHandler(w http.ResponseWriter, r *http.Request, id int64)
 
 	projectID, err := resolveAfterSalesProjectID(req.ProjectID, req.ProjectName)
 	if err != nil {
-		http.Error(w, "请选择项目立项中已关闭的项目", http.StatusBadRequest)
+		http.Error(w, "请选择项目立项中已通过的项目", http.StatusBadRequest)
 		return
 	}
 
@@ -761,7 +758,6 @@ func GetFaultAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 			ON fa.project_id = p.id
 			AND IFNULL(p.is_deleted, 0) = 0
 			AND IFNULL(p.audit_status, '未提交') = '已通过'
-			AND p.status = '已关闭'
 		LEFT JOIN uploaded_files uf ON uf.id = fa.file_id
 		WHERE fa.is_deleted = 0 ` + visibilitySQL + `
 		ORDER BY fa.id DESC
@@ -858,7 +854,7 @@ func CreateFaultAnalysisHandler(w http.ResponseWriter, r *http.Request) {
 
 	projectID, err := resolveAfterSalesProjectID(item.ProjectID, "")
 	if err != nil {
-		http.Error(w, "请选择项目立项中已关闭的项目", http.StatusBadRequest)
+		http.Error(w, "请选择项目立项中已通过的项目", http.StatusBadRequest)
 		return
 	}
 

@@ -181,7 +181,7 @@
           <label>
             绑定项目
             <select v-model.number="analysisForm.projectId">
-              <option value="">请选择已关闭项目</option>
+              <option value="">请选择已立项通过项目</option>
               <option
                 v-for="project in projectOptions"
                 :key="project.id"
@@ -569,9 +569,9 @@ async function loadProjects() {
     const res = await getProjects()
     const result = getResponseData(res)
     if (result.code !== 200) return
-    projectOptions.value = (result.data || []).filter(project => project.status === '已关闭')
+    projectOptions.value = result.data || []
   } catch (err) {
-    console.error('加载已关闭项目失败：', err)
+    console.error('加载已立项通过项目失败：', err)
   }
 }
 
@@ -613,7 +613,7 @@ async function loadFaultAnalysis() {
 
 async function createAnalysis() {
   if (!analysisForm.projectId) {
-    alert('请选择已关闭项目')
+    alert('请选择已立项通过项目')
     return
   }
 

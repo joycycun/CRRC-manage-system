@@ -158,7 +158,7 @@
           <label>
             绑定项目
             <select v-model.number="repairForm.projectId">
-              <option value="">请选择已关闭项目</option>
+              <option value="">请选择已立项通过项目</option>
               <option
                 v-for="project in projectOptions"
                 :key="project.id"
@@ -451,9 +451,7 @@ async function loadProjects() {
       alert(result.msg || '加载项目失败')
       return
     }
-    projectOptions.value = (result.data || [])
-      .map(normalizeProject)
-      .filter(project => project.status === '已关闭')
+    projectOptions.value = (result.data || []).map(normalizeProject)
   } catch (err) {
     console.error('加载项目失败：', err)
     alert(err.response?.data || '加载项目失败，请检查 /api/projects 接口')
