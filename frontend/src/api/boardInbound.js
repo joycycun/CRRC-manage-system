@@ -15,3 +15,11 @@ export function importBoardInboundRecords(data) {
     data
   })
 }
+
+export function deleteBoardInboundRecord(id) {
+  return request({
+    url: '/board-inbound',
+    method: 'delete',
+    params: { id }
+  })
+}

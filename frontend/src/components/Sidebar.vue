@@ -71,7 +71,7 @@
       </div>
 
       <!-- 硬件管理 -->
-      <div v-if="canAccessGroup(['/hardware/version', '/hardware/dev-docs', '/hardware/test'])" class="menu-group">
+      <div v-if="canAccessGroup(['/hardware/version', '/hardware/dev-docs', '/hardware/board-composition', '/hardware/test'])" class="menu-group">
         <button class="menu-item menu-button" @click="toggleMenu('hardware')">
           <span class="menu-left">
             <span class="menu-icon">⚙</span>
@@ -97,6 +97,15 @@
             :class="{ active: isActive('/hardware/dev-docs') }"
           >
             开发文档
+          </router-link>
+
+          <router-link
+            v-if="canAccess('/hardware/board-composition')"
+            to="/hardware/board-composition"
+            class="submenu-item"
+            :class="{ active: isActive('/hardware/board-composition') }"
+          >
+            板卡组成
           </router-link>
 
           <router-link

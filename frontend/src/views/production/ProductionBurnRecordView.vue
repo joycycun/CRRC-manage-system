@@ -315,6 +315,57 @@
           </label>
         </div>
 
+        <div class="manual-card">
+          <div class="manual-card-title">
+            <strong>手动填写烧录记录</strong>
+            <span>可不上传 Excel，直接填写后加入下方预览列表</span>
+          </div>
+
+          <div class="manual-grid">
+            <label>
+              产品名称
+              <input v-model="manualForm.productName" placeholder="产品名称" />
+            </label>
+            <label>
+              产品型号
+              <input v-model="manualForm.productModel" placeholder="产品型号" />
+            </label>
+            <label>
+              产品编码
+              <input v-model="manualForm.productCode" placeholder="产品编码" />
+            </label>
+            <label>
+              序列号
+              <input v-model="manualForm.serialNumber" placeholder="SN 序列号" />
+            </label>
+            <label>
+              MAC地址
+              <input v-model="manualForm.macAddress" placeholder="MAC地址" />
+            </label>
+            <label>
+              硬件版本
+              <input v-model="manualForm.hardwareVersion" placeholder="硬件版本" />
+            </label>
+            <label>
+              软件版本
+              <input v-model="manualForm.softwareVersion" placeholder="软件版本" />
+            </label>
+            <label>
+              PCB二维码
+              <input v-model="manualForm.pcbQrCode" placeholder="PCB二维码" />
+            </label>
+            <label class="manual-full">
+              备注
+              <input v-model="manualForm.note" placeholder="备注" />
+            </label>
+          </div>
+
+          <div class="manual-actions">
+            <button class="reset-btn" type="button" @click="resetManualForm">清空手动填写</button>
+            <button class="query-btn" type="button" @click="addManualBurnRecord">加入列表</button>
+          </div>
+        </div>
+
         <div v-if="excelPreviewList.length > 0" class="preview-card">
           <div class="preview-title">
             已识别 {{ previewRecordCount }} 条产品记录
@@ -518,6 +569,18 @@ const uploadForm = reactive({
   fileContentType: '',
   fileData: '',
   remark: ''
+})
+
+const manualForm = reactive({
+  productName: '',
+  productModel: '',
+  productCode: '',
+  serialNumber: '',
+  macAddress: '',
+  hardwareVersion: '',
+  softwareVersion: '',
+  pcbQrCode: '',
+  note: ''
 })
 
 // 这里不再放假数据，改成后端加载
@@ -765,6 +828,7 @@ function openUploadDialog() {
   uploadForm.fileContentType = ''
   uploadForm.fileData = ''
   uploadForm.remark = ''
+  resetManualForm()
   excelPreviewList.value = []
   showUploadDialog.value = true
 }
@@ -814,6 +878,61 @@ function formatDuplicateMessages(duplicates) {
     .map(item => `${item.type}【${item.value}】：第 ${item.rowNumber} 行重复第 ${item.firstRowNumber} 行`)
   const more = duplicates.length > 20 ? `\n还有 ${duplicates.length - 20} 条重复未显示` : ''
   return lines.join('\n') + more
+}
+
+function resetManualForm() {
+  Object.assign(manualForm, {
+    productName: '',
+    productModel: '',
+    productCode: '',
+    serialNumber: '',
+    macAddress: '',
+    hardwareVersion: '',
+    softwareVersion: '',
+    pcbQrCode: '',
+    note: ''
+  })
+}
+
+function addManualBurnRecord() {
+  const serialNumber = manualForm.serialNumber.trim()
+  if (!serialNumber) {
+    alert('请填写序列号')
+    return
+  }
+
+  const normalizedSN = serialNumber.toUpperCase()
+  const normalizedMac = manualForm.macAddress.trim().toUpperCase()
+  const duplicate = excelPreviewList.value.some(item => {
+    const hasSN = item.serialNumbers.some(sn => String(sn || '').trim().toUpperCase() === normalizedSN)
+    const hasMac = normalizedMac && String(item.macAddress || '').trim().toUpperCase() === normalizedMac
+    return hasSN || hasMac
+  })
+
+  if (duplicate) {
+    alert('手动填写的序列号或 MAC 已在预览列表中存在')
+    return
+  }
+
+  excelPreviewList.value.push({
+    batchNo: uploadForm.batchNo,
+    productName: manualForm.productName.trim(),
+    productModel: manualForm.productModel.trim(),
+    productCode: manualForm.productCode.trim(),
+    serialNumberText: serialNumber,
+    serialNumbers: [serialNumber],
+    macAddress: manualForm.macAddress.trim(),
+    hardwareVersion: manualForm.hardwareVersion.trim(),
+    softwareVersion: manualForm.softwareVersion.trim(),
+    pcbQrCode: manualForm.pcbQrCode.trim(),
+    note: manualForm.note.trim(),
+    rowNumber: `手动-${excelPreviewList.value.length + 1}`
+  })
+
+  if (!uploadForm.fileName) {
+    uploadForm.fileName = '手动录入烧录记录'
+  }
+  resetManualForm()
 }
 
 function normalizeExcelRow(row, rowNumber) {
@@ -1030,14 +1149,13 @@ async function handleExcelFileChange(event) {
 }
 
 async function saveExcelBurnRecords() {
-  if (!uploadForm.file) {
-    alert('请先上传 Excel 烧录记录文件')
+  if (excelPreviewList.value.length === 0) {
+    alert('当前没有可导入的数据，请上传 Excel 或手动加入记录')
     return
   }
 
-  if (excelPreviewList.value.length === 0) {
-    alert('当前 Excel 没有可导入的数据')
-    return
+  if (!uploadForm.fileName) {
+    uploadForm.fileName = '手动录入烧录记录'
   }
 
   const uploader = currentUserName.value
@@ -1778,6 +1896,67 @@ async function deleteBatch(batch) {
   gap: 8px;
   color: #cbd5e1;
   font-size: 13px;
+}
+
+.manual-card {
+  margin: 0 20px 20px;
+  padding: 16px;
+  border: 1px solid #1e293b;
+  border-radius: 10px;
+  background: #020617;
+}
+
+.manual-card-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.manual-card-title strong {
+  color: #f8fafc;
+  font-size: 14px;
+}
+
+.manual-card-title span {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.manual-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.manual-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: #cbd5e1;
+  font-size: 13px;
+}
+
+.manual-grid input {
+  height: 36px;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  background: #020617;
+  color: #e2e8f0;
+  padding: 0 12px;
+  outline: none;
+}
+
+.manual-full {
+  grid-column: 1 / -1;
+}
+
+.manual-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 14px;
 }
 
 .full-row {

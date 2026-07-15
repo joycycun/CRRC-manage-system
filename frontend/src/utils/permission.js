@@ -27,6 +27,7 @@ const PAGE_ACCESS = {
     '/requirement/customer-supplied',
     '/hardware/version',
     '/hardware/dev-docs',
+    '/hardware/board-composition',
     '/hardware/test',
     '/production/test-outline',
     '/test/case',
@@ -45,6 +46,7 @@ const PAGE_ACCESS = {
     '/requirement/customer-supplied',
     '/hardware/version',
     '/hardware/dev-docs',
+    '/hardware/board-composition',
     '/hardware/test',
     '/software/version',
     '/software/branch',
@@ -127,6 +129,7 @@ const PAGE_ACCESS = {
     '/dashboard',
     '/project/manage',
     '/hardware/test',
+    '/hardware/board-composition',
     '/production/test-outline',
     '/production/factory-test',
     '/report/project-progress',
@@ -173,6 +176,7 @@ const ACTION_ACCESS = {
     'customer:download',
     'hardware:*',
     'hardware-dev-doc:*',
+    'board-composition:*',
     'production:outline:view',
     'production:outline:upload',
     'testcase:view',
@@ -190,6 +194,7 @@ const ACTION_ACCESS = {
     'hardware:download',
     'hardware-dev-doc:view',
     'hardware-dev-doc:download',
+    'board-composition:view',
     'software:view',
     'software:download',
     'branch:view',
@@ -306,6 +311,7 @@ function shouldRestrictCurrentUser() {
 export function canAccessPage(path) {
   const pagePermissionMap = {
     '/hardware/dev-docs': 'hardware-dev-doc:view',
+    '/hardware/board-composition': 'board-composition:view',
     '/hardware/test': 'hardware:view',
     '/aftersales/repair': 'aftersales:view',
     '/aftersales/fault-analysis': 'aftersales:view'
@@ -361,8 +367,19 @@ export function canUseAction(action) {
     return hasRole('hardware_owner') || hasRole('software_owner') || hasRole('project_assistant') || hasRole('shipping_staff') || hasRole('aftersales_staff') || hasRole('leader') || hasRole('system_admin') || getStoredPermissions().includes(action)
   }
 
+  if (action.startsWith('board-composition:')) {
+    if (action === 'board-composition:view') {
+      return hasRole('hardware_owner') || hasRole('project_assistant') || hasRole('quality_staff') || hasRole('leader') || hasRole('system_admin') || getStoredPermissions().includes(action)
+    }
+    return hasRole('hardware_owner') || hasRole('system_admin') || getStoredPermissions().includes(action)
+  }
+
   if (action === 'board-inbound:import') {
     return hasRole('production_staff') || hasRole('system_admin')
+  }
+
+  if (action === 'board-inbound:delete') {
+    return hasRole('production_staff') || hasRole('system_admin') || getStoredPermissions().includes(action)
   }
 
   if (action === 'production:outline:view') {

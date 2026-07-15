@@ -2,6 +2,7 @@ package main
 
 import (
 	"crrc_pm_backend/config"
+	"crrc_pm_backend/handler"
 	"crrc_pm_backend/router"
 	"log"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 
 func main() {
 	config.InitDB()
+	handler.BackfillBoardCompositionDeductionsForFactoryInventory()
 
 	r := router.InitRouter()
 

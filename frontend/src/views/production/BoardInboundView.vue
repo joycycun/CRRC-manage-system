@@ -27,7 +27,7 @@
     <div class="filter-card">
       <input
         v-model="filters.keyword"
-        placeholder="搜索产品名称 / 产品型号 / 产品编码 / 序列号 / MAC地址 / PCB二维码 / 备注"
+        placeholder="搜索产品名称 / 产品型号 / 生产编码"
       />
 
       <select v-model="filters.productModel">
@@ -92,13 +92,12 @@
             <tr>
               <th>产品名称</th>
               <th>产品型号</th>
-              <th>产品编码</th>
-              <th>序列号</th>
-              <th>MAC地址</th>
-              <th>PCB二维码</th>
+              <th>生产编码</th>
+              <th>数量</th>
+              <th>状态</th>
               <th>入库时间</th>
               <th>来源文件</th>
-              <th>备注</th>
+              <th v-if="canDelete" class="operation-col">操作</th>
             </tr>
           </thead>
 
@@ -107,9 +106,12 @@
               <td><span class="product-tag" :title="item.productName">{{ item.productName }}</span></td>
               <td><span class="model-text" :title="item.productModel">{{ item.productModel }}</span></td>
               <td><span class="code-text" :title="item.productCode">{{ item.productCode }}</span></td>
-              <td><span class="sn-tag" :title="item.sn">{{ item.sn }}</span></td>
-              <td><span class="mac-text" :title="item.macAddress">{{ item.macAddress }}</span></td>
-              <td><span class="pcb-text" :title="item.pcbQrCode">{{ item.pcbQrCode }}</span></td>
+              <td><strong>{{ item.quantity }}</strong></td>
+              <td>
+                <span class="status-tag" :class="{ deducted: item.isDeducted }">
+                  {{ item.isDeducted ? '已扣除' : '可用' }}
+                </span>
+              </td>
               <td class="muted nowrap">{{ item.inTime || '-' }}</td>
               <td>
                 <button
@@ -121,11 +123,20 @@
                 </button>
                 <span v-else>-</span>
               </td>
-              <td><span class="remark-text" :title="item.remark">{{ item.remark || '-' }}</span></td>
+              <td v-if="canDelete" class="operation-col">
+                <button
+                  v-if="!item.isDeducted"
+                  class="text-btn red"
+                  @click="deleteRecord(item)"
+                >
+                  删除
+                </button>
+                <span v-else class="muted">-</span>
+              </td>
             </tr>
 
             <tr v-if="paginatedList.length === 0">
-              <td colspan="9" class="empty-table">暂无板卡入库记录</td>
+              <td :colspan="canDelete ? 8 : 7" class="empty-table">暂无板卡入库记录</td>
             </tr>
           </tbody>
         </table>
@@ -156,7 +167,7 @@
           <strong>Excel 读取规则：</strong>
           <p>
             系统会从 Excel 第 3 行开始读取表头。请保证第 3 行包含：
-            产品名称、产品型号、产品编码、序列号、MAC地址、PCB二维码、备注。
+            产品名称、产品型号、生产编码、数量。
           </p>
         </div>
 
@@ -183,6 +194,37 @@
           </label>
         </div>
 
+        <div class="manual-card">
+          <div class="manual-card-title">
+            <strong>手动填写板卡入库记录</strong>
+            <span>可不上传 Excel，直接填写后加入下方预览列表</span>
+          </div>
+
+          <div class="manual-grid">
+            <label>
+              产品名称
+              <input v-model="manualForm.productName" placeholder="产品名称" />
+            </label>
+            <label>
+              产品型号
+              <input v-model="manualForm.productModel" placeholder="产品型号" />
+            </label>
+            <label>
+              生产编码
+              <input v-model="manualForm.productCode" placeholder="生产编码" />
+            </label>
+            <label>
+              数量
+              <input v-model.number="manualForm.quantity" type="number" min="1" placeholder="数量" />
+            </label>
+          </div>
+
+          <div class="manual-actions">
+            <button class="reset-btn" type="button" @click="resetManualForm">清空手动填写</button>
+            <button class="query-btn" type="button" @click="addManualBoardInboundRecord">加入列表</button>
+          </div>
+        </div>
+
         <div v-if="excelPreviewList.length > 0" class="preview-card">
           <div class="preview-title">
             已识别 {{ excelPreviewList.length }} 条板卡入库记录
@@ -194,11 +236,8 @@
                 <tr>
                   <th>产品名称</th>
                   <th>产品型号</th>
-                  <th>产品编码</th>
-                  <th>序列号</th>
-                  <th>MAC地址</th>
-                  <th>PCB二维码</th>
-                  <th>备注</th>
+                  <th>生产编码</th>
+                  <th>数量</th>
                 </tr>
               </thead>
               <tbody>
@@ -206,10 +245,7 @@
                   <td>{{ item.productName }}</td>
                   <td>{{ item.productModel }}</td>
                   <td>{{ item.productCode }}</td>
-                  <td>{{ item.sn }}</td>
-                  <td>{{ item.macAddress }}</td>
-                  <td>{{ item.pcbQrCode }}</td>
-                  <td>{{ item.remark }}</td>
+                  <td>{{ item.quantity }}</td>
                 </tr>
               </tbody>
             </table>
@@ -233,7 +269,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import * as XLSX from 'xlsx'
 import { buildUploadFilePayload, downloadLocalFile, getFileDownloadUrl } from '@/utils/filePreview'
-import { getBoardInboundRecords, importBoardInboundRecords } from '@/api/boardInbound'
+import { deleteBoardInboundRecord, getBoardInboundRecords, importBoardInboundRecords } from '@/api/boardInbound'
 import { canUseAction } from '@/utils/permission'
 
 const filters = reactive({
@@ -248,6 +284,7 @@ const currentPage = ref(1)
 const pageSize = ref(10)
 const pageSizeOptions = [10, 20, 50, 100]
 const canImport = computed(() => canUseAction('board-inbound:import'))
+const canDelete = computed(() => canUseAction('board-inbound:delete'))
 
 const uploadForm = reactive({
   file: null,
@@ -255,6 +292,13 @@ const uploadForm = reactive({
   fileName: '',
   fileContentType: '',
   fileData: ''
+})
+
+const manualForm = reactive({
+  productName: '',
+  productModel: '',
+  productCode: '',
+  quantity: 1
 })
 
 onMounted(async () => {
@@ -287,17 +331,14 @@ function normalizeExcelRow(row) {
   return {
     productName: getCellValue(normalizedRow, ['产品名称']),
     productModel: getCellValue(normalizedRow, ['产品型号']),
-    productCode: getCellValue(normalizedRow, ['产品编码']),
-    sn: getCellValue(normalizedRow, ['序列号', 'SN', 'SN序列号']),
-    macAddress: getCellValue(normalizedRow, ['MAC地址', 'MAC']),
-    pcbQrCode: getCellValue(normalizedRow, ['PCB二维码', 'PCB码', 'PCBQRCode']),
-    remark: getCellValue(normalizedRow, ['备注', '说明'])
+    productCode: getCellValue(normalizedRow, ['生产编码', '产品编码']),
+    quantity: Number(getCellValue(normalizedRow, ['数量']) || 0)
   }
 }
 
 function validateRequiredHeaders(row) {
   const headers = Object.keys(row || {}).map(key => normalizeHeader(key))
-  const required = ['产品名称', '产品型号', '产品编码', '序列号', 'MAC地址', 'PCB二维码', '备注']
+  const required = ['产品名称', '产品型号', '生产编码', '数量']
   return required.filter(header => !headers.includes(header))
 }
 
@@ -323,12 +364,11 @@ async function loadBoardInboundRecords() {
       productName: item.productName || item.product_name || '-',
       productModel: item.productModel || item.product_model || '-',
       productCode: item.productCode || item.product_code || '-',
-      sn: item.sn || '-',
-      macAddress: item.macAddress || item.mac_address || '-',
-      pcbQrCode: item.pcbQrCode || item.pcb_qr_code || '-',
-      remark: item.remark || '',
+      quantity: Number(item.quantity || 0),
       sourceFileId: item.sourceFileId || item.source_file_id || 0,
       sourceFileName: item.sourceFileName || item.source_file_name || '',
+      inventoryStatus: item.inventoryStatus || item.inventory_status || '',
+      isDeducted: (item.inventoryStatus || item.inventory_status || '') === '已烧录',
       inTime: formatDateTime(item.inTime || item.in_time),
       updateTime: formatDateTime(item.updateTime || item.update_time)
     }))
@@ -351,11 +391,46 @@ function openUploadDialog() {
   uploadForm.fileName = ''
   uploadForm.fileContentType = ''
   uploadForm.fileData = ''
+  resetManualForm()
   excelPreviewList.value = []
   if (excelFileInput.value) {
     excelFileInput.value.value = ''
   }
   showUploadDialog.value = true
+}
+
+function resetManualForm() {
+  Object.assign(manualForm, {
+    productName: '',
+    productModel: '',
+    productCode: '',
+    quantity: 1
+  })
+}
+
+function addManualBoardInboundRecord() {
+  const productName = manualForm.productName.trim()
+  const productModel = manualForm.productModel.trim()
+  const productCode = manualForm.productCode.trim()
+  const quantity = Number(manualForm.quantity || 0)
+
+  if (!productName || !productModel || !productCode || quantity <= 0) {
+    alert('请填写产品名称、产品型号、生产编码，并保证数量大于 0')
+    return
+  }
+
+  excelPreviewList.value.push({
+    productName,
+    productModel,
+    productCode,
+    quantity,
+    rowNumber: excelPreviewList.value.length + 1
+  })
+
+  if (!uploadForm.fileName) {
+    uploadForm.fileName = '手动录入板卡入库记录'
+  }
+  resetManualForm()
 }
 
 async function handleExcelFileChange(event) {
@@ -403,44 +478,12 @@ async function handleExcelFileChange(event) {
         return
       }
 
-      const seenSN = new Map()
-      const seenMac = new Map()
-      const duplicateMessages = []
       const parsedRows = rows
         .map((row, index) => ({
           ...normalizeExcelRow(row),
           rowNumber: index + 4
         }))
-        .filter(row => row.productName || row.productModel || row.productCode || row.sn || row.macAddress || row.pcbQrCode || row.remark)
-        .filter(row => {
-          const sn = row.sn.toUpperCase()
-          const mac = row.macAddress.toUpperCase()
-          let isDuplicate = false
-          if (sn && seenSN.has(sn)) {
-            duplicateMessages.push({
-              type: '序列号',
-              value: row.sn,
-              rowNumber: row.rowNumber,
-              firstRowNumber: seenSN.get(sn)
-            })
-            isDuplicate = true
-          }
-          if (mac && seenMac.has(mac)) {
-            duplicateMessages.push({
-              type: 'MAC地址',
-              value: row.macAddress,
-              rowNumber: row.rowNumber,
-              firstRowNumber: seenMac.get(mac)
-            })
-            isDuplicate = true
-          }
-          if (isDuplicate) {
-            return false
-          }
-          if (sn) seenSN.set(sn, row.rowNumber)
-          if (mac) seenMac.set(mac, row.rowNumber)
-          return true
-        })
+        .filter(row => row.productName || row.productModel || row.productCode || row.quantity)
 
       if (parsedRows.length === 0) {
         alert('Excel 中未识别到有效数据，请确认第 3 行表头和下面的数据是否正确')
@@ -449,9 +492,6 @@ async function handleExcelFileChange(event) {
       }
 
       excelPreviewList.value = parsedRows
-      if (duplicateMessages.length > 0) {
-        alert(`已自动忽略 Excel 内重复的序列号或 MAC：${duplicateMessages.length} 处\n${formatDuplicateMessages(duplicateMessages)}`)
-      }
     } catch (error) {
       console.error(error)
       alert('Excel 解析失败，请检查文件格式或第 3 行表头是否正确')
@@ -462,18 +502,21 @@ async function handleExcelFileChange(event) {
 }
 
 async function saveBoardInboundRecords() {
-  if (!uploadForm.file) {
-    alert('请先上传板卡入库 Excel 文件')
-    return
-  }
   if (excelPreviewList.value.length === 0) {
-    alert('当前 Excel 没有可导入的数据')
+    alert('当前没有可导入的数据，请上传 Excel 或手动加入记录')
     return
   }
 
-  const invalid = excelPreviewList.value.find(item => !item.sn || !item.macAddress)
+  if (!uploadForm.fileName) {
+    uploadForm.fileName = '手动录入板卡入库记录'
+  }
+  if (!uploadForm.fileId) {
+    uploadForm.fileId = Date.now()
+  }
+
+  const invalid = excelPreviewList.value.find(item => !item.productName || !item.productModel || !item.productCode || Number(item.quantity) <= 0)
   if (invalid) {
-    alert('导入失败：序列号和 MAC地址不能为空')
+    alert(`导入失败：第 ${invalid.rowNumber || '-'} 行产品名称、产品型号、生产编码、数量不能为空，且数量必须大于 0`)
     return
   }
 
@@ -499,6 +542,22 @@ async function saveBoardInboundRecords() {
   }
 }
 
+async function deleteRecord(item) {
+  if (!confirm(`确认删除板卡入库记录【${item.productName} / ${item.productModel}】吗？`)) return
+  try {
+    const res = await deleteBoardInboundRecord(item.id)
+    const result = getResponseData(res)
+    if (result.code === 200) {
+      await loadBoardInboundRecords()
+      return
+    }
+    alert(result.msg || '删除板卡入库记录失败')
+  } catch (err) {
+    console.error('删除板卡入库记录失败：', err)
+    alert(err.response?.data || '删除板卡入库记录失败')
+  }
+}
+
 const filteredList = computed(() => {
   const keyword = filters.keyword.trim().toLowerCase()
   return boardInboundList.value.filter(item => {
@@ -507,11 +566,7 @@ const filteredList = computed(() => {
       [
         item.productName,
         item.productModel,
-        item.productCode,
-        item.sn,
-        item.macAddress,
-        item.pcbQrCode,
-        item.remark
+        item.productCode
       ].some(value => String(value || '').toLowerCase().includes(keyword))
 
     const productModelMatch =
@@ -521,11 +576,13 @@ const filteredList = computed(() => {
   })
 })
 
-const totalCount = computed(() => boardInboundList.value.length)
+const totalCount = computed(() => boardInboundList.value.reduce((sum, item) => sum + Number(item.quantity || 0), 0))
 
 const currentMonthInboundCount = computed(() => {
   const currentMonth = new Date().toISOString().slice(0, 7)
-  return boardInboundList.value.filter(item => item.inTime && item.inTime.startsWith(currentMonth)).length
+  return boardInboundList.value
+    .filter(item => item.inTime && item.inTime.startsWith(currentMonth))
+    .reduce((sum, item) => sum + Number(item.quantity || 0), 0)
 })
 
 const productModelOptions = computed(() => {
@@ -539,7 +596,9 @@ const productModelOptions = computed(() => {
 const productModelSummary = computed(() => {
   return productModelOptions.value.map(model => ({
     productModel: model,
-    count: boardInboundList.value.filter(item => item.productModel === model).length
+    count: boardInboundList.value
+      .filter(item => item.productModel === model)
+      .reduce((sum, item) => sum + Number(item.quantity || 0), 0)
   }))
 })
 
@@ -746,6 +805,26 @@ td {
   color: #94a3b8;
 }
 
+.status-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 56px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(34, 197, 94, 0.14);
+  color: #86efac;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.status-tag.deducted {
+  background: rgba(245, 158, 11, 0.16);
+  color: #fcd34d;
+}
+
 .nowrap {
   white-space: nowrap;
 }
@@ -760,6 +839,26 @@ td {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.operation-col {
+  width: 96px;
+}
+
+.text-btn {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+  font-weight: 700;
+}
+
+.text-btn.red {
+  color: #f87171;
+}
+
+.text-btn.red:hover {
+  color: #fecaca;
 }
 
 .empty-table {
@@ -837,6 +936,63 @@ td {
   gap: 8px;
   color: #cbd5e1;
   font-size: 13px;
+}
+
+.manual-card {
+  margin: 0 16px 16px;
+  padding: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.72);
+}
+
+.manual-card-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.manual-card-title strong {
+  color: #f8fafc;
+  font-size: 14px;
+}
+
+.manual-card-title span {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.manual-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.manual-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: #cbd5e1;
+  font-size: 13px;
+}
+
+.manual-grid input {
+  height: 38px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.92);
+  color: #f8fafc;
+  padding: 0 12px;
+  outline: none;
+}
+
+.manual-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 14px;
 }
 
 .form-grid input[type='file'] {

@@ -48,6 +48,41 @@ CREATE TABLE `burn_records` (
   UNIQUE KEY `uk_burn_mac` (`mac_address`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='烧录记录表';
 /*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `board_composition_deductions`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `board_composition_deductions` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `burn_record_id` bigint NOT NULL DEFAULT '0',
+  `composition_id` bigint NOT NULL DEFAULT '0',
+  `inventory_device_id` bigint NOT NULL DEFAULT '0',
+  `quantity` int NOT NULL DEFAULT '0',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_bcd_burn_record` (`burn_record_id`),
+  KEY `idx_bcd_inventory` (`inventory_device_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='板卡组成烧录扣减明细表';
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `board_compositions`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `board_compositions` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `project_id` bigint NOT NULL DEFAULT '0',
+  `project_name` varchar(128) COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `product_name` varchar(128) COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `inbound_model` varchar(128) COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `outbound_model` varchar(128) COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `created_by` varchar(64) COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `is_deleted` tinyint NOT NULL DEFAULT '0',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_bc_project` (`project_id`,`project_name`),
+  KEY `idx_bc_outbound` (`outbound_model`),
+  KEY `idx_bc_inbound` (`product_name`,`inbound_model`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='板卡组成表';
+/*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `customer_supplied_files`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
@@ -196,6 +231,7 @@ CREATE TABLE `inventory_devices` (
   `product_name` varchar(128) COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT '产品名称',
   `product_model` varchar(128) COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT '产品型号',
   `product_code` varchar(128) COLLATE utf8mb4_general_ci DEFAULT '' COMMENT '产品编码',
+  `quantity` int NOT NULL DEFAULT '1' COMMENT '数量',
   `sn` varchar(128) COLLATE utf8mb4_general_ci NOT NULL COMMENT 'SN',
   `mac_address` varchar(64) COLLATE utf8mb4_general_ci NOT NULL COMMENT 'MAC',
   `pcb_qr_code` varchar(255) COLLATE utf8mb4_general_ci DEFAULT '' COMMENT 'PCB二维码',
@@ -380,6 +416,7 @@ DROP TABLE IF EXISTS `production_test_outlines`;
 /*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `production_test_outlines` (
   `id` bigint NOT NULL AUTO_INCREMENT,
+  `project_id` bigint NOT NULL DEFAULT '0',
   `hardware_id` bigint NOT NULL DEFAULT '0',
   `hardware_version` varchar(128) COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
   `board_models` varchar(512) COLLATE utf8mb4_general_ci NOT NULL DEFAULT '' COMMENT '板卡型号，多个用逗号分隔',
@@ -394,6 +431,7 @@ CREATE TABLE `production_test_outlines` (
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
+  KEY `idx_pto_project_id` (`project_id`),
   KEY `idx_pto_hardware_id` (`hardware_id`),
   KEY `idx_pto_upload_time` (`upload_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='生产测试大纲表';

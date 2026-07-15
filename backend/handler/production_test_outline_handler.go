@@ -12,6 +12,8 @@ import (
 
 type ProductionTestOutlineVO struct {
 	ID              int64  `json:"id"`
+	ProjectID       int64  `json:"projectId"`
+	ProjectName     string `json:"projectName"`
 	HardwareID      int64  `json:"hardwareId"`
 	HardwareVersion string `json:"hardwareVersion"`
 	BoardModels     string `json:"boardModels"`
@@ -76,6 +78,7 @@ func ensureProductionTestOutlinesTable() {
 	_, _ = config.DB.Exec(`
 		CREATE TABLE IF NOT EXISTS production_test_outlines (
 			id BIGINT PRIMARY KEY AUTO_INCREMENT,
+			project_id BIGINT NOT NULL DEFAULT 0,
 			hardware_id BIGINT NOT NULL DEFAULT 0,
 			hardware_version VARCHAR(128) NOT NULL DEFAULT '',
 			board_models VARCHAR(512) NOT NULL DEFAULT '',
@@ -89,14 +92,20 @@ func ensureProductionTestOutlinesTable() {
 			is_deleted TINYINT NOT NULL DEFAULT 0,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+			KEY idx_pto_project_id (project_id),
 			KEY idx_pto_hardware_id (hardware_id),
 			KEY idx_pto_upload_time (upload_time)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 	`)
 	_, _ = config.DB.Exec(`
 		ALTER TABLE production_test_outlines
+		ADD COLUMN project_id BIGINT NOT NULL DEFAULT 0 AFTER id
+	`)
+	_, _ = config.DB.Exec(`
+		ALTER TABLE production_test_outlines
 		ADD COLUMN board_models VARCHAR(512) NOT NULL DEFAULT '' AFTER hardware_version
 	`)
+	_, _ = config.DB.Exec(`ALTER TABLE production_test_outlines ADD KEY idx_pto_project_id (project_id)`)
 }
 
 func splitBoardModels(value string) []string {
@@ -136,6 +145,8 @@ func GetProductionTestOutlinesHandler(w http.ResponseWriter, r *http.Request) {
 	query := `
 		SELECT
 			pto.id,
+			IFNULL(pto.project_id, 0),
+			IFNULL(p.project_name, '未绑定项目'),
 			pto.hardware_id,
 			pto.hardware_version,
 			IFNULL(pto.board_models, ''),
@@ -149,15 +160,18 @@ func GetProductionTestOutlinesHandler(w http.ResponseWriter, r *http.Request) {
 			pto.created_at,
 			pto.updated_at
 		FROM production_test_outlines pto
+		LEFT JOIN projects p ON p.id = pto.project_id
 		LEFT JOIN uploaded_files uf ON uf.id = pto.file_id
 		WHERE pto.is_deleted = 0
-		ORDER BY pto.board_models ASC, pto.id DESC
+		ORDER BY IFNULL(p.project_name, '未绑定项目') ASC, pto.board_models ASC, pto.id DESC
 	`
 
 	if hasRequestRole(r, "production_staff") && !hasRequestRole(r, "hardware_owner") && !hasRequestRole(r, "system_admin") && !hasRequestRole(r, "leader") {
 		query = `
 			SELECT
 				pto.id,
+				IFNULL(pto.project_id, 0),
+				IFNULL(p.project_name, '未绑定项目'),
 				pto.hardware_id,
 				pto.hardware_version,
 				IFNULL(pto.board_models, ''),
@@ -172,14 +186,15 @@ func GetProductionTestOutlinesHandler(w http.ResponseWriter, r *http.Request) {
 				pto.updated_at
 			FROM production_test_outlines pto
 			INNER JOIN (
-				SELECT IFNULL(board_models, '') AS board_models, MAX(id) AS latest_id
+				SELECT IFNULL(project_id, 0) AS project_id, IFNULL(board_models, '') AS board_models, MAX(id) AS latest_id
 				FROM production_test_outlines
 				WHERE is_deleted = 0
-				GROUP BY IFNULL(board_models, '')
+				GROUP BY IFNULL(project_id, 0), IFNULL(board_models, '')
 			) latest ON latest.latest_id = pto.id
+			LEFT JOIN projects p ON p.id = pto.project_id
 			LEFT JOIN uploaded_files uf ON uf.id = pto.file_id
 			WHERE pto.is_deleted = 0
-			ORDER BY pto.board_models ASC, pto.id DESC
+			ORDER BY IFNULL(p.project_name, '未绑定项目') ASC, pto.board_models ASC, pto.id DESC
 		`
 	}
 
@@ -197,6 +212,8 @@ func GetProductionTestOutlinesHandler(w http.ResponseWriter, r *http.Request) {
 
 		if err := rows.Scan(
 			&item.ID,
+			&item.ProjectID,
+			&item.ProjectName,
 			&item.HardwareID,
 			&item.HardwareVersion,
 			&item.BoardModels,
@@ -242,6 +259,7 @@ func CreateProductionTestOutlineHandler(w http.ResponseWriter, r *http.Request) 
 	ensureProductionTestOutlinesTable()
 
 	var req struct {
+		ProjectID       int64  `json:"projectId"`
 		HardwareID      int64  `json:"hardwareId"`
 		BoardModels     string `json:"boardModels"`
 		FileID          int64  `json:"fileId"`
@@ -263,6 +281,24 @@ func CreateProductionTestOutlineHandler(w http.ResponseWriter, r *http.Request) 
 	req.BoardModels = strings.Join(splitBoardModels(req.BoardModels), ", ")
 	if req.BoardModels == "" {
 		http.Error(w, "请填写板卡型号", http.StatusBadRequest)
+		return
+	}
+	if req.ProjectID == 0 {
+		http.Error(w, "请选择绑定项目", http.StatusBadRequest)
+		return
+	}
+
+	var projectName string
+	err := config.DB.QueryRow(`
+		SELECT IFNULL(project_name, '')
+		FROM projects
+		WHERE id = ?
+		  AND IFNULL(is_deleted, 0) = 0
+		  AND IFNULL(audit_status, '') IN ('approved', '已通过', '通过')
+		LIMIT 1
+	`, req.ProjectID).Scan(&projectName)
+	if err != nil {
+		http.Error(w, "绑定项目不存在或未审核通过", http.StatusBadRequest)
 		return
 	}
 
@@ -293,6 +329,7 @@ func CreateProductionTestOutlineHandler(w http.ResponseWriter, r *http.Request) 
 	now := time.Now()
 	result, err := config.DB.Exec(`
 		INSERT INTO production_test_outlines (
+			project_id,
 			hardware_id,
 			hardware_version,
 			board_models,
@@ -306,8 +343,8 @@ func CreateProductionTestOutlineHandler(w http.ResponseWriter, r *http.Request) 
 			created_at,
 			updated_at,
 			is_deleted
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
-	`, req.HardwareID, hardwareVersion, req.BoardModels, deviceType, req.FileID, req.FileName, req.UploaderID, req.UploaderName, now, req.Remark, now, now)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+	`, req.ProjectID, req.HardwareID, hardwareVersion, req.BoardModels, deviceType, req.FileID, req.FileName, req.UploaderID, req.UploaderName, now, req.Remark, now, now)
 	if err != nil {
 		http.Error(w, "新增生产测试大纲失败: "+err.Error(), http.StatusInternalServerError)
 		return

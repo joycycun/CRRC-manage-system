@@ -17,95 +17,105 @@
     <div class="filter-card">
       <input
         v-model="filters.keyword"
-        placeholder="搜索板卡型号 / 文件名 / 上传人 / 备注"
+        placeholder="搜索项目 / 板卡型号 / 文件名 / 上传人 / 备注"
       />
 
       <button class="query-btn" @click="loadOutlines">查询</button>
       <button class="reset-btn" @click="resetFilters">重置</button>
     </div>
 
-    <div class="table-card">
-      <div class="table-card-header">
-        <div>
-          <h3>测试大纲列表</h3>
-          <span>共 {{ filteredOutlines.length }} 条记录</span>
+    <div class="project-outline-groups">
+      <div
+        v-for="group in groupedOutlines"
+        :key="group.projectName"
+        class="project-outline-group"
+      >
+        <button class="project-group-header" @click="toggleProjectGroup(group.projectName)">
+          <span class="fold-icon">{{ isProjectCollapsed(group.projectName) ? '›' : '⌄' }}</span>
+          <span class="project-group-title">{{ group.projectName }}</span>
+          <span class="project-group-count">{{ group.items.length }} 个测试大纲</span>
+        </button>
+
+        <div v-show="!isProjectCollapsed(group.projectName)" class="table-card">
+          <div class="table-wrapper">
+            <table class="batch-table">
+              <thead>
+                <tr>
+                  <th>板卡型号</th>
+                  <th>测试大纲文件</th>
+                  <th>上传人</th>
+                  <th>上传时间</th>
+                  <th>备注</th>
+                  <th class="operation-col">操作</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                <template v-for="item in group.items" :key="item.id">
+                  <tr>
+                    <td>
+                      <button
+                        class="board-models-btn"
+                        :class="{ active: expandedBoardRowId === item.id }"
+                        :title="item.boardModels"
+                        @click="toggleBoardModels(item)"
+                      >
+                        <span>{{ formatBoardModelsSummary(item.boardModels) }}</span>
+                        <span class="expand-icon">{{ expandedBoardRowId === item.id ? '收起' : '展开' }}</span>
+                      </button>
+                    </td>
+                    <td>
+                      <span class="file-name" :title="item.fileName">{{ item.fileName || '-' }}</span>
+                    </td>
+                    <td>{{ item.uploaderName || '-' }}</td>
+                    <td class="muted">{{ item.uploadTime || '-' }}</td>
+                    <td>
+                      <span class="remark-text" :title="item.remark">{{ item.remark || '-' }}</span>
+                    </td>
+                    <td class="operation-col">
+                      <div class="action-group">
+                        <button class="text-btn" @click="downloadFile(item)">下载</button>
+                        <button
+                          v-if="canUseAction('production:outline:delete')"
+                          class="text-btn red"
+                          @click="deleteOutline(item)"
+                        >
+                          删除
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+
+                  <tr v-if="expandedBoardRowId === item.id" class="board-detail-row">
+                    <td colspan="6">
+                      <div class="board-detail-panel">
+                        <span
+                          v-for="model in splitBoardModels(item.boardModels)"
+                          :key="model"
+                          class="board-chip"
+                        >
+                          {{ model }}
+                        </span>
+                        <span v-if="splitBoardModels(item.boardModels).length === 0" class="empty-board-model">
+                          暂无板卡型号
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
-      <div class="table-wrapper">
-        <table class="batch-table">
-          <thead>
-            <tr>
-              <th>板卡型号</th>
-              <th>测试大纲文件</th>
-              <th>上传人</th>
-              <th>上传时间</th>
-              <th>备注</th>
-              <th class="operation-col">操作</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            <template v-for="item in filteredOutlines" :key="item.id">
-              <tr>
-                <td>
-                  <button
-                    class="board-models-btn"
-                    :class="{ active: expandedBoardRowId === item.id }"
-                    :title="item.boardModels"
-                    @click="toggleBoardModels(item)"
-                  >
-                    <span>{{ formatBoardModelsSummary(item.boardModels) }}</span>
-                    <span class="expand-icon">{{ expandedBoardRowId === item.id ? '收起' : '展开' }}</span>
-                  </button>
-                </td>
-                <td>
-                  <span class="file-name" :title="item.fileName">{{ item.fileName || '-' }}</span>
-                </td>
-                <td>{{ item.uploaderName || '-' }}</td>
-                <td class="muted">{{ item.uploadTime || '-' }}</td>
-                <td>
-                  <span class="remark-text" :title="item.remark">{{ item.remark || '-' }}</span>
-                </td>
-                <td class="operation-col">
-                  <div class="action-group">
-                    <button class="text-btn" @click="downloadFile(item)">下载</button>
-                    <button
-                      v-if="canUseAction('production:outline:delete')"
-                      class="text-btn red"
-                      @click="deleteOutline(item)"
-                    >
-                      删除
-                    </button>
-                  </div>
-                </td>
-              </tr>
-
-              <tr v-if="expandedBoardRowId === item.id" class="board-detail-row">
-                <td colspan="6">
-                  <div class="board-detail-panel">
-                    <span
-                      v-for="model in splitBoardModels(item.boardModels)"
-                      :key="model"
-                      class="board-chip"
-                    >
-                      {{ model }}
-                    </span>
-                    <span v-if="splitBoardModels(item.boardModels).length === 0" class="empty-board-model">
-                      暂无板卡型号
-                    </span>
-                  </div>
-                </td>
-              </tr>
-            </template>
-
-            <tr v-if="filteredOutlines.length === 0">
-              <td colspan="6" class="empty-table">暂无生产测试大纲</td>
-            </tr>
-          </tbody>
-        </table>
+      <div v-if="groupedOutlines.length === 0" class="empty-card">
+        暂无生产测试大纲
       </div>
 
+      <div class="table-footer">
+        共 {{ filteredOutlines.length }} 条记录
+      </div>
     </div>
 
     <div v-if="showUploadDialog" class="dialog-mask">
@@ -123,6 +133,20 @@
         </div>
 
         <div class="form-grid">
+          <label class="full-row">
+            绑定项目
+            <select v-model.number="uploadForm.projectId">
+              <option :value="0">请选择项目</option>
+              <option
+                v-for="project in projectOptions"
+                :key="project.id"
+                :value="project.id"
+              >
+                {{ project.projectName }}
+              </option>
+            </select>
+          </label>
+
           <label class="full-row">
             板卡型号
             <input
@@ -172,18 +196,22 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { createProductionTestOutline, deleteProductionTestOutline, getProductionTestOutlines } from '@/api/productionTestOutline'
 import { buildUploadFilePayload, downloadLocalFile } from '@/utils/filePreview'
 import { canUseAction } from '@/utils/permission'
+import { getProjects } from '@/api/project'
 
 const outlineList = ref([])
+const projectOptions = ref([])
 const showUploadDialog = ref(false)
 const submitting = ref(false)
 const fileInputRef = ref(null)
 const expandedBoardRowId = ref(null)
+const collapsedProjects = reactive({})
 
 const filters = reactive({
   keyword: ''
 })
 
 const uploadForm = reactive({
+  projectId: 0,
   boardModels: '',
   fileId: 0,
   fileName: '',
@@ -198,6 +226,7 @@ const filteredOutlines = computed(() => {
   const keyword = filters.keyword.trim().toLowerCase()
   return outlineList.value.filter(item => {
     const text = [
+      item.projectName,
       item.boardModels,
       item.fileName,
       item.uploaderName,
@@ -207,9 +236,43 @@ const filteredOutlines = computed(() => {
   })
 })
 
+const groupedOutlines = computed(() => {
+  const groupMap = new Map()
+
+  filteredOutlines.value.forEach(item => {
+    const projectName = item.projectName || '未绑定项目'
+    if (!groupMap.has(projectName)) {
+      groupMap.set(projectName, [])
+    }
+    groupMap.get(projectName).push(item)
+  })
+
+  return Array.from(groupMap.entries()).map(([projectName, items]) => ({
+    projectName,
+    items
+  }))
+})
+
 onMounted(async () => {
+  await loadProjects()
   await loadOutlines()
 })
+
+async function loadProjects() {
+  try {
+    const res = await getProjects()
+    const result = res?.data || res
+    projectOptions.value = (result.data || [])
+      .filter(item => ['approved', '已通过', '通过'].includes(item.auditStatus || item.audit_status || ''))
+      .map(item => ({
+        id: item.id,
+        projectName: item.projectName || item.project_name
+      }))
+  } catch (err) {
+    console.error('加载项目失败：', err)
+    alert(err.response?.data || '加载项目失败')
+  }
+}
 
 async function loadOutlines() {
   try {
@@ -275,11 +338,16 @@ async function submitUpload() {
     alert('请填写板卡型号，多个型号请用逗号分隔')
     return
   }
+  if (!uploadForm.projectId) {
+    alert('请选择绑定项目')
+    return
+  }
 
   submitting.value = true
   try {
     const user = getCurrentUser()
     await createProductionTestOutline({
+      projectId: uploadForm.projectId,
       hardwareId: 0,
       boardModels,
       fileId: uploadForm.fileId,
@@ -303,6 +371,7 @@ async function submitUpload() {
 
 function resetUploadForm() {
   Object.assign(uploadForm, {
+    projectId: 0,
     boardModels: '',
     fileId: 0,
     fileName: '',
@@ -357,10 +426,14 @@ function formatBoardModelsSummary(value) {
 
 function toggleBoardModels(item) {
   expandedBoardRowId.value = expandedBoardRowId.value === item.id ? null : item.id
+}
 
+function toggleProjectGroup(projectName) {
+  collapsedProjects[projectName] = !collapsedProjects[projectName]
+}
 
-
-
+function isProjectCollapsed(projectName) {
+  return Boolean(collapsedProjects[projectName])
 }
 </script>
 
@@ -467,6 +540,72 @@ function toggleBoardModels(item) {
   border: 1px solid #1e293b;
   border-radius: 14px;
   overflow: hidden;
+}
+
+.project-outline-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.project-outline-group {
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.project-group-header {
+  width: 100%;
+  height: 48px;
+  padding: 0 16px;
+  border: none;
+  border-bottom: 1px solid #1e293b;
+  background: #020617;
+  color: #e2e8f0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.project-group-header:hover {
+  background: #0b1120;
+}
+
+.fold-icon {
+  width: 18px;
+  color: #60a5fa;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.project-group-title {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.project-group-count {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.project-outline-group .table-card {
+  border: none;
+  border-radius: 0;
+}
+
+.empty-card {
+  padding: 28px 16px;
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 14px;
+  color: #94a3b8;
+  text-align: center;
+  font-size: 13px;
 }
 
 .table-card-header {

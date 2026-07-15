@@ -5,6 +5,7 @@ import (
 	"crrc_pm_backend/model"
 	"database/sql"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -1113,6 +1114,15 @@ func AuditFactoryTestHandler(w http.ResponseWriter, r *http.Request, id int64) {
 			http.Error(w, "自动入库失败: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
+
+		if err = ensureBoardCompositionDeductedForFactoryTest(tx, id); err != nil {
+			if err == sql.ErrNoRows {
+				http.Error(w, "自动入库失败：板卡组成对应的板卡入库库存不足", http.StatusBadRequest)
+				return
+			}
+			http.Error(w, "自动入库失败，扣减板卡组成库存失败: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	if err = tx.Commit(); err != nil {
@@ -1173,6 +1183,8 @@ func BoardInboundHandler(w http.ResponseWriter, r *http.Request) {
 		GetBoardInboundHandler(w, r)
 	case http.MethodPost:
 		ImportBoardInboundHandler(w, r)
+	case http.MethodDelete:
+		DeleteBoardInboundHandler(w, r)
 	default:
 		http.Error(w, "不支持该请求方法", http.StatusMethodNotAllowed)
 	}
@@ -1180,6 +1192,7 @@ func BoardInboundHandler(w http.ResponseWriter, r *http.Request) {
 
 func ensureInventoryBoardColumns() {
 	_, _ = config.DB.Exec(`ALTER TABLE inventory_devices ADD COLUMN product_code VARCHAR(128) DEFAULT '' AFTER product_model`)
+	_, _ = config.DB.Exec(`ALTER TABLE inventory_devices ADD COLUMN quantity INT NOT NULL DEFAULT 1 AFTER product_code`)
 	_, _ = config.DB.Exec(`ALTER TABLE inventory_devices ADD COLUMN pcb_qr_code VARCHAR(255) DEFAULT '' AFTER mac_address`)
 	_, _ = config.DB.Exec(`ALTER TABLE inventory_devices ADD COLUMN source_file_id BIGINT DEFAULT 0 AFTER factory_test_id`)
 	_, _ = config.DB.Exec(`ALTER TABLE inventory_devices ADD COLUMN source_file_name VARCHAR(255) DEFAULT '' AFTER source_file_id`)
@@ -1243,6 +1256,7 @@ func GetInventoryHandler(w http.ResponseWriter, r *http.Request) {
 			IFNULL(product_name, ''),
 			IFNULL(product_model, ''),
 			IFNULL(product_code, ''),
+			IFNULL(quantity, 1),
 			IFNULL(sn, ''),
 			IFNULL(mac_address, ''),
 			IFNULL(pcb_qr_code, ''),
@@ -1286,6 +1300,7 @@ func GetInventoryHandler(w http.ResponseWriter, r *http.Request) {
 		ProductName        string `json:"productName"`
 		ProductModel       string `json:"productModel"`
 		ProductCode        string `json:"productCode"`
+		Quantity           int    `json:"quantity"`
 		SN                 string `json:"sn"`
 		MacAddress         string `json:"macAddress"`
 		PcbQrCode          string `json:"pcbQrCode"`
@@ -1325,6 +1340,7 @@ func GetInventoryHandler(w http.ResponseWriter, r *http.Request) {
 			&item.ProductName,
 			&item.ProductModel,
 			&item.ProductCode,
+			&item.Quantity,
 			&item.SN,
 			&item.MacAddress,
 			&item.PcbQrCode,
@@ -1383,6 +1399,7 @@ func GetBoardInboundHandler(w http.ResponseWriter, r *http.Request) {
 			IFNULL(product_name, ''),
 			IFNULL(product_model, ''),
 			IFNULL(product_code, ''),
+			IFNULL(quantity, 1),
 			IFNULL(sn, ''),
 			IFNULL(mac_address, ''),
 			IFNULL(pcb_qr_code, ''),
@@ -1395,7 +1412,7 @@ func GetBoardInboundHandler(w http.ResponseWriter, r *http.Request) {
 		FROM inventory_devices
 		WHERE IFNULL(is_deleted, 0) = 0
 		  AND IFNULL(inbound_type, '') = 'board'
-		  AND IFNULL(inventory_status, '') = '板卡入库'
+		  AND IFNULL(inventory_status, '') IN ('板卡入库', '已烧录')
 		ORDER BY id DESC
 	`)
 	if err != nil {
@@ -1409,6 +1426,7 @@ func GetBoardInboundHandler(w http.ResponseWriter, r *http.Request) {
 		ProductName     string `json:"productName"`
 		ProductModel    string `json:"productModel"`
 		ProductCode     string `json:"productCode"`
+		Quantity        int    `json:"quantity"`
 		SN              string `json:"sn"`
 		MacAddress      string `json:"macAddress"`
 		PcbQrCode       string `json:"pcbQrCode"`
@@ -1428,6 +1446,7 @@ func GetBoardInboundHandler(w http.ResponseWriter, r *http.Request) {
 			&item.ProductName,
 			&item.ProductModel,
 			&item.ProductCode,
+			&item.Quantity,
 			&item.SN,
 			&item.MacAddress,
 			&item.PcbQrCode,
@@ -1468,13 +1487,8 @@ func ImportBoardInboundHandler(w http.ResponseWriter, r *http.Request) {
 			ProductName  string `json:"productName"`
 			ProductModel string `json:"productModel"`
 			ProductCode  string `json:"productCode"`
-			SN           string `json:"sn"`
-			SerialNumber string `json:"serialNumber"`
-			MacAddress   string `json:"macAddress"`
-			PcbQrCode    string `json:"pcbQrCode"`
-			PcbQRCode    string `json:"pcbQRCode"`
-			Remark       string `json:"remark"`
-			Note         string `json:"note"`
+			Quantity     int    `json:"quantity"`
+			RowNumber    int    `json:"rowNumber"`
 		} `json:"records"`
 	}
 
@@ -1508,51 +1522,31 @@ func ImportBoardInboundHandler(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback()
 
 	insertCount := 0
-	for _, item := range req.Records {
-		sn := strings.TrimSpace(item.SN)
-		if sn == "" {
-			sn = strings.TrimSpace(item.SerialNumber)
-		}
-		macAddress := strings.TrimSpace(item.MacAddress)
-		pcbQrCode := strings.TrimSpace(item.PcbQrCode)
-		if pcbQrCode == "" {
-			pcbQrCode = strings.TrimSpace(item.PcbQRCode)
-		}
-		remark := strings.TrimSpace(item.Remark)
-		if remark == "" {
-			remark = strings.TrimSpace(item.Note)
-		}
-
-		if sn == "" {
-			http.Error(w, "导入失败：序列号不能为空", http.StatusBadRequest)
+	for index, item := range req.Records {
+		productName := strings.TrimSpace(item.ProductName)
+		productModel := strings.TrimSpace(item.ProductModel)
+		productCode := strings.TrimSpace(item.ProductCode)
+		quantity := item.Quantity
+		if item.RowNumber > 0 && quantity <= 0 {
+			http.Error(w, "导入失败：第 "+strconv.Itoa(item.RowNumber)+" 行数量必须大于 0", http.StatusBadRequest)
 			return
 		}
-		if macAddress == "" {
-			http.Error(w, "导入失败：MAC地址不能为空", http.StatusBadRequest)
+		if productName == "" || productModel == "" || productCode == "" || quantity <= 0 {
+			rowLabel := strconv.Itoa(index + 1)
+			if item.RowNumber > 0 {
+				rowLabel = strconv.Itoa(item.RowNumber)
+			}
+			http.Error(w, "导入失败：第 "+rowLabel+" 行产品名称、产品型号、生产编码、数量不能为空", http.StatusBadRequest)
 			return
 		}
 
-		var occupiedCount int
-		err := tx.QueryRow(`
-			SELECT COUNT(1)
-			FROM inventory_devices
-			WHERE IFNULL(is_deleted, 0) = 0
-			  AND (
-				(? <> '' AND sn = ?)
-				OR (? <> '' AND mac_address = ?)
-			  )
-			  AND NOT (
-				IFNULL(inbound_type, '') = 'board'
-				AND IFNULL(inventory_status, '') = '板卡入库'
-			  )
-		`, sn, sn, macAddress, macAddress).Scan(&occupiedCount)
-		if err != nil {
-			http.Error(w, "检查板卡入库重复数据失败: "+err.Error(), http.StatusInternalServerError)
-			return
+		rowNumber := item.RowNumber
+		if rowNumber <= 0 {
+			rowNumber = index + 4
 		}
-		if occupiedCount > 0 {
-			continue
-		}
+		syntheticCode := strconv.FormatInt(req.SourceFileID, 10) + "-" + strconv.Itoa(rowNumber)
+		sn := "BOARD-IN-SN-" + syntheticCode
+		macAddress := "BOARD-IN-MAC-" + syntheticCode
 
 		_, err = tx.Exec(`
 			INSERT INTO inventory_devices (
@@ -1561,6 +1555,7 @@ func ImportBoardInboundHandler(w http.ResponseWriter, r *http.Request) {
 				product_name,
 				product_model,
 				product_code,
+				quantity,
 				sn,
 				mac_address,
 				pcb_qr_code,
@@ -1578,31 +1573,29 @@ func ImportBoardInboundHandler(w http.ResponseWriter, r *http.Request) {
 				update_time,
 				remark,
 				is_deleted
-			) VALUES (0, ?, ?, ?, ?, ?, ?, ?, 0, '', 0, '', '板卡入库', 0, 0, ?, ?, 'board', NOW(), NOW(), ?, 0)
+			) VALUES (0, ?, ?, ?, ?, ?, ?, ?, '', 0, '', 0, '', '板卡入库', 0, 0, ?, ?, 'board', NOW(), NOW(), '', 0)
 			ON DUPLICATE KEY UPDATE
 				device_type = VALUES(device_type),
 				product_name = VALUES(product_name),
 				product_model = VALUES(product_model),
 				product_code = VALUES(product_code),
-				pcb_qr_code = VALUES(pcb_qr_code),
+				quantity = VALUES(quantity),
 				inventory_status = '板卡入库',
 				source_file_id = VALUES(source_file_id),
 				source_file_name = VALUES(source_file_name),
 				inbound_type = 'board',
 				update_time = NOW(),
-				remark = VALUES(remark),
 				is_deleted = 0
 		`,
-			strings.TrimSpace(item.ProductName),
-			strings.TrimSpace(item.ProductName),
-			strings.TrimSpace(item.ProductModel),
-			strings.TrimSpace(item.ProductCode),
+			productName,
+			productName,
+			productModel,
+			productCode,
+			quantity,
 			sn,
 			macAddress,
-			pcbQrCode,
 			req.SourceFileID,
 			req.FileName,
-			remark,
 		)
 
 		if err != nil {
@@ -1625,6 +1618,473 @@ func ImportBoardInboundHandler(w http.ResponseWriter, r *http.Request) {
 			"count": insertCount,
 		},
 	})
+}
+
+func DeleteBoardInboundHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if !hasRequestRole(r, "production_staff") && !hasRequestRole(r, "system_admin") && !hasRequestPermission(r, "board-inbound:delete") {
+		http.Error(w, "无板卡入库删除权限", http.StatusForbidden)
+		return
+	}
+
+	id, err := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("id")), 10, 64)
+	if err != nil || id <= 0 {
+		http.Error(w, "板卡入库ID错误", http.StatusBadRequest)
+		return
+	}
+
+	ensureInventoryBoardColumns()
+
+	result, err := config.DB.Exec(`
+		UPDATE inventory_devices
+		SET is_deleted = 1,
+			update_time = NOW()
+		WHERE id = ?
+		  AND IFNULL(is_deleted, 0) = 0
+		  AND IFNULL(inbound_type, '') = 'board'
+		  AND IFNULL(inventory_status, '') = '板卡入库'
+	`, id)
+	if err != nil {
+		http.Error(w, "删除板卡入库失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	affected, _ := result.RowsAffected()
+	if affected == 0 {
+		http.Error(w, "删除失败：记录不存在或已经进入后续流程", http.StatusBadRequest)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"code": 200,
+		"msg":  "删除成功",
+	})
+}
+
+type boardCompositionForDeduct struct {
+	ID            int64
+	ProjectName   string
+	ProductName   string
+	InboundModel  string
+	OutboundModel string
+}
+
+func getBoardCompositionsForBurn(tx *sql.Tx, projectID int64, outboundModel string) ([]boardCompositionForDeduct, error) {
+	ensureBoardCompositionTables()
+	outboundModel = strings.TrimSpace(outboundModel)
+	if outboundModel == "" || outboundModel == "-" {
+		return nil, nil
+	}
+
+	rows, err := tx.Query(`
+		SELECT
+			id,
+			IFNULL(project_name, ''),
+			IFNULL(product_name, ''),
+			IFNULL(inbound_model, ''),
+			IFNULL(outbound_model, '')
+		FROM board_compositions
+		WHERE IFNULL(is_deleted, 0) = 0
+		  AND outbound_model = ?
+		  AND (? = 0 OR project_id = 0 OR project_id = ?)
+		ORDER BY id ASC
+	`, outboundModel, projectID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	list := make([]boardCompositionForDeduct, 0)
+	for rows.Next() {
+		var item boardCompositionForDeduct
+		if err := rows.Scan(&item.ID, &item.ProjectName, &item.ProductName, &item.InboundModel, &item.OutboundModel); err != nil {
+			return nil, err
+		}
+		list = append(list, item)
+	}
+	return list, rows.Err()
+}
+
+func deductBoardInboundByComposition(tx *sql.Tx, burnRecordID int64, projectID int64, outboundModel string) (int, error) {
+	compositions, err := getBoardCompositionsForBurn(tx, projectID, outboundModel)
+	if err != nil {
+		return 0, err
+	}
+	if len(compositions) == 0 {
+		return 0, nil
+	}
+
+	for _, composition := range compositions {
+		if err := deductOneBoardComponent(tx, burnRecordID, composition); err != nil {
+			return 0, err
+		}
+	}
+	return len(compositions), nil
+}
+
+func ensureBoardCompositionDeductedForFactoryTest(tx *sql.Tx, factoryTestID int64) error {
+	ensureBoardCompositionTables()
+
+	var burnRecordID int64
+	var projectID int64
+	var productModel string
+	err := tx.QueryRow(`
+		SELECT
+			IFNULL(br.id, 0),
+			IFNULL(br.project_id, 0),
+			IFNULL(br.product_model, '')
+		FROM factory_tests ft
+		INNER JOIN burn_records br ON br.id = ft.burn_record_id
+		WHERE ft.id = ?
+		  AND IFNULL(ft.is_deleted, 0) = 0
+		  AND IFNULL(br.is_deleted, 0) = 0
+		LIMIT 1
+	`, factoryTestID).Scan(&burnRecordID, &projectID, &productModel)
+	if err != nil {
+		return err
+	}
+	if burnRecordID <= 0 {
+		return nil
+	}
+
+	var existing int
+	err = tx.QueryRow(`
+		SELECT COUNT(1)
+		FROM board_composition_deductions
+		WHERE burn_record_id = ?
+	`, burnRecordID).Scan(&existing)
+	if err != nil {
+		return err
+	}
+	if existing > 0 {
+		return nil
+	}
+
+	_, err = deductBoardInboundByComposition(tx, burnRecordID, projectID, productModel)
+	return err
+}
+
+func BackfillBoardCompositionDeductionsForFactoryInventory() {
+	ensureBoardCompositionTables()
+	ensureInventoryBoardColumns()
+	backfillBoardCompositionDeductionsByInventoryModels()
+
+	rows, err := config.DB.Query(`
+		SELECT DISTINCT ft.id
+		FROM factory_tests ft
+		INNER JOIN burn_records br ON br.id = ft.burn_record_id
+		INNER JOIN inventory_devices inv
+			ON (
+				inv.factory_test_id = ft.id
+				OR inv.source_burn_record_id = br.id
+				OR (IFNULL(inv.sn, '') <> '' AND inv.sn = br.sn)
+				OR (IFNULL(inv.mac_address, '') <> '' AND inv.mac_address = br.mac_address)
+			)
+		WHERE IFNULL(ft.is_deleted, 0) = 0
+		  AND IFNULL(br.is_deleted, 0) = 0
+		  AND IFNULL(inv.is_deleted, 0) = 0
+		  AND IFNULL(inv.inbound_type, '') = 'factory'
+		  AND IFNULL(inv.inventory_status, '') NOT IN ('已出库', '板卡入库', '已烧录')
+		  AND ft.audit_status IN ('approved', '审核通过', '已通过')
+		  AND NOT EXISTS (
+			  SELECT 1
+			  FROM board_composition_deductions d
+			  WHERE d.burn_record_id = br.id
+		  )
+		ORDER BY ft.id ASC
+	`)
+	if err != nil {
+		log.Printf("板卡组成历史补扣查询失败: %v", err)
+		return
+	}
+	defer rows.Close()
+
+	factoryTestIDs := make([]int64, 0)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			log.Printf("板卡组成历史补扣数据解析失败: %v", err)
+			return
+		}
+		factoryTestIDs = append(factoryTestIDs, id)
+	}
+	if err := rows.Err(); err != nil {
+		log.Printf("板卡组成历史补扣读取失败: %v", err)
+		return
+	}
+	if len(factoryTestIDs) == 0 {
+		return
+	}
+
+	successCount := 0
+	skipCount := 0
+	for _, factoryTestID := range factoryTestIDs {
+		tx, err := config.DB.Begin()
+		if err != nil {
+			log.Printf("板卡组成历史补扣开启事务失败，出厂测试ID=%d: %v", factoryTestID, err)
+			skipCount++
+			continue
+		}
+
+		err = ensureBoardCompositionDeductedForFactoryTest(tx, factoryTestID)
+		if err != nil {
+			tx.Rollback()
+			if err == sql.ErrNoRows {
+				log.Printf("板卡组成历史补扣跳过，板卡入库库存不足，出厂测试ID=%d", factoryTestID)
+			} else {
+				log.Printf("板卡组成历史补扣失败，出厂测试ID=%d: %v", factoryTestID, err)
+			}
+			skipCount++
+			continue
+		}
+		if err := tx.Commit(); err != nil {
+			log.Printf("板卡组成历史补扣提交失败，出厂测试ID=%d: %v", factoryTestID, err)
+			skipCount++
+			continue
+		}
+		successCount++
+	}
+
+	log.Printf("板卡组成历史补扣完成：成功 %d 条，跳过 %d 条", successCount, skipCount)
+}
+
+func backfillBoardCompositionDeductionsByInventoryModels() {
+	rows, err := config.DB.Query(`
+		SELECT
+			CASE
+				WHEN IFNULL(inv.source_burn_record_id, 0) > 0 THEN inv.source_burn_record_id
+				WHEN IFNULL(br.id, 0) > 0 THEN br.id
+				ELSE -inv.id
+			END AS ledger_burn_id,
+			IFNULL(inv.project_id, IFNULL(br.project_id, 0)) AS project_id,
+			IFNULL(inv.product_model, '') AS outbound_model
+		FROM inventory_devices inv
+		LEFT JOIN burn_records br
+			ON IFNULL(br.is_deleted, 0) = 0
+		   AND (
+				br.id = inv.source_burn_record_id
+				OR (IFNULL(inv.sn, '') <> '' AND br.sn = inv.sn)
+				OR (IFNULL(inv.mac_address, '') <> '' AND br.mac_address = inv.mac_address)
+		   )
+		WHERE IFNULL(inv.is_deleted, 0) = 0
+		  AND IFNULL(inv.inbound_type, '') <> 'board'
+		  AND IFNULL(inv.inventory_status, '') NOT IN ('已出库', '板卡入库', '已烧录', '已废弃', '已报废')
+		  AND IFNULL(inv.product_model, '') <> ''
+		  AND EXISTS (
+			  SELECT 1
+			  FROM board_compositions bc
+			  WHERE IFNULL(bc.is_deleted, 0) = 0
+			    AND bc.outbound_model = inv.product_model
+		  )
+		  AND NOT EXISTS (
+			  SELECT 1
+			  FROM board_composition_deductions d
+			  WHERE d.burn_record_id = CASE
+				  WHEN IFNULL(inv.source_burn_record_id, 0) > 0 THEN inv.source_burn_record_id
+				  WHEN IFNULL(br.id, 0) > 0 THEN br.id
+				  ELSE -inv.id
+			  END
+		  )
+		GROUP BY ledger_burn_id, project_id, outbound_model
+		ORDER BY ledger_burn_id ASC
+	`)
+	if err != nil {
+		log.Printf("库存型号历史补扣查询失败: %v", err)
+		return
+	}
+	defer rows.Close()
+
+	type backfillItem struct {
+		LedgerBurnID  int64
+		ProjectID     int64
+		OutboundModel string
+	}
+	items := make([]backfillItem, 0)
+	for rows.Next() {
+		var item backfillItem
+		if err := rows.Scan(&item.LedgerBurnID, &item.ProjectID, &item.OutboundModel); err != nil {
+			log.Printf("库存型号历史补扣数据解析失败: %v", err)
+			return
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		log.Printf("库存型号历史补扣读取失败: %v", err)
+		return
+	}
+	if len(items) == 0 {
+		return
+	}
+
+	successCount := 0
+	skipCount := 0
+	for _, item := range items {
+		tx, err := config.DB.Begin()
+		if err != nil {
+			log.Printf("库存型号历史补扣开启事务失败，出库型号=%s: %v", item.OutboundModel, err)
+			skipCount++
+			continue
+		}
+
+		_, err = deductBoardInboundByComposition(tx, item.LedgerBurnID, item.ProjectID, item.OutboundModel)
+		if err != nil {
+			tx.Rollback()
+			if err == sql.ErrNoRows {
+				log.Printf("库存型号历史补扣跳过，板卡入库库存不足，出库型号=%s", item.OutboundModel)
+			} else {
+				log.Printf("库存型号历史补扣失败，出库型号=%s: %v", item.OutboundModel, err)
+			}
+			skipCount++
+			continue
+		}
+		if err := tx.Commit(); err != nil {
+			log.Printf("库存型号历史补扣提交失败，出库型号=%s: %v", item.OutboundModel, err)
+			skipCount++
+			continue
+		}
+		successCount++
+	}
+
+	log.Printf("库存型号历史补扣完成：成功 %d 条，跳过 %d 条", successCount, skipCount)
+}
+
+func deductOneBoardComponent(tx *sql.Tx, burnRecordID int64, composition boardCompositionForDeduct) error {
+	rows, err := tx.Query(`
+		SELECT id, IFNULL(quantity, 1)
+		FROM inventory_devices
+		WHERE IFNULL(is_deleted, 0) = 0
+		  AND IFNULL(inbound_type, '') = 'board'
+		  AND IFNULL(inventory_status, '') = '板卡入库'
+		  AND product_model = ?
+		  AND IFNULL(quantity, 0) > 0
+		ORDER BY in_time ASC, id ASC
+	`, composition.InboundModel)
+	if err != nil {
+		return err
+	}
+
+	type inventoryQty struct {
+		ID       int64
+		Quantity int
+	}
+	candidates := make([]inventoryQty, 0)
+	for rows.Next() {
+		var item inventoryQty
+		if err := rows.Scan(&item.ID, &item.Quantity); err != nil {
+			rows.Close()
+			return err
+		}
+		candidates = append(candidates, item)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+
+	remaining := 1
+	for _, candidate := range candidates {
+		if remaining <= 0 {
+			break
+		}
+		if candidate.Quantity <= 0 {
+			continue
+		}
+		deductQty := 1
+		if candidate.Quantity < deductQty {
+			deductQty = candidate.Quantity
+		}
+
+		_, err = tx.Exec(`
+			UPDATE inventory_devices
+			SET quantity = quantity - ?,
+				inventory_status = CASE WHEN quantity - ? <= 0 THEN '已烧录' ELSE inventory_status END,
+				update_time = NOW(),
+				remark = CASE
+					WHEN IFNULL(remark, '') = '' THEN ?
+					ELSE CONCAT(remark, '；', ?)
+				END
+			WHERE id = ?
+		`, deductQty, deductQty, "板卡组成扣减："+composition.OutboundModel, "板卡组成扣减："+composition.OutboundModel, candidate.ID)
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(`
+			INSERT INTO board_composition_deductions (
+				burn_record_id,
+				composition_id,
+				inventory_device_id,
+				quantity,
+				created_at
+			) VALUES (?, ?, ?, ?, NOW())
+		`, burnRecordID, composition.ID, candidate.ID, deductQty)
+		if err != nil {
+			return err
+		}
+		remaining -= deductQty
+	}
+	if remaining > 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func restoreBoardCompositionDeductions(tx *sql.Tx, burnWhereSQL string, args ...interface{}) error {
+	ensureBoardCompositionTables()
+	query := `
+		SELECT d.inventory_device_id, SUM(d.quantity)
+		FROM board_composition_deductions d
+		JOIN burn_records br ON br.id = d.burn_record_id
+		WHERE ` + burnWhereSQL + `
+		GROUP BY d.inventory_device_id
+	`
+	rows, err := tx.Query(query, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	type restoreItem struct {
+		InventoryID int64
+		Quantity    int
+	}
+	items := make([]restoreItem, 0)
+	for rows.Next() {
+		var item restoreItem
+		if err := rows.Scan(&item.InventoryID, &item.Quantity); err != nil {
+			return err
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	for _, item := range items {
+		_, err := tx.Exec(`
+			UPDATE inventory_devices
+			SET quantity = quantity + ?,
+				inventory_status = '板卡入库',
+				update_time = NOW(),
+				remark = CASE
+					WHEN IFNULL(remark, '') = '' THEN '烧录删除后恢复板卡组成扣减'
+					ELSE CONCAT(remark, '；烧录删除后恢复板卡组成扣减')
+				END
+			WHERE id = ?
+		`, item.Quantity, item.InventoryID)
+		if err != nil {
+			return err
+		}
+	}
+
+	deleteSQL := `
+		DELETE d
+		FROM board_composition_deductions d
+		JOIN burn_records br ON br.id = d.burn_record_id
+		WHERE ` + burnWhereSQL
+	_, err = tx.Exec(deleteSQL, args...)
+	return err
 }
 
 func UpdateInventoryHandler(w http.ResponseWriter, r *http.Request, id int64) {
@@ -1957,7 +2417,7 @@ func ImportBurnRecordsHandler(w http.ResponseWriter, r *http.Request) {
 			sourceFileID = req.SourceFileID
 		}
 
-		result, err := tx.Exec(`
+		_, err := tx.Exec(`
 			INSERT INTO burn_records (
 				batch_no,
 				project_id,
@@ -2011,32 +2471,6 @@ func ImportBurnRecordsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		burnRecordID, _ := result.LastInsertId()
-		_, err = tx.Exec(`
-			UPDATE inventory_devices
-			SET
-				inventory_status = '已烧录',
-				source_burn_record_id = ?,
-				update_time = NOW(),
-				remark = CASE
-					WHEN IFNULL(remark, '') = '' THEN '已进入生产烧录'
-					WHEN remark LIKE '%已进入生产烧录%' THEN remark
-					ELSE CONCAT(remark, '；已进入生产烧录')
-				END
-			WHERE IFNULL(is_deleted, 0) = 0
-			  AND IFNULL(inbound_type, '') = 'board'
-			  AND IFNULL(inventory_status, '') = '板卡入库'
-			  AND (
-				(? <> '' AND sn = ?)
-				OR (? <> '' AND mac_address = ?)
-			  )
-		`, burnRecordID, sn, sn, macAddress, macAddress)
-		if err != nil {
-			tx.Rollback()
-			http.Error(w, "扣减板卡入库库存失败: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
 		insertCount++
 	}
 
@@ -2074,6 +2508,11 @@ func DeleteBurnBatchHandler(w http.ResponseWriter, r *http.Request, batchNo stri
 		return
 	}
 	defer tx.Rollback()
+
+	if err := restoreBoardCompositionDeductions(tx, "br.batch_no = ?", batchNo); err != nil {
+		http.Error(w, "恢复板卡组成扣减失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	_, err = tx.Exec(`
 		UPDATE inventory_devices inv
@@ -2176,6 +2615,11 @@ func DeleteBurnRecordHandler(w http.ResponseWriter, r *http.Request, id int64) {
 		return
 	}
 	defer tx.Rollback()
+
+	if err := restoreBoardCompositionDeductions(tx, "br.id = ?", id); err != nil {
+		http.Error(w, "恢复板卡组成扣减失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	_, err = tx.Exec(`
 		UPDATE inventory_devices inv
@@ -2675,6 +3119,10 @@ func AuditFactoryTestsHandler(w http.ResponseWriter, r *http.Request) {
 			err = SyncFactoryTestToInventoryTx(tx, id)
 			if err != nil {
 				tx.Rollback()
+				if err == sql.ErrNoRows {
+					http.Error(w, "审核通过，但板卡组成对应的板卡入库库存不足", http.StatusBadRequest)
+					return
+				}
 				http.Error(w, "审核通过，但自动入库失败: "+err.Error(), http.StatusInternalServerError)
 				return
 			}
@@ -2858,7 +3306,10 @@ func SyncFactoryTestToInventoryTx(tx *sql.Tx, factoryTestID int64) error {
 			is_deleted = 0
 	`, factoryTestID)
 
-	return err
+	if err != nil {
+		return err
+	}
+	return ensureBoardCompositionDeductedForFactoryTest(tx, factoryTestID)
 }
 
 // ============================================================

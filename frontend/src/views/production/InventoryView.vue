@@ -130,8 +130,8 @@
                 </span>
               </td>
 
-              <td>
-                <span class="normal-text" :title="item.productModel">
+              <td class="product-model-cell">
+                <span class="product-model-text" :title="item.productModel">
                   {{ item.productModel }}
                 </span>
               </td>
@@ -1126,6 +1126,21 @@ function goLastPage() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.product-model-cell {
+  white-space: normal !important;
+  overflow: visible !important;
+}
+
+.product-model-text {
+  display: inline-block;
+  min-width: 220px;
+  max-width: 320px;
+  white-space: normal;
+  overflow: visible;
+  word-break: break-word;
+  line-height: 1.35;
 }
 
 .sn-tag {

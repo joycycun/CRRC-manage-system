@@ -79,6 +79,35 @@ CREATE TABLE IF NOT EXISTS notification_reads (
   UNIQUE KEY uk_notification_read (user_id, username, notification_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+CREATE TABLE IF NOT EXISTS board_compositions (
+  id bigint NOT NULL AUTO_INCREMENT,
+  project_id bigint NOT NULL DEFAULT 0,
+  project_name varchar(128) NOT NULL DEFAULT '',
+  product_name varchar(128) NOT NULL DEFAULT '',
+  inbound_model varchar(128) NOT NULL DEFAULT '',
+  outbound_model varchar(128) NOT NULL DEFAULT '',
+  created_by varchar(64) NOT NULL DEFAULT '',
+  is_deleted tinyint NOT NULL DEFAULT 0,
+  created_at datetime DEFAULT CURRENT_TIMESTAMP,
+  updated_at datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_bc_project (project_id, project_name),
+  KEY idx_bc_outbound (outbound_model),
+  KEY idx_bc_inbound (product_name, inbound_model)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE IF NOT EXISTS board_composition_deductions (
+  id bigint NOT NULL AUTO_INCREMENT,
+  burn_record_id bigint NOT NULL DEFAULT 0,
+  composition_id bigint NOT NULL DEFAULT 0,
+  inventory_device_id bigint NOT NULL DEFAULT 0,
+  quantity int NOT NULL DEFAULT 0,
+  created_at datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_bcd_burn_record (burn_record_id),
+  KEY idx_bcd_inventory (inventory_device_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
 CREATE TABLE IF NOT EXISTS issue_confirmations (
   id bigint NOT NULL AUTO_INCREMENT,
   issue_id bigint NOT NULL,
@@ -119,6 +148,7 @@ CREATE TABLE IF NOT EXISTS production_requests (
 
 CREATE TABLE IF NOT EXISTS production_test_outlines (
   id bigint NOT NULL AUTO_INCREMENT,
+  project_id bigint NOT NULL DEFAULT 0,
   hardware_id bigint NOT NULL DEFAULT 0,
   hardware_version varchar(128) NOT NULL DEFAULT '',
   board_models varchar(512) NOT NULL DEFAULT '',
@@ -133,6 +163,7 @@ CREATE TABLE IF NOT EXISTS production_test_outlines (
   created_at datetime DEFAULT CURRENT_TIMESTAMP,
   updated_at datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
+  KEY idx_pto_project_id (project_id),
   KEY idx_pto_hardware_id (hardware_id),
   KEY idx_pto_upload_time (upload_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
@@ -144,6 +175,9 @@ CALL crrc_add_column_if_missing('projects', 'proposal_file_data', '`proposal_fil
 CALL crrc_add_column_if_missing('users', 'avatar_url', '`avatar_url` blob NULL');
 
 CALL crrc_add_column_if_missing('production_test_outlines', 'board_models', '`board_models` varchar(512) NOT NULL DEFAULT '''' AFTER `hardware_version`');
+CALL crrc_add_column_if_missing('production_test_outlines', 'project_id', '`project_id` bigint NOT NULL DEFAULT 0 AFTER `id`');
+CALL crrc_add_index_if_missing('production_test_outlines', 'idx_pto_project_id', 'KEY `idx_pto_project_id` (`project_id`)');
+CALL crrc_add_column_if_missing('inventory_devices', 'quantity', '`quantity` int NOT NULL DEFAULT 1 COMMENT ''数量'' AFTER `product_code`');
 
 CALL crrc_add_column_if_missing('shipping_batches', 'file_id', '`file_id` bigint DEFAULT NULL COMMENT ''发货单文件ID''');
 

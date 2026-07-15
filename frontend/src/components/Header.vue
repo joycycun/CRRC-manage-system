@@ -444,7 +444,11 @@ const permissionGroups = [
       { code: 'hardware-dev-doc:view', name: '开发文档查看' },
       { code: 'hardware-dev-doc:upload', name: '开发文档上传' },
       { code: 'hardware-dev-doc:download', name: '开发文档下载' },
-      { code: 'hardware-dev-doc:delete', name: '开发文档删除' }
+      { code: 'hardware-dev-doc:delete', name: '开发文档删除' },
+      { code: 'board-composition:view', name: '板卡组成查看' },
+      { code: 'board-composition:upload', name: '板卡组成上传' },
+      { code: 'board-composition:create', name: '板卡组成新增' },
+      { code: 'board-composition:delete', name: '板卡组成删除' }
     ]
   },
   {
@@ -454,7 +458,8 @@ const permissionGroups = [
       { code: 'production:create', name: '新增' },
       { code: 'production:update', name: '修改' },
       { code: 'production:delete', name: '删除' },
-      { code: 'production:audit', name: '审核' }
+      { code: 'production:audit', name: '审核' },
+      { code: 'board-inbound:delete', name: '板卡入库删除' }
     ]
   },
   {
