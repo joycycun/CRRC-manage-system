@@ -381,6 +381,16 @@
           </router-link>
         </div>
       </div>
+
+      <router-link
+        v-if="canAccess('/usage-guide')"
+        to="/usage-guide"
+        class="menu-item"
+        :class="{ active: isActive('/usage-guide') }"
+      >
+        <span class="menu-icon">?</span>
+        <span>使用说明</span>
+      </router-link>
     </nav>
 
     <!-- User -->

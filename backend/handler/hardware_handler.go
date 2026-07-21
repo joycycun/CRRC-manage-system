@@ -3,6 +3,7 @@ package handler
 import (
 	"crrc_pm_backend/config"
 	"crrc_pm_backend/model"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -77,12 +78,23 @@ func HardwareVersionActionHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func DeleteHardwareVersionHandler(w http.ResponseWriter, r *http.Request, id int64) {
-	if !hasRequestRole(r, "system_admin") {
+	if !hasRequestRole(r, "system_admin") && !hasRequestPermission(r, "hardware:delete") {
 		http.Error(w, "只有系统管理员可以删除硬件版本", http.StatusForbidden)
 		return
 	}
+	ensureHardwareVersionDocumentColumn()
 
-	result, err := config.DB.Exec(`
+	tx, err := config.DB.Begin()
+	if err != nil {
+		http.Error(w, "开启事务失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec("DELETE FROM hardware_version_projects WHERE hardware_version_id = ?", id); err != nil {
+		http.Error(w, "删除硬件版本项目关联失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	result, err := tx.Exec(`
 		DELETE FROM hardware_versions
 		WHERE id = ?
 	`, id)
@@ -94,6 +106,10 @@ func DeleteHardwareVersionHandler(w http.ResponseWriter, r *http.Request, id int
 	affected, _ := result.RowsAffected()
 	if affected == 0 {
 		http.Error(w, "硬件版本不存在", http.StatusNotFound)
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		http.Error(w, "提交删除失败: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -108,6 +124,53 @@ func ensureHardwareVersionDocumentColumn() {
 		ALTER TABLE hardware_versions
 		ADD COLUMN change_doc_file_id BIGINT DEFAULT NULL AFTER owner_name
 	`)
+	_, _ = config.DB.Exec(`
+		CREATE TABLE IF NOT EXISTS hardware_version_projects (
+			hardware_version_id BIGINT NOT NULL,
+			project_id BIGINT NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (hardware_version_id, project_id),
+			KEY idx_hvp_project_id (project_id)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+	`)
+	_, _ = config.DB.Exec(`
+		INSERT IGNORE INTO hardware_version_projects (hardware_version_id, project_id, created_at)
+		SELECT id, project_id, NOW()
+		FROM hardware_versions
+		WHERE IFNULL(project_id, 0) > 0
+	`)
+}
+
+func normalizeHardwareProjectIDs(item model.HardwareVersion) []int64 {
+	seen := make(map[int64]bool)
+	result := make([]int64, 0, len(item.ProjectIDs)+1)
+	for _, projectID := range item.ProjectIDs {
+		if projectID > 0 && !seen[projectID] {
+			seen[projectID] = true
+			result = append(result, projectID)
+		}
+	}
+	if item.ProjectID > 0 && !seen[item.ProjectID] {
+		result = append(result, item.ProjectID)
+	}
+	return result
+}
+
+func syncHardwareVersionProjects(tx interface {
+	Exec(query string, args ...interface{}) (sql.Result, error)
+}, hardwareVersionID int64, projectIDs []int64) error {
+	if _, err := tx.Exec("DELETE FROM hardware_version_projects WHERE hardware_version_id = ?", hardwareVersionID); err != nil {
+		return err
+	}
+	for _, projectID := range projectIDs {
+		if _, err := tx.Exec(`
+			INSERT INTO hardware_version_projects (hardware_version_id, project_id, created_at)
+			VALUES (?, ?, NOW())
+		`, hardwareVersionID, projectID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func isAllowedHardwareDeviceType(deviceType string) bool {
@@ -188,6 +251,31 @@ func GetHardwareVersionsHandler(w http.ResponseWriter, r *http.Request) {
 
 		item.ChangeDocFileURL = filePreviewURL(item.ChangeDocFileID)
 		item.ChangeDocDownloadURL = fileDownloadURL(item.ChangeDocFileID)
+		projectRows, projectErr := config.DB.Query(`
+			SELECT hvp.project_id, IFNULL(p.project_name, '')
+			FROM hardware_version_projects hvp
+			LEFT JOIN projects p ON p.id = hvp.project_id
+			WHERE hvp.hardware_version_id = ?
+			ORDER BY hvp.created_at, hvp.project_id
+		`, item.ID)
+		if projectErr != nil {
+			http.Error(w, "查询硬件版本绑定项目失败: "+projectErr.Error(), http.StatusInternalServerError)
+			return
+		}
+		for projectRows.Next() {
+			var projectID int64
+			var projectName string
+			if err := projectRows.Scan(&projectID, &projectName); err != nil {
+				projectRows.Close()
+				http.Error(w, "解析硬件版本绑定项目失败: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+			item.ProjectIDs = append(item.ProjectIDs, projectID)
+			if projectName != "" {
+				item.ProjectNames = append(item.ProjectNames, projectName)
+			}
+		}
+		projectRows.Close()
 		list = append(list, item)
 	}
 
@@ -248,7 +336,21 @@ func CreateHardwareVersionHandler(w http.ResponseWriter, r *http.Request) {
 
 	now := time.Now()
 
-	result, err := config.DB.Exec(`
+	projectIDs := normalizeHardwareProjectIDs(item)
+	if len(projectIDs) == 0 {
+		http.Error(w, "至少需要绑定一个项目", http.StatusBadRequest)
+		return
+	}
+	item.ProjectID = projectIDs[0]
+
+	tx, err := config.DB.Begin()
+	if err != nil {
+		http.Error(w, "开启事务失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
+	result, err := tx.Exec(`
 		INSERT INTO hardware_versions (
 			hardware_version,
 			project_id,
@@ -280,6 +382,14 @@ func CreateHardwareVersionHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	id, _ := result.LastInsertId()
+	if err := syncHardwareVersionProjects(tx, id, projectIDs); err != nil {
+		http.Error(w, "保存绑定项目失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		http.Error(w, "提交硬件版本失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"code": 200,
@@ -334,7 +444,21 @@ func UpdateHardwareVersionHandler(w http.ResponseWriter, r *http.Request, id int
 		return
 	}
 
-	result, err := config.DB.Exec(`
+	projectIDs := normalizeHardwareProjectIDs(item)
+	if len(projectIDs) == 0 {
+		http.Error(w, "至少需要绑定一个项目", http.StatusBadRequest)
+		return
+	}
+	item.ProjectID = projectIDs[0]
+
+	tx, err := config.DB.Begin()
+	if err != nil {
+		http.Error(w, "开启事务失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
+	result, err := tx.Exec(`
 		UPDATE hardware_versions
 		SET
 			hardware_version = ?,
@@ -367,6 +491,14 @@ func UpdateHardwareVersionHandler(w http.ResponseWriter, r *http.Request, id int
 	affected, _ := result.RowsAffected()
 	if affected == 0 {
 		http.Error(w, "硬件版本不存在", http.StatusNotFound)
+		return
+	}
+	if err := syncHardwareVersionProjects(tx, id, projectIDs); err != nil {
+		http.Error(w, "保存绑定项目失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		http.Error(w, "提交硬件版本修改失败: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -596,11 +728,11 @@ func hardwareTestVisibilitySQL(r *http.Request) string {
 		return ""
 	}
 
-	if hasRequestRole(r, "leader") {
+	if hasRequestRole(r, "leader") || hasRequestPermission(r, "hardware:audit") {
 		return " AND IFNULL(ht.audit_status, '草稿') IN ('待审核', 'submitted', '已提交', '已通过', '审核通过', 'approved', '已驳回', '审核驳回', 'rejected')"
 	}
 
-	if hasRequestRole(r, "quality_staff") {
+	if hasRequestRole(r, "quality_staff") || hasRequestPermission(r, "hardware:view") {
 		return " AND IFNULL(ht.audit_status, '草稿') IN ('待审核', 'submitted', '已提交', '已通过', '审核通过', 'approved', '已驳回', '审核驳回', 'rejected')"
 	}
 

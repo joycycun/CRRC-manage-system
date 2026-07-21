@@ -52,8 +52,67 @@ func hasRequestPermission(r *http.Request, permissionCode string) bool {
 	return err == nil && exists == 1
 }
 
+func inferredRequestPermission(r *http.Request, action string) string {
+	path := r.URL.Path
+	prefixes := []struct {
+		path   string
+		module string
+	}{
+		{"/api/requirement-books", "requirement"},
+		{"/api/requirement-changes", "requirement"},
+		{"/api/customer-supplied-files", "customer"},
+		{"/api/hardware-dev-documents", "hardware-dev-doc"},
+		{"/api/board-compositions", "board-composition"},
+		{"/api/hardware-versions", "hardware"},
+		{"/api/hardware-tests", "hardware"},
+		{"/api/software-versions", "software"},
+		{"/api/branches", "branch"},
+		{"/api/test-cases", "testcase"},
+		{"/api/issues", "issue"},
+		{"/api/production-test-outlines", "production:outline"},
+		{"/api/board-inbound", "board-inbound"},
+		{"/api/burn-records", "production"},
+		{"/api/factory-tests", "production"},
+		{"/api/inventory", "production"},
+		{"/api/shipping", "shipping"},
+		{"/api/outbound-records", "shipping"},
+		{"/api/repair-records", "aftersales"},
+		{"/api/fault-analysis", "aftersales"},
+		{"/api/projects", "project"},
+	}
+	for _, item := range prefixes {
+		if strings.HasPrefix(path, item.path) {
+			return item.module + ":" + action
+		}
+	}
+	return ""
+}
+
+func inferredRequestAction(r *http.Request) string {
+	path := strings.Trim(r.URL.Path, "/")
+	parts := strings.Split(path, "/")
+	if len(parts) > 0 {
+		switch parts[len(parts)-1] {
+		case "audit", "submit", "close", "reopen", "archive", "confirm":
+			return parts[len(parts)-1]
+		case "upload-document":
+			return "upload"
+		}
+	}
+	switch r.Method {
+	case http.MethodGet:
+		return "view"
+	case http.MethodPut, http.MethodPatch:
+		return "update"
+	case http.MethodDelete:
+		return "delete"
+	default:
+		return "create"
+	}
+}
+
 func requireLeaderPermission(w http.ResponseWriter, r *http.Request) bool {
-	if hasLeaderPermission(r) {
+	if hasLeaderPermission(r) || hasRequestPermission(r, inferredRequestPermission(r, "audit")) {
 		return true
 	}
 	http.Error(w, "无审核权限：只有领导角色可以审核", http.StatusForbidden)
@@ -61,7 +120,7 @@ func requireLeaderPermission(w http.ResponseWriter, r *http.Request) bool {
 }
 
 func requireShippingAuditPermission(w http.ResponseWriter, r *http.Request) bool {
-	if hasLeaderPermission(r) || hasRequestRole(r, "shipping_auditor") {
+	if hasLeaderPermission(r) || hasRequestRole(r, "shipping_auditor") || hasRequestPermission(r, "shipping:audit") {
 		return true
 	}
 	http.Error(w, "无发货审核权限：只有领导或发货审核角色可以审核", http.StatusForbidden)
@@ -69,7 +128,7 @@ func requireShippingAuditPermission(w http.ResponseWriter, r *http.Request) bool
 }
 
 func requireShippingManagePermission(w http.ResponseWriter, r *http.Request) bool {
-	if hasLeaderPermission(r) || hasRequestRole(r, "shipping_staff") {
+	if hasLeaderPermission(r) || hasRequestRole(r, "shipping_staff") || hasRequestPermission(r, "shipping:manage") || hasRequestPermission(r, inferredRequestPermission(r, inferredRequestAction(r))) {
 		return true
 	}
 	http.Error(w, "无发货管理权限", http.StatusForbidden)
@@ -77,7 +136,12 @@ func requireShippingManagePermission(w http.ResponseWriter, r *http.Request) boo
 }
 
 func requireProjectAssistantPermission(w http.ResponseWriter, r *http.Request) bool {
-	if hasRequestRole(r, "project_assistant") || hasRequestRole(r, "system_admin") {
+	permission := inferredRequestPermission(r, inferredRequestAction(r))
+	hasCustomPermission := hasRequestPermission(r, permission)
+	if strings.HasSuffix(permission, ":create") {
+		hasCustomPermission = hasCustomPermission || hasRequestPermission(r, strings.TrimSuffix(permission, ":create")+":upload")
+	}
+	if hasRequestRole(r, "project_assistant") || hasRequestRole(r, "system_admin") || hasCustomPermission {
 		return true
 	}
 	http.Error(w, "无项目助理权限", http.StatusForbidden)
@@ -85,7 +149,12 @@ func requireProjectAssistantPermission(w http.ResponseWriter, r *http.Request) b
 }
 
 func requireHardwareOwnerPermission(w http.ResponseWriter, r *http.Request) bool {
-	if hasRequestRole(r, "hardware_owner") || hasRequestRole(r, "system_admin") {
+	permission := inferredRequestPermission(r, inferredRequestAction(r))
+	hasCustomPermission := hasRequestPermission(r, permission)
+	if strings.HasSuffix(permission, ":create") {
+		hasCustomPermission = hasCustomPermission || hasRequestPermission(r, strings.TrimSuffix(permission, ":create")+":upload")
+	}
+	if hasRequestRole(r, "hardware_owner") || hasRequestRole(r, "system_admin") || hasCustomPermission {
 		return true
 	}
 	http.Error(w, "无硬件负责人权限", http.StatusForbidden)
@@ -93,7 +162,7 @@ func requireHardwareOwnerPermission(w http.ResponseWriter, r *http.Request) bool
 }
 
 func requireProductionAuditPermission(w http.ResponseWriter, r *http.Request) bool {
-	if hasProductionAuditPermission(r) {
+	if hasProductionAuditPermission(r) || hasRequestPermission(r, "production:audit") {
 		return true
 	}
 	http.Error(w, "无生产测试审核权限：只有领导或质量检查人员可以审核", http.StatusForbidden)
@@ -101,7 +170,7 @@ func requireProductionAuditPermission(w http.ResponseWriter, r *http.Request) bo
 }
 
 func requireFactoryQualityAuditorPermission(w http.ResponseWriter, r *http.Request) bool {
-	if hasFactoryQualityAuditorPermission(r) {
+	if hasFactoryQualityAuditorPermission(r) || hasRequestPermission(r, "production:audit") {
 		return true
 	}
 	http.Error(w, "无出厂测试审核权限：只有质量检查人员可以审核", http.StatusForbidden)

@@ -81,6 +81,7 @@ const PAGE_ACCESS = {
     '/project/manage',
     '/hardware/version',
     '/hardware/dev-docs',
+    '/production/board-inbound',
     '/aftersales/repair',
     '/aftersales/fault-analysis',
     '/shipping/out',
@@ -219,6 +220,7 @@ const ACTION_ACCESS = {
     'hardware-dev-doc:download',
     'aftersales:view',
     'aftersales:download',
+    'board-inbound:view',
     'shipping:view',
     'shipping:manage',
     'shipping:create',
@@ -309,15 +311,42 @@ function shouldRestrictCurrentUser() {
 }
 
 export function canAccessPage(path) {
+  if (path === '/usage-guide') return hasRole('system_admin')
+
   const pagePermissionMap = {
-    '/hardware/dev-docs': 'hardware-dev-doc:view',
-    '/hardware/board-composition': 'board-composition:view',
-    '/hardware/test': 'hardware:view',
-    '/aftersales/repair': 'aftersales:view',
-    '/aftersales/fault-analysis': 'aftersales:view'
+    '/dashboard': ['dashboard:view'],
+    '/project/manage': ['project:view'],
+    '/requirement/book': ['requirement:view'],
+    '/requirement/change': ['requirement:view'],
+    '/requirement/customer-supplied': ['customer:view'],
+    '/hardware/version': ['hardware:view'],
+    '/hardware/dev-docs': ['hardware-dev-doc:view'],
+    '/hardware/board-composition': ['board-composition:view'],
+    '/hardware/test': ['hardware:view'],
+    '/software/version': ['software:view'],
+    '/software/branch': ['branch:view'],
+    '/test/case': ['testcase:view'],
+    '/test/issue': ['issue:view'],
+    '/production/board-inbound': ['board-inbound:view', 'production:view'],
+    '/production/test-outline': ['production:outline:view', 'production:view'],
+    '/production/burn': ['production:view'],
+    '/production/factory-test': ['production:view'],
+    '/production/inventory': ['inventory:view', 'production:view'],
+    '/shipping/out': ['shipping:view'],
+    '/shipping/batch': ['shipping:view'],
+    '/inventory/out': ['shipping:view'],
+    '/aftersales/repair': ['aftersales:view'],
+    '/aftersales/fault-analysis': ['aftersales:view'],
+    '/report/project-progress': ['report:view'],
+    '/report/version-matrix': ['report:view'],
+    '/report/issue-statistics': ['report:view'],
+    '/project/progress-report': ['report:view'],
+    '/version/matrix': ['report:view']
   }
-  const requiredPermission = pagePermissionMap[path]
-  if (requiredPermission && getStoredPermissions().some(permission => actionMatches(permission, requiredPermission))) {
+  const requiredPermissions = pagePermissionMap[path] || []
+  if (requiredPermissions.some(required =>
+    getStoredPermissions().some(permission => permissionOpensPage(permission, required))
+  )) {
     return true
   }
 
@@ -351,6 +380,13 @@ function actionMatches(grantedAction, action) {
   return false
 }
 
+function permissionOpensPage(grantedPermission, requiredPermission) {
+  if (actionMatches(grantedPermission, requiredPermission)) return true
+  const separatorIndex = requiredPermission.lastIndexOf(':')
+  const module = separatorIndex > 0 ? requiredPermission.slice(0, separatorIndex) : requiredPermission
+  return grantedPermission.startsWith(`${module}:`)
+}
+
 export function canUseAction(action) {
   if (hasRole('system_admin')) return true
   if (getStoredPermissions().some(permission => actionMatches(permission, action))) return true
@@ -376,6 +412,10 @@ export function canUseAction(action) {
 
   if (action === 'board-inbound:import') {
     return hasRole('production_staff') || hasRole('system_admin')
+  }
+
+  if (action === 'board-inbound:view') {
+    return hasRole('production_staff') || hasRole('shipping_staff') || hasRole('system_admin') || hasRole('leader')
   }
 
   if (action === 'board-inbound:delete') {

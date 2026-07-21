@@ -9,6 +9,8 @@ type HardwareVersion struct {
 	ID                   int64     `json:"id"`
 	HardwareVersion      string    `json:"hardwareVersion"`
 	ProjectID            int64     `json:"projectId"`
+	ProjectIDs           []int64   `json:"projectIds"`
+	ProjectNames         []string  `json:"projectNames"`
 	DeviceType           string    `json:"deviceType"`
 	Status               string    `json:"status"`
 	OwnerID              int64     `json:"ownerId"`

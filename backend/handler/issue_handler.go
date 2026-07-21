@@ -390,7 +390,7 @@ func CreateIssueHandler(w http.ResponseWriter, r *http.Request) {
 func UpdateIssueHandler(w http.ResponseWriter, r *http.Request, id int64) {
 	w.Header().Set("Content-Type", "application/json")
 
-	if !hasRequestRole(r, "project_assistant") {
+	if !hasRequestRole(r, "project_assistant") && !hasRequestPermission(r, "issue:update") {
 		http.Error(w, "无修改权限：问题闭环仅项目助理可修改", http.StatusForbidden)
 		return
 	}

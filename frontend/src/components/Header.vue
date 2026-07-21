@@ -430,16 +430,39 @@ const permissionGroups = [
       { code: 'project:create', name: '新增' },
       { code: 'project:update', name: '修改' },
       { code: 'project:delete', name: '删除' },
-      { code: 'project:audit', name: '审核' }
+      { code: 'project:submit', name: '提交审核' },
+      { code: 'project:audit', name: '审核' },
+      { code: 'project:close', name: '关闭项目' },
+      { code: 'project:reopen', name: '重新打开' },
+      { code: 'project:archive', name: '归档' }
+    ]
+  },
+  {
+    module: '需求管理',
+    permissions: [
+      { code: 'requirement:view', name: '需求查看' },
+      { code: 'requirement:download', name: '需求下载' },
+      { code: 'requirement:upload', name: '需求上传' },
+      { code: 'requirement:submit', name: '需求提交' },
+      { code: 'requirement:delete', name: '需求删除' },
+      { code: 'requirement:close', name: '需求关闭' },
+      { code: 'requirement:audit', name: '需求审核' },
+      { code: 'customer:view', name: '客供资料查看' },
+      { code: 'customer:upload', name: '客供资料上传' },
+      { code: 'customer:download', name: '客供资料下载' },
+      { code: 'customer:delete', name: '客供资料删除' }
     ]
   },
   {
     module: '硬件管理',
     permissions: [
       { code: 'hardware:view', name: '硬件查看' },
+      { code: 'hardware:create', name: '硬件版本新增' },
+      { code: 'hardware:update', name: '硬件版本修改' },
       { code: 'hardware:upload', name: '硬件上传' },
       { code: 'hardware:download', name: '硬件下载' },
       { code: 'hardware:delete', name: '硬件删除' },
+      { code: 'hardware:submit', name: '硬件提交' },
       { code: 'hardware:audit', name: '硬件审核' },
       { code: 'hardware-dev-doc:view', name: '开发文档查看' },
       { code: 'hardware-dev-doc:upload', name: '开发文档上传' },
@@ -452,6 +475,41 @@ const permissionGroups = [
     ]
   },
   {
+    module: '软件管理',
+    permissions: [
+      { code: 'software:view', name: '软件版本查看' },
+      { code: 'software:create', name: '软件版本新增' },
+      { code: 'software:update', name: '软件版本修改' },
+      { code: 'software:delete', name: '软件版本删除' },
+      { code: 'software:download', name: '软件版本下载' },
+      { code: 'software:release', name: '软件版本发布' },
+      { code: 'branch:view', name: '项目分支查看' },
+      { code: 'branch:create', name: '项目分支新增' },
+      { code: 'branch:update', name: '项目分支修改' },
+      { code: 'branch:delete', name: '项目分支删除' },
+      { code: 'branch:download', name: '项目分支下载' }
+    ]
+  },
+  {
+    module: '测试管理',
+    permissions: [
+      { code: 'testcase:view', name: '测试用例查看' },
+      { code: 'testcase:upload', name: '测试用例上传' },
+      { code: 'testcase:uploadReport', name: '测试报告上传' },
+      { code: 'testcase:download', name: '测试资料下载' },
+      { code: 'testcase:submit', name: '测试用例提交' },
+      { code: 'testcase:delete', name: '测试用例删除' },
+      { code: 'testcase:audit', name: '测试用例审核' },
+      { code: 'issue:view', name: '问题查看' },
+      { code: 'issue:create', name: '问题新增' },
+      { code: 'issue:update', name: '问题修改' },
+      { code: 'issue:reply', name: '问题回复' },
+      { code: 'issue:close', name: '问题关闭' },
+      { code: 'issue:reopen', name: '问题重开' },
+      { code: 'issue:export', name: '问题导出' }
+    ]
+  },
+  {
     module: '生产管理',
     permissions: [
       { code: 'production:view', name: '查看' },
@@ -459,16 +517,25 @@ const permissionGroups = [
       { code: 'production:update', name: '修改' },
       { code: 'production:delete', name: '删除' },
       { code: 'production:audit', name: '审核' },
-      { code: 'board-inbound:delete', name: '板卡入库删除' }
+      { code: 'burn:deleteBatch', name: '生产烧录删除批次' },
+      { code: 'production:outline:view', name: '测试大纲查看' },
+      { code: 'production:outline:upload', name: '测试大纲上传' },
+      { code: 'production:outline:delete', name: '测试大纲删除' },
+      { code: 'board-inbound:view', name: '板卡入库查看' },
+      { code: 'board-inbound:import', name: '板卡入库上传' },
+      { code: 'board-inbound:delete', name: '板卡入库删除' },
+      { code: 'inventory:view', name: '库存情况查看' }
     ]
   },
   {
     module: '发货管理',
     permissions: [
       { code: 'shipping:view', name: '查看' },
+      { code: 'shipping:manage', name: '业务管理' },
       { code: 'shipping:create', name: '新增' },
       { code: 'shipping:update', name: '修改' },
       { code: 'shipping:delete', name: '删除' },
+      { code: 'shipping:submit', name: '提交审核' },
       { code: 'shipping:audit', name: '审核' }
     ]
   },
@@ -481,7 +548,16 @@ const permissionGroups = [
       { code: 'aftersales:delete', name: '删除' },
       { code: 'aftersales:upload', name: '上传' },
       { code: 'aftersales:download', name: '下载' },
+      { code: 'aftersales:submit', name: '提交审核' },
+      { code: 'aftersales:export', name: '导出' },
       { code: 'aftersales:audit', name: '审核' }
+    ]
+  },
+  {
+    module: '统计报表',
+    permissions: [
+      { code: 'report:view', name: '查看' },
+      { code: 'report:manage', name: '管理' }
     ]
   }
 ]
@@ -825,6 +901,10 @@ async function savePermissionConfig() {
     if (result.code !== 200) {
       permissionError.value = result.msg || '保存权限失败'
       return
+    }
+    const currentUser = JSON.parse(localStorage.getItem('user') || '{}')
+    if (Number(currentUser.id) === Number(permissionUser.value.id)) {
+      localStorage.setItem('permissions', JSON.stringify(result.data || permissionForm.permissions))
     }
     alert('保存权限成功')
     closePermissionDialog()

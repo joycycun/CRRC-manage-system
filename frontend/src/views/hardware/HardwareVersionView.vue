@@ -684,8 +684,11 @@ function openEditDialog(item) {
   hardwareForm.bindProjects = [...item.bindProjects]
   hardwareForm.description = item.description
   hardwareForm.changeDocFile = null
+  hardwareForm.changeDocFileId = item.changeDocFileId || 0
   hardwareForm.changeDocFileName = item.changeDocFileName || ''
   hardwareForm.changeDocFileUrl = item.changeDocFileUrl || ''
+  hardwareForm.changeDocFileContentType = ''
+  hardwareForm.changeDocFileData = ''
 
   showEditDialog.value = true
 }

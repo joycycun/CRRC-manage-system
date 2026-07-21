@@ -37,6 +37,10 @@ export const getUserPermissionsApi = id => {
   return request.get(`/users/${id}/permissions`);
 };
 
+export const getEffectivePermissionsApi = id => {
+  return request.get(`/users/${id}/permissions`, { params: { effective: 1 } });
+};
+
 export const saveUserPermissionsApi = (id, permissions) => {
   return request.post(`/users/${id}/permissions`, { permissions });
 };

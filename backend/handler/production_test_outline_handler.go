@@ -361,7 +361,7 @@ func CreateProductionTestOutlineHandler(w http.ResponseWriter, r *http.Request) 
 }
 
 func DeleteProductionTestOutlineHandler(w http.ResponseWriter, r *http.Request, id int64) {
-	if !hasRequestRole(r, "system_admin") {
+	if !hasRequestRole(r, "system_admin") && !hasRequestPermission(r, "production:outline:delete") {
 		http.Error(w, "无删除生产测试大纲权限：只有管理员可以删除", http.StatusForbidden)
 		return
 	}

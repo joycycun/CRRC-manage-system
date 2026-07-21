@@ -39,7 +39,9 @@ import FaultAnalysisView from "@/views/aftersales/FaultAnalysisView.vue";
 import ProjectProgressReportView from "@/views/report/ProjectProgressReportView.vue";
 import VersionMatrixView from "@/views/report/VersionMatrixView.vue";
 import IssueStatisticsView from "@/views/report/IssueStatisticsView.vue";
+import UsageGuideView from "@/views/UsageGuideView.vue";
 import { canAccessPage, getDefaultAccessiblePage } from "@/utils/permission";
+import { getEffectivePermissionsApi } from "@/api/auth";
 
 const routes = [
   { path: "/login", component: LoginView },
@@ -93,7 +95,8 @@ const routes = [
 
   { path: "/report/project-progress", component: ProjectProgressReportView },
   { path: "/report/version-matrix", component: VersionMatrixView },
-  { path: "/report/issue-statistics", component: IssueStatisticsView }
+  { path: "/report/issue-statistics", component: IssueStatisticsView },
+  { path: "/usage-guide", component: UsageGuideView }
 ];
 
 const router = createRouter({
@@ -101,7 +104,7 @@ const router = createRouter({
   routes
 });
 
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
   const token = localStorage.getItem('token')
 
   if (to.path !== '/login' && !token) {
@@ -112,6 +115,20 @@ router.beforeEach((to, from, next) => {
   if (to.path === '/login' && token) {
     next(getDefaultAccessiblePage())
     return
+  }
+
+  if (token) {
+    try {
+      const user = JSON.parse(localStorage.getItem('user') || '{}')
+      if (user.id) {
+        const result = (await getEffectivePermissionsApi(user.id))?.data
+        if (result.code === 200) {
+          localStorage.setItem('permissions', JSON.stringify(result.data || []))
+        }
+      }
+    } catch (err) {
+      console.warn('刷新当前用户权限失败：', err)
+    }
   }
 
   if (token && !canAccessPage(to.path)) {

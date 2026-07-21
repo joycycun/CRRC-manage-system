@@ -446,7 +446,7 @@ type RequirementChangeCloseRequest struct {
 
 // POST /api/requirement-changes/{id}/close
 func CloseRequirementChangeHandler(w http.ResponseWriter, r *http.Request, id int64) {
-	if !hasRequestRole(r, "project_assistant") {
+	if !hasRequestRole(r, "project_assistant") && !hasRequestPermission(r, "requirement:close") {
 		http.Error(w, "无关闭权限：需求变更仅项目助理可关闭", http.StatusForbidden)
 		return
 	}

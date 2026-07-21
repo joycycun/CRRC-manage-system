@@ -28,6 +28,13 @@ INSERT INTO `permissions` VALUES (1,'project:view','查看项目','项目管理'
 /*!40000 ALTER TABLE `permissions` ENABLE KEYS */;
 UNLOCK TABLES;
 
+INSERT INTO permissions (permission_code, permission_name, module, description, created_at)
+VALUES ('inventory:view', '库存情况查看', '生产管理', '查看生产管理中的库存情况', NOW())
+ON DUPLICATE KEY UPDATE
+  permission_name = VALUES(permission_name),
+  module = VALUES(module),
+  description = VALUES(description);
+
 LOCK TABLES `user_roles` WRITE;
 /*!40000 ALTER TABLE `user_roles` DISABLE KEYS */;
 INSERT INTO `user_roles` VALUES (1,1,1,'2026-06-12 17:08:04'),(2,5,8,'2026-06-12 17:47:52'),(3,7,5,'2026-06-12 17:47:52'),(4,2,3,'2026-06-12 17:47:52'),(5,6,2,'2026-06-12 17:47:52'),(6,4,8,'2026-06-12 17:47:52'),(7,8,5,'2026-06-12 17:47:52'),(8,9,6,'2026-06-12 17:47:52'),(9,3,4,'2026-06-12 17:47:52'),(10,10,7,'2026-06-15 10:59:51'),(11,11,3,'2026-06-16 14:36:19'),(12,12,3,'2026-06-16 14:36:19'),(14,13,9,'2026-06-18 10:52:08'),(15,5,3,'2026-06-18 10:52:08'),(16,4,4,'2026-06-22 10:00:00');

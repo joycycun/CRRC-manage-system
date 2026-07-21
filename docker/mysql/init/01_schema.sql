@@ -220,6 +220,33 @@ CREATE TABLE `hardware_versions` (
   `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+CREATE TABLE IF NOT EXISTS `hardware_version_projects` (
+  `hardware_version_id` bigint NOT NULL,
+  `project_id` bigint NOT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`hardware_version_id`,`project_id`),
+  KEY `idx_hvp_project_id` (`project_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+CREATE TABLE IF NOT EXISTS `usage_guides` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `title` varchar(128) NOT NULL DEFAULT '',
+  `description` text,
+  `created_by` bigint NOT NULL DEFAULT '0',
+  `created_by_name` varchar(64) NOT NULL DEFAULT '',
+  `is_deleted` tinyint NOT NULL DEFAULT '0',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+CREATE TABLE IF NOT EXISTS `usage_guide_images` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `guide_id` bigint NOT NULL,
+  `file_id` bigint NOT NULL,
+  `sort_order` int NOT NULL DEFAULT '0',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_usage_guide_images_guide` (`guide_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `inventory_devices`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;

@@ -1245,6 +1245,10 @@ func InventoryActionHandler(w http.ResponseWriter, r *http.Request) {
 
 func GetInventoryHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if !hasRequestRole(r, "production_staff") && !hasRequestRole(r, "system_admin") && !hasRequestRole(r, "leader") && !hasRequestPermission(r, "inventory:view") && !hasRequestPermission(r, "production:view") {
+		http.Error(w, "无库存情况查看权限", http.StatusForbidden)
+		return
+	}
 
 	ensureInventoryBoardColumns()
 
@@ -1386,7 +1390,7 @@ func GetInventoryHandler(w http.ResponseWriter, r *http.Request) {
 func GetBoardInboundHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	if !hasRequestRole(r, "production_staff") && !hasRequestRole(r, "system_admin") && !hasRequestRole(r, "leader") {
+	if !hasRequestRole(r, "production_staff") && !hasRequestRole(r, "shipping_staff") && !hasRequestRole(r, "system_admin") && !hasRequestRole(r, "leader") && !hasRequestPermission(r, "board-inbound:view") && !hasRequestPermission(r, "production:view") {
 		http.Error(w, "无板卡入库查看权限", http.StatusForbidden)
 		return
 	}
@@ -1473,7 +1477,7 @@ func GetBoardInboundHandler(w http.ResponseWriter, r *http.Request) {
 func ImportBoardInboundHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	if !hasRequestRole(r, "production_staff") && !hasRequestRole(r, "system_admin") {
+	if !hasRequestRole(r, "production_staff") && !hasRequestRole(r, "system_admin") && !hasRequestPermission(r, "board-inbound:import") {
 		http.Error(w, "无板卡入库导入权限", http.StatusForbidden)
 		return
 	}
@@ -2166,7 +2170,7 @@ func UpdateInventoryHandler(w http.ResponseWriter, r *http.Request, id int64) {
 func SubmitInventoryScrapHandler(w http.ResponseWriter, r *http.Request, id int64) {
 	w.Header().Set("Content-Type", "application/json")
 
-	if !hasRequestRole(r, "production_staff") && !hasRequestRole(r, "system_admin") {
+	if !hasRequestRole(r, "production_staff") && !hasRequestRole(r, "system_admin") && !hasRequestPermission(r, "production:update") {
 		http.Error(w, "无废弃申请权限：只有生产人员可以提交", http.StatusForbidden)
 		return
 	}
@@ -2490,7 +2494,7 @@ func ImportBurnRecordsHandler(w http.ResponseWriter, r *http.Request) {
 func DeleteBurnBatchHandler(w http.ResponseWriter, r *http.Request, batchNo string) {
 	w.Header().Set("Content-Type", "application/json")
 
-	if !hasRequestRole(r, "production_staff") && !hasRequestRole(r, "system_admin") {
+	if !hasRequestRole(r, "production_staff") && !hasRequestRole(r, "system_admin") && !hasRequestPermission(r, "burn:deleteBatch") && !hasRequestPermission(r, "production:delete") {
 		http.Error(w, "无删除权限：生产烧录批次仅生产人员或管理员可删除", http.StatusForbidden)
 		return
 	}
@@ -2604,7 +2608,7 @@ func DeleteBurnBatchHandler(w http.ResponseWriter, r *http.Request, batchNo stri
 func DeleteBurnRecordHandler(w http.ResponseWriter, r *http.Request, id int64) {
 	w.Header().Set("Content-Type", "application/json")
 
-	if !hasRequestRole(r, "production_staff") && !hasRequestRole(r, "system_admin") {
+	if !hasRequestRole(r, "production_staff") && !hasRequestRole(r, "system_admin") && !hasRequestPermission(r, "burn:deleteBatch") && !hasRequestPermission(r, "production:delete") {
 		http.Error(w, "无删除权限：生产烧录记录仅生产人员或管理员可删除", http.StatusForbidden)
 		return
 	}

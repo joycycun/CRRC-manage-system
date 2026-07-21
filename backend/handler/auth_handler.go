@@ -559,19 +559,30 @@ func ensureUserPermissionsTable() {
 		CREATE TABLE IF NOT EXISTS user_permissions (
 			id BIGINT PRIMARY KEY AUTO_INCREMENT,
 			user_id BIGINT NOT NULL,
-			permission_code VARCHAR(128) NOT NULL,
+			permission_code VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			UNIQUE KEY uk_user_permission (user_id, permission_code)
-		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
 	`)
 }
 
 func GetUserPermissionsHandler(w http.ResponseWriter, r *http.Request, id int64) {
-	if !hasRequestRole(r, "system_admin") {
+	requestUserID, _ := currentRequestUser(r)
+	isSelfEffectiveRequest := requestUserID == id && r.URL.Query().Get("effective") == "1"
+	if !hasRequestRole(r, "system_admin") && !isSelfEffectiveRequest {
 		json.NewEncoder(w).Encode(LoginResponse{Code: 403, Msg: "只有系统管理员可以查看用户权限"})
 		return
 	}
 	ensureUserPermissionsTable()
+	if isSelfEffectiveRequest {
+		list, err := queryUserPermissions(id)
+		if err != nil {
+			json.NewEncoder(w).Encode(LoginResponse{Code: 500, Msg: "查询有效权限失败: " + err.Error()})
+			return
+		}
+		json.NewEncoder(w).Encode(LoginResponse{Code: 200, Msg: "查询成功", Data: list})
+		return
+	}
 
 	rows, err := config.DB.Query(`
 		SELECT permission_code
@@ -640,7 +651,8 @@ func SaveUserPermissionsHandler(w http.ResponseWriter, r *http.Request, id int64
 		return
 	}
 
-	json.NewEncoder(w).Encode(LoginResponse{Code: 200, Msg: "保存成功"})
+	permissions, _ := queryUserPermissions(id)
+	json.NewEncoder(w).Encode(LoginResponse{Code: 200, Msg: "保存成功", Data: permissions})
 }
 
 func uniqueRoleCodes(values []string) []string {
@@ -1001,13 +1013,13 @@ func queryUserPermissions(userID int64) ([]string, error) {
 	rows, err := config.DB.Query(`
 		SELECT DISTINCT permission_code
 		FROM (
-			SELECT p.permission_code
+			SELECT p.permission_code COLLATE utf8mb4_general_ci AS permission_code
 			FROM user_roles ur
 			JOIN role_permissions rp ON ur.role_id = rp.role_id
 			JOIN permissions p ON rp.permission_id = p.id
 			WHERE ur.user_id = ?
 			UNION
-			SELECT permission_code
+			SELECT permission_code COLLATE utf8mb4_general_ci AS permission_code
 			FROM user_permissions
 			WHERE user_id = ?
 		) merged_permissions

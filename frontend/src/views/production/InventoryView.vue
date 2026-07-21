@@ -386,7 +386,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { auditInventoryScrap, getInventory, submitInventoryScrap } from '@/api/inventory'
-import { hasLeaderRole, hasRole } from '@/utils/permission'
+import { canUseAction, hasLeaderRole, hasRole } from '@/utils/permission'
 
 const route = useRoute()
 const filters = reactive({
@@ -625,7 +625,7 @@ const deviceTypeSummary = computed(() => {
 
 const canSubmitScrapRequest = computed(() => {
   if (!selectedInventory.value) return false
-  if (!hasRole('production_staff') && !hasRole('system_admin')) return false
+  if (!hasRole('production_staff') && !hasRole('system_admin') && !canUseAction('production:update')) return false
   if (selectedInventory.value.scrapAuditStatus === '待审核') return false
   return !['已废弃', '已报废', '已出库'].includes(selectedInventory.value.inventoryStatus)
 })
@@ -633,7 +633,7 @@ const canSubmitScrapRequest = computed(() => {
 const canAuditScrapRequest = computed(() => {
   if (!selectedInventory.value) return false
   if (selectedInventory.value.scrapAuditStatus !== '待审核') return false
-  return hasLeaderRole() || hasRole('system_admin')
+  return hasLeaderRole() || hasRole('system_admin') || canUseAction('production:audit')
 })
 
 const totalPage = computed(() => {
