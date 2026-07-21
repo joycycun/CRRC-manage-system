@@ -247,6 +247,16 @@ CREATE TABLE IF NOT EXISTS `usage_guide_images` (
   PRIMARY KEY (`id`),
   KEY `idx_usage_guide_images_guide` (`guide_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+CREATE TABLE IF NOT EXISTS `usage_guide_files` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `guide_id` bigint NOT NULL,
+  `file_id` bigint NOT NULL,
+  `sort_order` int NOT NULL DEFAULT '0',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_usage_guide_file` (`guide_id`,`file_id`),
+  KEY `idx_usage_guide_files_guide` (`guide_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `inventory_devices`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;

@@ -3,9 +3,9 @@
     <div class="page-header">
       <div>
         <h1>使用说明</h1>
-        <p>按业务场景维护图文操作说明</p>
+        <p>集中查看和下载系统操作文档</p>
       </div>
-      <button class="primary-btn" type="button" @click="openCreateDialog">新增说明</button>
+      <button v-if="isSystemAdmin" class="primary-btn" type="button" @click="openCreateDialog">新增说明</button>
     </div>
 
     <div class="filter-bar">
@@ -19,22 +19,27 @@
           <span class="expand-icon">{{ expandedGuideIds.includes(item.id) ? '⌄' : '›' }}</span>
           <span class="summary-main">
             <strong>{{ item.title }}</strong>
-            <small>{{ item.images.length }} 张图片 · {{ item.createdBy || '管理员' }} · {{ item.createdAt }}</small>
+            <small>{{ item.files.length }} 个文件 · {{ item.createdBy || '管理员' }} · {{ item.createdAt }}</small>
           </span>
           <span class="summary-description">{{ item.description || '暂无补充说明' }}</span>
         </button>
 
         <div v-if="expandedGuideIds.includes(item.id)" class="guide-content">
           <p v-if="item.description" class="description">{{ item.description }}</p>
-          <div class="image-list">
-            <figure v-for="(image, index) in item.images" :key="image.id || image.fileId">
-              <figcaption>步骤 {{ index + 1 }} · {{ image.fileName }}</figcaption>
-              <a :href="image.fileUrl" target="_blank" rel="noopener noreferrer">
-                <img :src="image.fileUrl" :alt="`${item.title}步骤${index + 1}`" />
-              </a>
-            </figure>
+          <div class="file-list">
+            <div v-for="(file, index) in item.files" :key="file.id || file.fileId" class="file-row">
+              <span class="file-index">{{ index + 1 }}</span>
+              <span class="file-info">
+                <strong :title="file.fileName">{{ file.fileName }}</strong>
+                <small>{{ fileTypeLabel(file) }}</small>
+              </span>
+              <span class="file-actions">
+                <button type="button" @click="openLocalFilePreview(file)">查看</button>
+                <button type="button" @click="downloadLocalFile(file, file.fileName)">下载</button>
+              </span>
+            </div>
           </div>
-          <div class="guide-actions">
+          <div v-if="isSystemAdmin" class="guide-actions">
             <button class="delete-btn" type="button" @click="removeGuide(item)">删除说明</button>
           </div>
         </div>
@@ -60,19 +65,19 @@
             <textarea v-model.trim="form.description" rows="3" placeholder="简要说明适用场景或注意事项"></textarea>
           </label>
           <label>
-            操作图片
+            说明文件
             <span class="upload-row">
-              <input ref="imageInput" class="native-file-input" type="file" accept="image/*" multiple @change="handleImageChange" />
-              <button class="choose-btn" type="button" @click="imageInput?.click()">选择图片</button>
-              <span>{{ form.images.length ? `已选择 ${form.images.length} 张` : '可一次选择多张图片' }}</span>
+              <input ref="fileInput" class="native-file-input" type="file" accept=".doc,.docx,.pdf,.txt,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.gif,.webp" multiple @change="handleFileChange" />
+              <button class="choose-btn" type="button" @click="fileInput?.click()">选择文件</button>
+              <span>{{ form.files.length ? `已选择 ${form.files.length} 个` : '支持文档、PDF、表格、演示文稿和图片' }}</span>
             </span>
           </label>
 
-          <div v-if="form.images.length" class="selected-images">
-            <div v-for="(image, index) in form.images" :key="image.fileId" class="selected-image">
-              <img :src="image.fileUrl" :alt="image.fileName" />
-              <span>{{ index + 1 }}. {{ image.fileName }}</span>
-              <button type="button" title="移除图片" @click="removeSelectedImage(index)">×</button>
+          <div v-if="form.files.length" class="selected-files">
+            <div v-for="(file, index) in form.files" :key="file.fileId" class="selected-file">
+              <span class="file-index">{{ index + 1 }}</span>
+              <span :title="file.fileName">{{ file.fileName }}</span>
+              <button type="button" title="移除文件" @click="removeSelectedFile(index)">×</button>
             </div>
           </div>
 
@@ -93,7 +98,8 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { createUsageGuide, deleteUsageGuide, getUsageGuides } from '@/api/usageGuide'
-import { buildUploadFilePayload } from '@/utils/filePreview'
+import { buildUploadFilePayload, downloadLocalFile, openLocalFilePreview } from '@/utils/filePreview'
+import { hasRole } from '@/utils/permission'
 
 const guides = ref([])
 const keyword = ref('')
@@ -101,8 +107,9 @@ const expandedGuideIds = ref([])
 const showCreateDialog = ref(false)
 const saving = ref(false)
 const formError = ref('')
-const imageInput = ref(null)
-const form = reactive({ title: '', description: '', images: [] })
+const fileInput = ref(null)
+const form = reactive({ title: '', description: '', files: [] })
+const isSystemAdmin = computed(() => hasRole('system_admin'))
 
 const filteredGuides = computed(() => {
   const value = keyword.value.toLowerCase()
@@ -122,7 +129,7 @@ async function loadGuides() {
       ...item,
       title: item.title || '',
       description: item.description || '',
-      images: item.images || []
+      files: item.files || item.images || []
     }))
   } catch (err) {
     alert(err.response?.data || err.message || '加载使用说明失败')
@@ -138,7 +145,7 @@ function toggleGuide(id) {
 function openCreateDialog() {
   form.title = ''
   form.description = ''
-  form.images = []
+  form.files = []
   formError.value = ''
   showCreateDialog.value = true
 }
@@ -147,21 +154,27 @@ function closeCreateDialog() {
   if (!saving.value) showCreateDialog.value = false
 }
 
-async function handleImageChange(event) {
+async function handleFileChange(event) {
   const files = Array.from(event.target.files || [])
   if (!files.length) return
   try {
     const payloads = await Promise.all(files.map(file => buildUploadFilePayload(file)))
-    form.images = [...form.images, ...payloads]
+    form.files = [...form.files, ...payloads]
   } catch (err) {
-    formError.value = '读取图片失败，请重新选择'
+    formError.value = '读取文件失败，请重新选择'
   } finally {
     event.target.value = ''
   }
 }
 
-function removeSelectedImage(index) {
-  form.images.splice(index, 1)
+function removeSelectedFile(index) {
+  form.files.splice(index, 1)
+}
+
+function fileTypeLabel(file) {
+  const name = String(file.fileName || '')
+  const extension = name.includes('.') ? name.split('.').pop().toUpperCase() : '文件'
+  return `${extension} 文件`
 }
 
 async function saveGuide() {
@@ -170,8 +183,8 @@ async function saveGuide() {
     formError.value = '请输入说明名称'
     return
   }
-  if (!form.images.length) {
-    formError.value = '请至少选择一张图片'
+  if (!form.files.length) {
+    formError.value = '请至少选择一个说明文件'
     return
   }
   try {
@@ -179,7 +192,7 @@ async function saveGuide() {
     const result = (await createUsageGuide({
       title: form.title,
       description: form.description,
-      images: form.images
+      files: form.files
     }))?.data
     if (result.code !== 200) throw new Error(result.msg || '保存失败')
     showCreateDialog.value = false
@@ -226,11 +239,15 @@ input:focus, textarea:focus { border-color: #3b82f6; }
 .summary-main small, .summary-description { color: #94a3b8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .guide-content { padding: 20px 24px 24px 56px; border-top: 1px solid #1e293b; background: #0b1220; }
 .description { margin: 0 0 18px; color: #cbd5e1; white-space: pre-wrap; }
-.image-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px; }
-figure { margin: 0; overflow: hidden; background: #020617; border: 1px solid #263449; border-radius: 6px; }
-figcaption { padding: 10px 12px; color: #cbd5e1; border-bottom: 1px solid #263449; }
-figure a { display: block; }
-figure img { display: block; width: 100%; height: 300px; object-fit: contain; background: #0a1020; }
+.file-list { overflow: hidden; border: 1px solid #263449; border-radius: 6px; }
+.file-row { min-height: 68px; display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px 14px; background: #0f172a; border-bottom: 1px solid #263449; }
+.file-row:last-child { border-bottom: 0; }
+.file-index { display: grid; place-items: center; width: 28px; height: 28px; color: #bfdbfe; background: #1e3a8a; border-radius: 50%; }
+.file-info { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.file-info strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-info small { color: #64748b; }
+.file-actions { display: flex; gap: 8px; }
+.file-actions button { min-height: 34px; padding: 0 13px; color: #dbeafe; background: #1e3a8a; border: 0; border-radius: 5px; cursor: pointer; }
 .guide-actions { display: flex; justify-content: flex-end; margin-top: 18px; }
 .delete-btn { color: #fecaca; background: #7f1d1d; }
 .empty-state { padding: 54px; color: #64748b; text-align: center; background: #0f172a; border: 1px dashed #334155; border-radius: 8px; }
@@ -245,11 +262,10 @@ figure img { display: block; width: 100%; height: 300px; object-fit: contain; ba
 .upload-row { display: flex; align-items: center; gap: 12px; color: #94a3b8; }
 .native-file-input { display: none; }
 .choose-btn { color: #dbeafe; background: #1d4ed8; white-space: nowrap; }
-.selected-images { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-.selected-image { min-width: 0; display: grid; grid-template-columns: 56px minmax(0, 1fr) 30px; align-items: center; gap: 10px; padding: 8px; background: #111827; border: 1px solid #263449; border-radius: 6px; }
-.selected-image img { width: 56px; height: 44px; object-fit: cover; border-radius: 4px; }
-.selected-image span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.selected-image button { color: #fca5a5; background: transparent; border: 0; font-size: 20px; cursor: pointer; }
+.selected-files { display: flex; flex-direction: column; gap: 8px; }
+.selected-file { min-width: 0; display: grid; grid-template-columns: 32px minmax(0, 1fr) 30px; align-items: center; gap: 10px; padding: 9px 10px; background: #111827; border: 1px solid #263449; border-radius: 6px; }
+.selected-file > span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.selected-file button { color: #fca5a5; background: transparent; border: 0; font-size: 20px; cursor: pointer; }
 .form-error { margin: 0; color: #fca5a5; }
 .dialog-footer { justify-content: flex-end; gap: 10px; border-top: 1px solid #1e293b; }
 .cancel-btn { color: #cbd5e1; background: #334155; }
@@ -257,7 +273,7 @@ figure img { display: block; width: 100%; height: 300px; object-fit: contain; ba
   .guide-summary { grid-template-columns: 24px minmax(0, 1fr); }
   .summary-description { display: none; }
   .guide-content { padding: 16px; }
-  .image-list, .selected-images { grid-template-columns: 1fr; }
-  figure img { height: 220px; }
+  .file-row { grid-template-columns: 32px minmax(0, 1fr); }
+  .file-actions { grid-column: 2; }
 }
 </style>

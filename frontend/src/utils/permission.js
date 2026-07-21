@@ -311,7 +311,7 @@ function shouldRestrictCurrentUser() {
 }
 
 export function canAccessPage(path) {
-  if (path === '/usage-guide') return hasRole('system_admin')
+  if (path === '/usage-guide') return getStoredRoles().length > 0
 
   const pagePermissionMap = {
     '/dashboard': ['dashboard:view'],

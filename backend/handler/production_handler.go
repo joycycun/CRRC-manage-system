@@ -1205,6 +1205,76 @@ func ensureInventoryBoardColumns() {
 	_, _ = config.DB.Exec(`ALTER TABLE inventory_devices ADD COLUMN scrap_audit_user_name VARCHAR(64) DEFAULT '' AFTER scrap_audit_user_id`)
 	_, _ = config.DB.Exec(`ALTER TABLE inventory_devices ADD COLUMN scrap_audit_time DATETIME NULL AFTER scrap_audit_user_name`)
 	_, _ = config.DB.Exec(`ALTER TABLE inventory_devices ADD COLUMN scrap_reject_reason VARCHAR(255) DEFAULT '' AFTER scrap_audit_time`)
+	_ = migrateDirectInventoryBoardRecords()
+}
+
+func migrateDirectInventoryBoardRecords() error {
+	const directInventoryModel = `联络电话手持话柄\handheld mic-zycoo`
+	rows, err := config.DB.Query(`
+		SELECT id, IFNULL(product_name, ''), IFNULL(product_code, ''), IFNULL(quantity, 1),
+		       IFNULL(source_file_id, 0), IFNULL(source_file_name, '')
+		FROM inventory_devices
+		WHERE IFNULL(is_deleted, 0) = 0
+		  AND product_model = ?
+		  AND IFNULL(inventory_status, '') IN ('板卡入库', '已烧录')
+	`, directInventoryModel)
+	if err != nil {
+		return err
+	}
+	type directRecord struct {
+		id           int64
+		productName  string
+		productCode  string
+		quantity     int
+		sourceFileID int64
+		sourceName   string
+	}
+	records := make([]directRecord, 0)
+	for rows.Next() {
+		var item directRecord
+		if err := rows.Scan(&item.id, &item.productName, &item.productCode, &item.quantity, &item.sourceFileID, &item.sourceName); err != nil {
+			rows.Close()
+			return err
+		}
+		records = append(records, item)
+	}
+	rows.Close()
+
+	for _, item := range records {
+		tx, err := config.DB.Begin()
+		if err != nil {
+			return err
+		}
+		if _, err = tx.Exec(`
+			UPDATE inventory_devices
+			SET quantity = 1, inventory_status = '在库', inbound_type = 'direct',
+			    remark = '无需烧录和出厂测试，板卡入库后直接进入库存', update_time = NOW()
+			WHERE id = ?
+		`, item.id); err != nil {
+			tx.Rollback()
+			return err
+		}
+		for unit := 2; unit <= item.quantity; unit++ {
+			code := strconv.FormatInt(item.id, 10) + "-" + strconv.Itoa(unit)
+			if _, err = tx.Exec(`
+				INSERT INTO inventory_devices (
+					project_id, device_type, product_name, product_model, product_code, quantity,
+					sn, mac_address, pcb_qr_code, hardware_id, hardware_version, software_id,
+					software_version, inventory_status, source_burn_record_id, factory_test_id,
+					source_file_id, source_file_name, inbound_type, in_time, update_time, remark, is_deleted
+				) VALUES (0, ?, ?, ?, ?, 1, ?, ?, '', 0, '', 0, '', '在库', 0, 0, ?, ?, 'direct', NOW(), NOW(), '无需烧录和出厂测试，板卡入库后直接进入库存', 0)
+				ON DUPLICATE KEY UPDATE inventory_status = '在库', inbound_type = 'direct', quantity = 1, is_deleted = 0, update_time = NOW()
+			`, item.productName, item.productName, directInventoryModel, item.productCode,
+				"DIRECT-MIGRATED-SN-"+code, "DIRECT-MIGRATED-MAC-"+code, item.sourceFileID, item.sourceName); err != nil {
+				tx.Rollback()
+				return err
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func InventoryActionHandler(w http.ResponseWriter, r *http.Request) {
@@ -1526,6 +1596,7 @@ func ImportBoardInboundHandler(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback()
 
 	insertCount := 0
+	const directInventoryModel = `联络电话手持话柄\handheld mic-zycoo`
 	for index, item := range req.Records {
 		productName := strings.TrimSpace(item.ProductName)
 		productModel := strings.TrimSpace(item.ProductModel)
@@ -1548,6 +1619,36 @@ func ImportBoardInboundHandler(w http.ResponseWriter, r *http.Request) {
 		if rowNumber <= 0 {
 			rowNumber = index + 4
 		}
+
+		if productModel == directInventoryModel {
+			for unit := 1; unit <= quantity; unit++ {
+				syntheticCode := strconv.FormatInt(req.SourceFileID, 10) + "-" + strconv.Itoa(rowNumber) + "-" + strconv.Itoa(unit)
+				sn := "DIRECT-IN-SN-" + syntheticCode
+				macAddress := "DIRECT-IN-MAC-" + syntheticCode
+				_, err = tx.Exec(`
+					INSERT INTO inventory_devices (
+						project_id, device_type, product_name, product_model, product_code, quantity,
+						sn, mac_address, pcb_qr_code, hardware_id, hardware_version,
+						software_id, software_version, inventory_status, source_burn_record_id,
+						factory_test_id, source_file_id, source_file_name, inbound_type,
+						in_time, update_time, remark, is_deleted
+					) VALUES (0, ?, ?, ?, ?, 1, ?, ?, '', 0, '', 0, '', '在库', 0, 0, ?, ?, 'direct', NOW(), NOW(), '无需烧录和出厂测试，板卡入库后直接进入库存', 0)
+					ON DUPLICATE KEY UPDATE
+						device_type = VALUES(device_type), product_name = VALUES(product_name),
+						product_model = VALUES(product_model), product_code = VALUES(product_code),
+						quantity = 1, inventory_status = '在库', source_file_id = VALUES(source_file_id),
+						source_file_name = VALUES(source_file_name), inbound_type = 'direct',
+						remark = VALUES(remark), update_time = NOW(), is_deleted = 0
+				`, productName, productName, productModel, productCode, sn, macAddress, req.SourceFileID, req.FileName)
+				if err != nil {
+					http.Error(w, "直入库存产品导入失败: "+err.Error(), http.StatusInternalServerError)
+					return
+				}
+				insertCount++
+			}
+			continue
+		}
+
 		syntheticCode := strconv.FormatInt(req.SourceFileID, 10) + "-" + strconv.Itoa(rowNumber)
 		sn := "BOARD-IN-SN-" + syntheticCode
 		macAddress := "BOARD-IN-MAC-" + syntheticCode
@@ -1879,7 +1980,8 @@ func backfillBoardCompositionDeductionsByInventoryModels() {
 			  SELECT 1
 			  FROM board_compositions bc
 			  WHERE IFNULL(bc.is_deleted, 0) = 0
-			    AND bc.outbound_model = inv.product_model
+			    AND CONVERT(bc.outbound_model USING utf8mb4) COLLATE utf8mb4_general_ci
+			        = CONVERT(inv.product_model USING utf8mb4) COLLATE utf8mb4_general_ci
 		  )
 		  AND NOT EXISTS (
 			  SELECT 1
