@@ -270,7 +270,7 @@ CREATE TABLE `inventory_devices` (
   `product_code` varchar(128) COLLATE utf8mb4_general_ci DEFAULT '' COMMENT '产品编码',
   `quantity` int NOT NULL DEFAULT '1' COMMENT '数量',
   `sn` varchar(128) COLLATE utf8mb4_general_ci NOT NULL COMMENT 'SN',
-  `mac_address` varchar(64) COLLATE utf8mb4_general_ci NOT NULL COMMENT 'MAC',
+  `mac_address` varchar(64) COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT 'MAC，可选',
   `pcb_qr_code` varchar(255) COLLATE utf8mb4_general_ci DEFAULT '' COMMENT 'PCB二维码',
   `hardware_id` bigint DEFAULT NULL COMMENT '硬件版本ID',
   `hardware_version` varchar(64) COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT '硬件版本',

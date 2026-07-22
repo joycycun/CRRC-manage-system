@@ -724,18 +724,6 @@ func GetHardwareTestsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func hardwareTestVisibilitySQL(r *http.Request) string {
-	if hasRequestRole(r, "system_admin") {
-		return ""
-	}
-
-	if hasRequestRole(r, "leader") || hasRequestPermission(r, "hardware:audit") {
-		return " AND IFNULL(ht.audit_status, '草稿') IN ('待审核', 'submitted', '已提交', '已通过', '审核通过', 'approved', '已驳回', '审核驳回', 'rejected')"
-	}
-
-	if hasRequestRole(r, "quality_staff") || hasRequestPermission(r, "hardware:view") {
-		return " AND IFNULL(ht.audit_status, '草稿') IN ('待审核', 'submitted', '已提交', '已通过', '审核通过', 'approved', '已驳回', '审核驳回', 'rejected')"
-	}
-
 	userID, userName := currentRequestUser(r)
 	ownSQL := ""
 	if userID > 0 {
@@ -743,6 +731,10 @@ func hardwareTestVisibilitySQL(r *http.Request) string {
 	}
 	if userName != "" {
 		ownSQL += " OR IFNULL(ht.uploader_name, '') = '" + strings.ReplaceAll(userName, "'", "''") + "'"
+	}
+
+	if hasRequestRole(r, "system_admin") || hasRequestRole(r, "leader") || hasRequestPermission(r, "hardware:audit") {
+		return " AND (IFNULL(ht.audit_status, '草稿') IN ('待审核', 'submitted', '已提交', '已通过', '审核通过', 'approved', '已驳回', '审核驳回', 'rejected')" + ownSQL + ")"
 	}
 
 	return " AND (IFNULL(ht.audit_status, '草稿') IN ('已通过', '审核通过', 'approved')" + ownSQL + ")"
@@ -943,8 +935,12 @@ func DeleteHardwareTestHandler(w http.ResponseWriter, r *http.Request, id int64)
 	}
 
 	statusSQL := ""
+	args := []interface{}{id}
 	if !hasRequestRole(r, "system_admin") {
-		statusSQL = " AND IFNULL(audit_status, '草稿') IN ('草稿', 'draft', '已驳回', '审核驳回', 'rejected')"
+		userID, userName := currentRequestUser(r)
+		statusSQL = " AND IFNULL(audit_status, '草稿') IN ('草稿', 'draft', '已驳回', '审核驳回', 'rejected')" +
+			" AND (IFNULL(uploader_id, 0) = ? OR IFNULL(uploader_name, '') = ?)"
+		args = append(args, userID, userName)
 	}
 
 	result, err := config.DB.Exec(`
@@ -954,7 +950,7 @@ func DeleteHardwareTestHandler(w http.ResponseWriter, r *http.Request, id int64)
 			updated_at = NOW()
 		WHERE id = ?
 		  AND is_deleted = 0
-	`+statusSQL, id)
+	`+statusSQL, args...)
 
 	if err != nil {
 		http.Error(w, "删除失败: "+err.Error(), http.StatusInternalServerError)

@@ -464,6 +464,7 @@ const permissionGroups = [
       { code: 'hardware:delete', name: '硬件删除' },
       { code: 'hardware:submit', name: '硬件提交' },
       { code: 'hardware:audit', name: '硬件审核' },
+      { code: 'hardware-test:view', name: '硬件测试查看' },
       { code: 'hardware-dev-doc:view', name: '开发文档查看' },
       { code: 'hardware-dev-doc:upload', name: '开发文档上传' },
       { code: 'hardware-dev-doc:download', name: '开发文档下载' },

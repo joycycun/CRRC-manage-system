@@ -852,6 +852,29 @@ func CreateFactoryTestHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	item := req.FactoryTest
+	if item.BurnRecordID == 0 {
+		http.Error(w, "烧录记录ID不能为空", http.StatusBadRequest)
+		return
+	}
+	var burnProductName string
+	var burnProductModel string
+	if err := config.DB.QueryRow(`
+		SELECT IFNULL(product_name, ''), IFNULL(product_model, '')
+		FROM burn_records
+		WHERE id = ? AND IFNULL(is_deleted, 0) = 0
+	`, item.BurnRecordID).Scan(&burnProductName, &burnProductModel); err != nil {
+		http.Error(w, "烧录记录不存在", http.StatusBadRequest)
+		return
+	}
+	if isHandsetProduct(burnProductName, burnProductModel) {
+		http.Error(w, "联络电话手持话柄烧录后已直接入库，无需创建出厂测试", http.StatusBadRequest)
+		return
+	}
+
+	if item.FileID == 0 {
+		http.Error(w, "测试文件ID不能为空", http.StatusBadRequest)
+		return
+	}
 	if err := saveUploadedFile(UploadedFilePayload{
 		FileID:          item.FileID,
 		FileName:        req.FileName,
@@ -859,16 +882,6 @@ func CreateFactoryTestHandler(w http.ResponseWriter, r *http.Request) {
 		FileData:        req.FileData,
 	}); err != nil {
 		http.Error(w, "保存出厂测试文件失败: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	if item.BurnRecordID == 0 {
-		http.Error(w, "烧录记录ID不能为空", http.StatusBadRequest)
-		return
-	}
-
-	if item.FileID == 0 {
-		http.Error(w, "测试文件ID不能为空", http.StatusBadRequest)
 		return
 	}
 
@@ -1205,76 +1218,7 @@ func ensureInventoryBoardColumns() {
 	_, _ = config.DB.Exec(`ALTER TABLE inventory_devices ADD COLUMN scrap_audit_user_name VARCHAR(64) DEFAULT '' AFTER scrap_audit_user_id`)
 	_, _ = config.DB.Exec(`ALTER TABLE inventory_devices ADD COLUMN scrap_audit_time DATETIME NULL AFTER scrap_audit_user_name`)
 	_, _ = config.DB.Exec(`ALTER TABLE inventory_devices ADD COLUMN scrap_reject_reason VARCHAR(255) DEFAULT '' AFTER scrap_audit_time`)
-	_ = migrateDirectInventoryBoardRecords()
-}
-
-func migrateDirectInventoryBoardRecords() error {
-	const directInventoryModel = `联络电话手持话柄\handheld mic-zycoo`
-	rows, err := config.DB.Query(`
-		SELECT id, IFNULL(product_name, ''), IFNULL(product_code, ''), IFNULL(quantity, 1),
-		       IFNULL(source_file_id, 0), IFNULL(source_file_name, '')
-		FROM inventory_devices
-		WHERE IFNULL(is_deleted, 0) = 0
-		  AND product_model = ?
-		  AND IFNULL(inventory_status, '') IN ('板卡入库', '已烧录')
-	`, directInventoryModel)
-	if err != nil {
-		return err
-	}
-	type directRecord struct {
-		id           int64
-		productName  string
-		productCode  string
-		quantity     int
-		sourceFileID int64
-		sourceName   string
-	}
-	records := make([]directRecord, 0)
-	for rows.Next() {
-		var item directRecord
-		if err := rows.Scan(&item.id, &item.productName, &item.productCode, &item.quantity, &item.sourceFileID, &item.sourceName); err != nil {
-			rows.Close()
-			return err
-		}
-		records = append(records, item)
-	}
-	rows.Close()
-
-	for _, item := range records {
-		tx, err := config.DB.Begin()
-		if err != nil {
-			return err
-		}
-		if _, err = tx.Exec(`
-			UPDATE inventory_devices
-			SET quantity = 1, inventory_status = '在库', inbound_type = 'direct',
-			    remark = '无需烧录和出厂测试，板卡入库后直接进入库存', update_time = NOW()
-			WHERE id = ?
-		`, item.id); err != nil {
-			tx.Rollback()
-			return err
-		}
-		for unit := 2; unit <= item.quantity; unit++ {
-			code := strconv.FormatInt(item.id, 10) + "-" + strconv.Itoa(unit)
-			if _, err = tx.Exec(`
-				INSERT INTO inventory_devices (
-					project_id, device_type, product_name, product_model, product_code, quantity,
-					sn, mac_address, pcb_qr_code, hardware_id, hardware_version, software_id,
-					software_version, inventory_status, source_burn_record_id, factory_test_id,
-					source_file_id, source_file_name, inbound_type, in_time, update_time, remark, is_deleted
-				) VALUES (0, ?, ?, ?, ?, 1, ?, ?, '', 0, '', 0, '', '在库', 0, 0, ?, ?, 'direct', NOW(), NOW(), '无需烧录和出厂测试，板卡入库后直接进入库存', 0)
-				ON DUPLICATE KEY UPDATE inventory_status = '在库', inbound_type = 'direct', quantity = 1, is_deleted = 0, update_time = NOW()
-			`, item.productName, item.productName, directInventoryModel, item.productCode,
-				"DIRECT-MIGRATED-SN-"+code, "DIRECT-MIGRATED-MAC-"+code, item.sourceFileID, item.sourceName); err != nil {
-				tx.Rollback()
-				return err
-			}
-		}
-		if err := tx.Commit(); err != nil {
-			return err
-		}
-	}
-	return nil
+	_, _ = config.DB.Exec(`ALTER TABLE inventory_devices MODIFY COLUMN mac_address VARCHAR(64) NULL`)
 }
 
 func InventoryActionHandler(w http.ResponseWriter, r *http.Request) {
@@ -1596,7 +1540,6 @@ func ImportBoardInboundHandler(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback()
 
 	insertCount := 0
-	const directInventoryModel = `联络电话手持话柄\handheld mic-zycoo`
 	for index, item := range req.Records {
 		productName := strings.TrimSpace(item.ProductName)
 		productModel := strings.TrimSpace(item.ProductModel)
@@ -1618,35 +1561,6 @@ func ImportBoardInboundHandler(w http.ResponseWriter, r *http.Request) {
 		rowNumber := item.RowNumber
 		if rowNumber <= 0 {
 			rowNumber = index + 4
-		}
-
-		if productModel == directInventoryModel {
-			for unit := 1; unit <= quantity; unit++ {
-				syntheticCode := strconv.FormatInt(req.SourceFileID, 10) + "-" + strconv.Itoa(rowNumber) + "-" + strconv.Itoa(unit)
-				sn := "DIRECT-IN-SN-" + syntheticCode
-				macAddress := "DIRECT-IN-MAC-" + syntheticCode
-				_, err = tx.Exec(`
-					INSERT INTO inventory_devices (
-						project_id, device_type, product_name, product_model, product_code, quantity,
-						sn, mac_address, pcb_qr_code, hardware_id, hardware_version,
-						software_id, software_version, inventory_status, source_burn_record_id,
-						factory_test_id, source_file_id, source_file_name, inbound_type,
-						in_time, update_time, remark, is_deleted
-					) VALUES (0, ?, ?, ?, ?, 1, ?, ?, '', 0, '', 0, '', '在库', 0, 0, ?, ?, 'direct', NOW(), NOW(), '无需烧录和出厂测试，板卡入库后直接进入库存', 0)
-					ON DUPLICATE KEY UPDATE
-						device_type = VALUES(device_type), product_name = VALUES(product_name),
-						product_model = VALUES(product_model), product_code = VALUES(product_code),
-						quantity = 1, inventory_status = '在库', source_file_id = VALUES(source_file_id),
-						source_file_name = VALUES(source_file_name), inbound_type = 'direct',
-						remark = VALUES(remark), update_time = NOW(), is_deleted = 0
-				`, productName, productName, productModel, productCode, sn, macAddress, req.SourceFileID, req.FileName)
-				if err != nil {
-					http.Error(w, "直入库存产品导入失败: "+err.Error(), http.StatusInternalServerError)
-					return
-				}
-				insertCount++
-			}
-			continue
 		}
 
 		syntheticCode := strconv.FormatInt(req.SourceFileID, 10) + "-" + strconv.Itoa(rowNumber)
@@ -2465,12 +2379,15 @@ func ImportBurnRecordsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "保存烧录源文件失败: "+err.Error(), http.StatusBadRequest)
 		return
 	}
+	ensureInventoryBoardColumns()
+	ensureBoardCompositionTables()
 
 	tx, err := config.DB.Begin()
 	if err != nil {
 		http.Error(w, "开启事务失败: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	defer tx.Rollback()
 
 	insertCount := 0
 
@@ -2523,7 +2440,24 @@ func ImportBurnRecordsHandler(w http.ResponseWriter, r *http.Request) {
 			sourceFileID = req.SourceFileID
 		}
 
-		_, err := tx.Exec(`
+		productName := strings.TrimSpace(item.ProductName)
+		productModel := strings.TrimSpace(item.ProductModel)
+		productCode := strings.TrimSpace(item.ProductCode)
+		handset := isHandsetProduct(productName, productModel)
+		if handset {
+			if productName == "" || productModel == "" || productCode == "" {
+				http.Error(w, "手持话柄烧录记录必须包含产品名称、产品型号、产品编码和序列号", http.StatusBadRequest)
+				return
+			}
+			macAddress = ""
+			item.HardwareID = 0
+			item.HardwareVersion = ""
+			item.SoftwareID = 0
+			item.SoftwareVersion = ""
+			pcbQrCode = ""
+		}
+
+		result, err := tx.Exec(`
 			INSERT INTO burn_records (
 				batch_no,
 				project_id,
@@ -2553,9 +2487,9 @@ func ImportBurnRecordsHandler(w http.ResponseWriter, r *http.Request) {
 			batchNo,
 			item.ProjectID,
 			item.ProductionOrderID,
-			item.ProductName,
-			item.ProductModel,
-			item.ProductCode,
+			productName,
+			productModel,
+			productCode,
 			deviceType,
 			sn,
 			macAddress,
@@ -2572,9 +2506,28 @@ func ImportBurnRecordsHandler(w http.ResponseWriter, r *http.Request) {
 		)
 
 		if err != nil {
-			tx.Rollback()
 			http.Error(w, "导入失败，SN或MAC可能重复: "+err.Error(), http.StatusInternalServerError)
 			return
+		}
+
+		if handset {
+			burnRecordID, err := result.LastInsertId()
+			if err != nil {
+				http.Error(w, "读取手持话柄烧录记录ID失败: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if err := deductHandsetBoardInbound(tx, burnRecordID, productName, productModel); err != nil {
+				if err == sql.ErrNoRows {
+					http.Error(w, "手持话柄板卡入库数量不足，无法完成烧录入库", http.StatusBadRequest)
+					return
+				}
+				http.Error(w, "扣减手持话柄板卡库存失败: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if err := createHandsetInventory(tx, burnRecordID, item.ProjectID, productName, productModel, productCode, sn, sourceFileID, req.FileName); err != nil {
+				http.Error(w, "手持话柄烧录后入库失败: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
 		}
 
 		insertCount++
@@ -2592,6 +2545,76 @@ func ImportBurnRecordsHandler(w http.ResponseWriter, r *http.Request) {
 			"count": insertCount,
 		},
 	})
+}
+
+func isHandsetProduct(productName string, productModel string) bool {
+	name := strings.ReplaceAll(strings.TrimSpace(productName), " ", "")
+	model := strings.ToLower(strings.TrimSpace(productModel))
+	return strings.Contains(name, "手持话柄") || model == "handheld mic-zycoo"
+}
+
+func deductHandsetBoardInbound(tx *sql.Tx, burnRecordID int64, productName string, productModel string) error {
+	var inventoryID int64
+	var quantity int
+	err := tx.QueryRow(`
+		SELECT id, IFNULL(quantity, 1)
+		FROM inventory_devices
+		WHERE IFNULL(is_deleted, 0) = 0
+		  AND IFNULL(inbound_type, '') = 'board'
+		  AND IFNULL(inventory_status, '') = '板卡入库'
+		  AND IFNULL(quantity, 0) > 0
+		  AND (
+			LOWER(TRIM(IFNULL(product_model, ''))) = LOWER(TRIM(?))
+			OR REPLACE(IFNULL(product_name, ''), ' ', '') = REPLACE(?, ' ', '')
+		  )
+		ORDER BY in_time ASC, id ASC
+		LIMIT 1
+		FOR UPDATE
+	`, productModel, productName).Scan(&inventoryID, &quantity)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(`
+		UPDATE inventory_devices
+		SET quantity = quantity - 1,
+			inventory_status = CASE WHEN quantity - 1 <= 0 THEN '已烧录' ELSE '板卡入库' END,
+			update_time = NOW(),
+			remark = CASE
+				WHEN IFNULL(remark, '') = '' THEN '手持话柄烧录扣减'
+				ELSE CONCAT(remark, '；手持话柄烧录扣减')
+			END
+		WHERE id = ? AND quantity = ?
+	`, inventoryID, quantity)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(`
+		INSERT INTO board_composition_deductions (
+			burn_record_id, composition_id, inventory_device_id, quantity, created_at
+		) VALUES (?, 0, ?, 1, NOW())
+	`, burnRecordID, inventoryID)
+	return err
+}
+
+func createHandsetInventory(tx *sql.Tx, burnRecordID int64, projectID int64, productName string, productModel string, productCode string, sn string, sourceFileID int64, sourceFileName string) error {
+	_, err := tx.Exec(`
+		INSERT INTO inventory_devices (
+			project_id, device_type, product_name, product_model, product_code, quantity,
+			sn, mac_address, pcb_qr_code, hardware_id, hardware_version, software_id,
+			software_version, inventory_status, source_burn_record_id, factory_test_id,
+			source_file_id, source_file_name, inbound_type, in_time, update_time, remark, is_deleted
+		) VALUES (?, ?, ?, ?, ?, 1, ?, NULL, '', 0, '', 0, '', '在库', ?, 0, ?, ?, 'handset_burn', NOW(), NOW(), '手持话柄烧录完成，无需出厂测试，直接入库', 0)
+		ON DUPLICATE KEY UPDATE
+			project_id = VALUES(project_id), device_type = VALUES(device_type),
+			product_name = VALUES(product_name), product_model = VALUES(product_model),
+			product_code = VALUES(product_code), quantity = 1, mac_address = NULL,
+			hardware_id = 0, hardware_version = '', software_id = 0, software_version = '',
+			inventory_status = '在库', source_burn_record_id = VALUES(source_burn_record_id),
+			factory_test_id = 0, source_file_id = VALUES(source_file_id),
+			source_file_name = VALUES(source_file_name), inbound_type = 'handset_burn',
+			update_time = NOW(), remark = VALUES(remark), is_deleted = 0
+	`, projectID, productName, productName, productModel, productCode, sn, burnRecordID, sourceFileID, sourceFileName)
+	return err
 }
 func DeleteBurnBatchHandler(w http.ResponseWriter, r *http.Request, batchNo string) {
 	w.Header().Set("Content-Type", "application/json")
@@ -3289,6 +3312,10 @@ func GetBurnRecordOptionsHandler(w http.ResponseWriter, r *http.Request) {
 			COUNT(*) AS total
 		FROM burn_records
 		WHERE IFNULL(is_deleted, 0) = 0
+		  AND NOT (
+			REPLACE(IFNULL(product_name, ''), ' ', '') LIKE '%手持话柄%'
+			OR LOWER(TRIM(IFNULL(product_model, ''))) = 'handheld mic-zycoo'
+		  )
 		GROUP BY
 			batch_no,
 			product_name,
@@ -3430,6 +3457,9 @@ type ShippingBatchDeviceVO struct {
 	SN                string `json:"sn"`
 	MacAddress        string `json:"macAddress"`
 	DeviceType        string `json:"deviceType"`
+	ProductName       string `json:"productName"`
+	ProductModel      string `json:"productModel"`
+	ProductCode       string `json:"productCode"`
 	HardwareVersion   string `json:"hardwareVersion"`
 	SoftwareVersion   string `json:"softwareVersion"`
 	CreatedAt         string `json:"createdAt"`
@@ -3515,19 +3545,23 @@ func shippingError(w http.ResponseWriter, status int, msg string) {
 func getShippingBatchDevicesByBatchID(batchID int64) ([]ShippingBatchDeviceVO, error) {
 	rows, err := config.DB.Query(`
 		SELECT
-			id,
-			batch_id,
-			inventory_device_id,
-			IFNULL(sn, ''),
-			IFNULL(mac_address, ''),
-			IFNULL(device_type, ''),
-			IFNULL(hardware_version, ''),
-			IFNULL(software_version, ''),
-			IFNULL(DATE_FORMAT(created_at, '%Y-%m-%d %H:%i:%s'), '')
-		FROM shipping_batch_devices
-		WHERE batch_id = ?
-		  AND IFNULL(is_deleted, 0) = 0
-		ORDER BY id ASC
+			sbd.id,
+			sbd.batch_id,
+			sbd.inventory_device_id,
+			IFNULL(sbd.sn, ''),
+			IFNULL(sbd.mac_address, ''),
+			IFNULL(sbd.device_type, ''),
+			IFNULL(inv.product_name, ''),
+			IFNULL(inv.product_model, ''),
+			IFNULL(inv.product_code, ''),
+			IFNULL(sbd.hardware_version, ''),
+			IFNULL(sbd.software_version, ''),
+			IFNULL(DATE_FORMAT(sbd.created_at, '%Y-%m-%d %H:%i:%s'), '')
+		FROM shipping_batch_devices sbd
+		LEFT JOIN inventory_devices inv ON inv.id = sbd.inventory_device_id
+		WHERE sbd.batch_id = ?
+		  AND IFNULL(sbd.is_deleted, 0) = 0
+		ORDER BY sbd.id ASC
 	`, batchID)
 	if err != nil {
 		return nil, err
@@ -3546,6 +3580,9 @@ func getShippingBatchDevicesByBatchID(batchID int64) ([]ShippingBatchDeviceVO, e
 			&item.SN,
 			&item.MacAddress,
 			&item.DeviceType,
+			&item.ProductName,
+			&item.ProductModel,
+			&item.ProductCode,
 			&item.HardwareVersion,
 			&item.SoftwareVersion,
 			&item.CreatedAt,

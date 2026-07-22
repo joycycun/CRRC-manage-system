@@ -493,8 +493,8 @@ func CreateShippingBatchHandler(w http.ResponseWriter, r *http.Request) {
 
 		err = tx.QueryRow(`
 			SELECT
-				sn,
-				mac_address,
+				IFNULL(sn, ''),
+				IFNULL(mac_address, ''),
 				IFNULL(device_type, ''),
 				IFNULL(hardware_version, ''),
 				IFNULL(software_version, ''),

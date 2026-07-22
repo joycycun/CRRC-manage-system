@@ -183,7 +183,7 @@
               <input
                 v-model="inventoryFilters.keyword"
                 class="mac-search-input"
-                placeholder="搜索 SN / MAC / 终端类型 / 终端型号"
+                placeholder="搜索产品名称 / 产品型号 / 产品编码 / 产品序列（SN）"
               />
 
               <select v-model="inventoryFilters.deviceType" class="mac-search-input">
@@ -220,9 +220,10 @@
                         @change="toggleAllFilteredInventory"
                       />
                     </th>
-                    <th>终端类型</th>
-                    <th>终端型号</th>
-                    <th>SN序列号</th>
+                    <th>产品名称</th>
+                    <th>产品型号</th>
+                    <th>产品编码</th>
+                    <th>产品序列（SN）</th>
                     <th>MAC地址</th>
                     <th>硬件版本</th>
                   </tr>
@@ -237,19 +238,21 @@
                         :value="item.id"
                       />
                     </td>
-                    <td>{{ item.deviceType || '-' }}</td>
+                    <td>{{ item.productName || item.deviceType || '-' }}</td>
                     <td>{{ item.productModel || '-' }}</td>
+                    <td>{{ item.productCode || '-' }}</td>
                     <td>{{ item.sn || '-' }}</td>
-                    <td>{{ item.macAddress || '-' }}</td>
+                    <td>{{ isHandsetItem(item) ? '无需' : (item.macAddress || '-') }}</td>
                     <td>
-                      <button class="version-edit-btn" @click="editInventoryHardwareVersion(item)">
+                      <span v-if="isHandsetItem(item)">无需</span>
+                      <button v-else class="version-edit-btn" @click="editInventoryHardwareVersion(item)">
                         {{ getInventoryHardwareVersion(item) || '点击填写' }}
                       </button>
                     </td>
                   </tr>
 
                   <tr v-if="paginatedInventoryList.length === 0">
-                    <td colspan="6" class="empty-table">
+                    <td colspan="7" class="empty-table">
                       暂无可选择的在库设备
                     </td>
                   </tr>
@@ -292,11 +295,12 @@
                 :key="device.id"
                 class="mac-check-item"
               >
-                <span>{{ device.deviceType || '-' }}</span>
+                <span>{{ device.productName || device.deviceType || '-' }}</span>
                 <em>{{ device.productModel || '-' }}</em>
+                <em>{{ device.productCode || '-' }}</em>
                 <em>{{ device.sn || '-' }}</em>
-                <em>{{ device.macAddress || '-' }}</em>
-                <em>{{ getInventoryHardwareVersion(device) || '-' }}</em>
+                <em v-if="!isHandsetItem(device)">{{ device.macAddress || '-' }}</em>
+                <em v-if="!isHandsetItem(device)">{{ getInventoryHardwareVersion(device) || '-' }}</em>
               </div>
               <div v-if="selectedInventoryDevices.length > selectedInventoryPreview.length" class="empty-dialog-data">
                 还有 {{ selectedInventoryDevices.length - selectedInventoryPreview.length }} 台已选择设备未展开显示。
@@ -424,7 +428,7 @@
           <input
             v-model="batchDeviceKeyword"
             class="mac-search-input"
-            placeholder="搜索本批次设备 SN / MAC / 终端类型 / 软件版本 / 硬件版本"
+            placeholder="搜索本批次产品名称 / 产品型号 / 产品编码 / 产品序列（SN）"
           />
 
           <div class="mac-panel-header">
@@ -439,8 +443,10 @@
             <thead>
               <tr>
                 <th>序号</th>
-                <th>终端类型</th>
-                <th>SN序列号</th>
+                <th>产品名称</th>
+                <th>产品型号</th>
+                <th>产品编码</th>
+                <th>产品序列（SN）</th>
                 <th>MAC地址</th>
                 <th>软件版本</th>
                 <th>硬件版本</th>
@@ -450,15 +456,17 @@
             <tbody>
               <tr v-for="(device, index) in paginatedSelectedBatchDevices" :key="device.detailId || device.id">
                 <td>{{ batchDevicePageStartIndex + index }}</td>
-                <td>{{ device.deviceType || '-' }}</td>
+                <td>{{ device.productName || device.deviceType || '-' }}</td>
+                <td>{{ device.productModel || '-' }}</td>
+                <td>{{ device.productCode || '-' }}</td>
                 <td>{{ device.sn || '-' }}</td>
-                <td>{{ device.macAddress || '-' }}</td>
-                <td>{{ device.softwareVersion || '-' }}</td>
-                <td>{{ device.hardwareVersion || '-' }}</td>
+                <td>{{ isHandsetItem(device) ? '无需' : (device.macAddress || '-') }}</td>
+                <td>{{ isHandsetItem(device) ? '无需' : (device.softwareVersion || '-') }}</td>
+                <td>{{ isHandsetItem(device) ? '无需' : (device.hardwareVersion || '-') }}</td>
               </tr>
 
               <tr v-if="paginatedSelectedBatchDevices.length === 0">
-                <td colspan="6" class="empty-table">
+                <td colspan="8" class="empty-table">
                   暂无设备明细
                 </td>
               </tr>
@@ -607,6 +615,7 @@ function normalizeInventory(item) {
     deviceType: item.deviceType || item.device_type || '',
     productName: item.productName || item.product_name || '',
     productModel: item.productModel || item.product_model || '',
+    productCode: item.productCode || item.product_code || '',
     sn: item.sn || '',
     macAddress: item.macAddress || item.mac_address || '',
     hardwareVersion: item.hardwareVersion || item.hardware_version || '',
@@ -616,6 +625,12 @@ function normalizeInventory(item) {
     updateTime: formatDateTime(item.updateTime || item.update_time),
     remark: item.remark || ''
   }
+}
+
+function isHandsetItem(item) {
+  const productName = String(item?.productName || item?.deviceType || '').replace(/\s+/g, '')
+  const productModel = String(item?.productModel || '').trim().toLowerCase()
+  return productName.includes('手持话柄') || productModel === 'handheld mic-zycoo'
 }
 
 function normalizeAuditStatus(status) {
@@ -644,6 +659,9 @@ function normalizeBatch(item) {
     detailId: device.detailId || device.detail_id || device.id,
     inventoryDeviceId: device.inventoryDeviceId || device.inventory_device_id || device.id,
     deviceType: device.deviceType || device.device_type || '',
+    productName: device.productName || device.product_name || '',
+    productModel: device.productModel || device.product_model || '',
+    productCode: device.productCode || device.product_code || '',
     sn: device.sn || '',
     macAddress: device.macAddress || device.mac_address || '',
     hardwareVersion: device.hardwareVersion || device.hardware_version || '',
@@ -742,6 +760,8 @@ const filteredInventoryList = computed(() => {
       String(item.sn || '').toLowerCase().includes(keyword) ||
       String(item.macAddress || '').toLowerCase().includes(keyword) ||
       String(item.deviceType || '').toLowerCase().includes(keyword) ||
+      String(item.productName || '').toLowerCase().includes(keyword) ||
+      String(item.productCode || '').toLowerCase().includes(keyword) ||
       String(item.productModel || '').toLowerCase().includes(keyword) ||
       String(item.softwareVersion || '').toLowerCase().includes(keyword) ||
       String(item.hardwareVersion || '').toLowerCase().includes(keyword)
@@ -796,6 +816,9 @@ const selectedBatchFilteredDevices = computed(() => {
   return selectedBatch.value.deviceList.filter(item => {
     if (!keyword) return true
     return String(item.sn || '').toLowerCase().includes(keyword) ||
+      String(item.productName || '').toLowerCase().includes(keyword) ||
+      String(item.productModel || '').toLowerCase().includes(keyword) ||
+      String(item.productCode || '').toLowerCase().includes(keyword) ||
       String(item.macAddress || '').toLowerCase().includes(keyword) ||
       String(item.deviceType || '').toLowerCase().includes(keyword) ||
       String(item.softwareVersion || '').toLowerCase().includes(keyword) ||
@@ -1015,7 +1038,7 @@ async function createBatch() {
         const device = availableInventoryList.value.find(item => item.id === id)
         return {
           inventoryDeviceId: id,
-          hardwareVersion: getInventoryHardwareVersion(device)
+          hardwareVersion: isHandsetItem(device) ? '' : getInventoryHardwareVersion(device)
         }
       })
     })
@@ -1705,7 +1728,7 @@ async function deleteBatch(item) {
 
 .mac-check-item {
   display: grid !important;
-  grid-template-columns: 150px 170px minmax(140px, 1fr) minmax(150px, 1fr) 150px;
+  grid-template-columns: 150px 170px 150px minmax(150px, 1fr) 150px 150px;
   align-items: center;
   gap: 8px !important;
   padding: 8px;
@@ -1795,7 +1818,7 @@ async function deleteBatch(item) {
 
 .mac-dialog-table {
   width: 100%;
-  min-width: 820px;
+  min-width: 1080px;
   border-collapse: collapse;
   table-layout: fixed;
   border: 1px solid #1e293b;
@@ -1852,6 +1875,13 @@ async function deleteBatch(item) {
 
 .mac-dialog-table th:nth-child(6),
 .mac-dialog-table td:nth-child(6) {
+  width: 150px;
+}
+
+.mac-dialog-table th:nth-child(7),
+.mac-dialog-table td:nth-child(7),
+.mac-dialog-table th:nth-child(8),
+.mac-dialog-table td:nth-child(8) {
   width: 150px;
 }
 
@@ -2002,15 +2032,15 @@ async function deleteBatch(item) {
   }
 
   .mac-check-item {
-    grid-template-columns: 18px 1fr;
+    grid-template-columns: 1fr;
   }
 
   .mac-check-item em {
-    grid-column: 2;
+    grid-column: auto;
   }
 
   .mac-dialog-table {
-    min-width: 760px;
+    min-width: 1080px;
   }
 }
 </style>

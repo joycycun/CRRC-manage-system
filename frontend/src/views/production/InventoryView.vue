@@ -26,7 +26,7 @@
     <div class="filter-card">
       <input
         v-model="filters.keyword"
-        placeholder="搜索产品名称 / 产品型号 / 产品编码 / SN / MAC / PCB二维码 / 软件版本 / 硬件版本"
+        placeholder="搜索产品名称 / 产品型号 / 产品编码 / 产品序列（SN） / MAC / 版本"
       />
 
       <select v-model="filters.deviceType">
@@ -107,7 +107,7 @@
               <th>产品名称</th>
               <th>产品型号</th>
               <th>产品编码</th>
-              <th>SN序列号</th>
+              <th>产品序列（SN）</th>
               <th>MAC地址</th>
               <th>PCB二维码</th>
               <th>软件版本</th>
@@ -150,25 +150,25 @@
 
               <td>
                 <span class="mac-text" :title="item.macAddress">
-                  {{ item.macAddress }}
+                  {{ isHandsetItem(item) ? '无需' : item.macAddress }}
                 </span>
               </td>
 
               <td>
                 <span class="normal-text" :title="item.pcbQrCode">
-                  {{ item.pcbQrCode }}
+                  {{ isHandsetItem(item) ? '无需' : item.pcbQrCode }}
                 </span>
               </td>
 
               <td class="version-cell">
                 <span class="software-tag" :title="item.softwareVersion">
-                  {{ item.softwareVersion }}
+                  {{ isHandsetItem(item) ? '无需' : item.softwareVersion }}
                 </span>
               </td>
 
               <td class="version-cell">
                 <span class="hardware-tag" :title="item.hardwareVersion">
-                  {{ item.hardwareVersion }}
+                  {{ isHandsetItem(item) ? '无需' : item.hardwareVersion }}
                 </span>
               </td>
 
@@ -276,26 +276,26 @@
           </div>
 
           <div>
-            <span>SN序列号</span>
+            <span>产品序列（SN）</span>
             <strong>{{ selectedInventory.sn }}</strong>
           </div>
 
-          <div>
+          <div v-if="!isHandsetItem(selectedInventory)">
             <span>MAC地址</span>
             <strong>{{ selectedInventory.macAddress }}</strong>
           </div>
 
-          <div>
+          <div v-if="!isHandsetItem(selectedInventory)">
             <span>PCB二维码</span>
             <strong>{{ selectedInventory.pcbQrCode }}</strong>
           </div>
 
-          <div>
+          <div v-if="!isHandsetItem(selectedInventory)">
             <span>软件版本</span>
             <strong>{{ selectedInventory.softwareVersion }}</strong>
           </div>
 
-          <div>
+          <div v-if="!isHandsetItem(selectedInventory)">
             <span>硬件版本</span>
             <strong>{{ selectedInventory.hardwareVersion }}</strong>
           </div>
@@ -534,6 +534,12 @@ function normalizeInventory(item) {
 
     remark: item.remark || ''
   }
+}
+
+function isHandsetItem(item) {
+  const productName = String(item?.productName || '').replace(/\s+/g, '')
+  const productModel = String(item?.productModel || '').trim().toLowerCase()
+  return productName.includes('手持话柄') || productModel === 'handheld mic-zycoo'
 }
 
 function formatDateTime(value) {

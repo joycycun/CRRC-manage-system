@@ -15,7 +15,7 @@
     <div class="filter-card">
       <input
         v-model="filters.keyword"
-        placeholder="搜索生产批次号 / 产品名称 / 产品型号 / 产品编码 / 序列号 / MAC地址 / 硬件版本 / 软件版本 / PCB二维码 / 上传人 / 备注"
+        placeholder="搜索生产批次号 / 产品名称 / 产品型号 / 产品编码 / 产品序列 / MAC地址 / 版本 / 上传人"
       />
 
       <select v-model="filters.batchNo">
@@ -129,7 +129,7 @@
                           <th>产品名称</th>
                           <th>产品型号</th>
                           <th>产品编码</th>
-                          <th>序列号</th>
+                          <th>产品序列（SN）</th>
                           <th>MAC地址</th>
                           <th>硬件版本</th>
                           <th>软件版本</th>
@@ -170,19 +170,19 @@
 
                           <td>
                             <span class="mac-text" :title="item.macAddress">
-                              {{ item.macAddress }}
+                              {{ isHandsetItem(item) ? '无需' : item.macAddress }}
                             </span>
                           </td>
 
                           <td class="version-cell">
                             <span class="hardware-tag" :title="item.hardwareVersion">
-                              {{ item.hardwareVersion }}
+                              {{ isHandsetItem(item) ? '无需' : item.hardwareVersion }}
                             </span>
                           </td>
 
                           <td class="version-cell">
                             <span class="software-tag" :title="item.softwareVersion">
-                              {{ item.softwareVersion }}
+                              {{ isHandsetItem(item) ? '无需' : item.softwareVersion }}
                             </span>
                           </td>
 
@@ -266,6 +266,10 @@
             产品名称、产品型号、产品编码、序列号、MAC地址、硬件版本、软件版本、PCB二维码、备注。
           </p>
           <p>
+            联络电话手持话柄只需要产品名称、产品型号、产品编码、序列号。
+            型号为 handheld mic-zycoo 时，烧录后直接入库，无需 MAC、硬件版本、软件版本及出厂测试审核。
+          </p>
+          <p>
             如果 Excel 没有“生产批次号”这一列，系统会使用下面填写的生产批次号；
             如果这里也不填写，则从文件名中自动提取 8 位数字，例如 20260402。
           </p>
@@ -335,7 +339,7 @@
               <input v-model="manualForm.productCode" placeholder="产品编码" />
             </label>
             <label>
-              序列号
+              产品序列（SN）
               <input v-model="manualForm.serialNumber" placeholder="SN 序列号" />
             </label>
             <label>
@@ -379,7 +383,7 @@
                   <th>产品名称</th>
                   <th>产品型号</th>
                   <th>产品编码</th>
-                  <th>序列号</th>
+                  <th>产品序列（SN）</th>
                   <th>MAC地址</th>
                   <th>硬件版本</th>
                   <th>软件版本</th>
@@ -400,9 +404,9 @@
                   <td>
                     {{ item.serialNumbers.length > 0 ? item.serialNumbers.join('、') : '-' }}
                   </td>
-                  <td>{{ item.macAddress }}</td>
-                  <td>{{ item.hardwareVersion }}</td>
-                  <td>{{ item.softwareVersion }}</td>
+                  <td>{{ isHandsetItem(item) ? '无需' : (item.macAddress || '-') }}</td>
+                  <td>{{ isHandsetItem(item) ? '无需' : (item.hardwareVersion || '-') }}</td>
+                  <td>{{ isHandsetItem(item) ? '无需' : (item.softwareVersion || '-') }}</td>
                   <td>{{ item.pcbQrCode }}</td>
                   <td>{{ item.note }}</td>
                 </tr>
@@ -857,6 +861,12 @@ function splitSerialNumbers(value) {
     .filter(Boolean)
 }
 
+function isHandsetItem(item) {
+  const productName = String(item?.productName || '').replace(/\s+/g, '')
+  const productModel = String(item?.productModel || '').trim().toLowerCase()
+  return productName.includes('手持话柄') || productModel === 'handheld mic-zycoo'
+}
+
 function extractBatchNoFromFileName(fileName) {
   const match = String(fileName || '').match(/\d{8}/)
   return match ? match[0] : ''
@@ -1129,7 +1139,7 @@ async function handleExcelFileChange(event) {
         .filter(row => row.serialNumbers.length > 0)
 
       if (parsedRows.length === 0) {
-        alert('Excel 中未识别到有效数据，请确认第 3 行是否包含：产品名称、产品型号、产品编码、序列号、MAC地址、硬件版本、软件版本、PCB二维码、备注')
+        alert('Excel 中未识别到有效数据。手持话柄请确认第 3 行包含：产品名称、产品型号、产品编码、序列号')
         excelPreviewList.value = []
         return
       }
@@ -1158,6 +1168,14 @@ async function saveExcelBurnRecords() {
     uploadForm.fileName = '手动录入烧录记录'
   }
 
+  const invalidHandset = excelPreviewList.value.find(item =>
+    isHandsetItem(item) && (!item.productName || !item.productModel || !item.productCode || item.serialNumbers.length === 0)
+  )
+  if (invalidHandset) {
+    alert(`第 ${invalidHandset.rowNumber} 行手持话柄数据不完整，请填写产品名称、产品型号、产品编码和序列号`)
+    return
+  }
+
   const uploader = currentUserName.value
 
   const records = []
@@ -1169,6 +1187,7 @@ async function saveExcelBurnRecords() {
         : []
 
     serialNumbers.forEach(serialNumber => {
+      const handset = isHandsetItem(item)
       records.push({
         batchNo: getFinalBatchNo(item.batchNo),
         productName: item.productName || '-',
@@ -1177,11 +1196,11 @@ async function saveExcelBurnRecords() {
         deviceType: item.productName || '-',
         serialNumber,
         sn: serialNumber,
-        macAddress: item.macAddress || '',
-        hardwareVersion: item.hardwareVersion || '-',
-        softwareVersion: item.softwareVersion || '-',
-        pcbQrCode: item.pcbQrCode || '-',
-        pcbQRCode: item.pcbQrCode || '-',
+        macAddress: handset ? '' : (item.macAddress || ''),
+        hardwareVersion: handset ? '' : (item.hardwareVersion || '-'),
+        softwareVersion: handset ? '' : (item.softwareVersion || '-'),
+        pcbQrCode: handset ? '' : (item.pcbQrCode || '-'),
+        pcbQRCode: handset ? '' : (item.pcbQrCode || '-'),
         note: item.note || '-',
 
         fileName: uploadForm.fileName,
