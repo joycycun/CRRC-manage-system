@@ -1233,6 +1233,11 @@ func InventoryActionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(parts) == 1 && parts[0] == "return-to-board-inbound" && r.Method == http.MethodPost {
+		ReturnInventoryTypeToBoardInboundHandler(w, r)
+		return
+	}
+
 	id, err := strconv.ParseInt(parts[0], 10, 64)
 	if err != nil {
 		http.Error(w, "库存ID错误", http.StatusBadRequest)
@@ -2311,6 +2316,191 @@ func AuditInventoryScrapHandler(w http.ResponseWriter, r *http.Request, id int64
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"code": 200,
 		"msg":  "审核完成",
+	})
+}
+
+func ReturnInventoryTypeToBoardInboundHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if !hasRequestRole(r, "system_admin") {
+		http.Error(w, "无退回权限：只有管理员可以将库存退回板卡入库", http.StatusForbidden)
+		return
+	}
+
+	var req struct {
+		ProductModel string `json:"productModel"`
+		Reason       string `json:"reason"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "参数解析失败: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	req.ProductModel = strings.TrimSpace(req.ProductModel)
+	req.Reason = strings.TrimSpace(req.Reason)
+	if req.ProductModel == "" {
+		http.Error(w, "请选择需要退回的产品型号", http.StatusBadRequest)
+		return
+	}
+	if req.Reason == "" {
+		http.Error(w, "请填写退回原因", http.StatusBadRequest)
+		return
+	}
+
+	ensureInventoryBoardColumns()
+	ensureBoardCompositionTables()
+	tx, err := config.DB.Begin()
+	if err != nil {
+		http.Error(w, "开启退回事务失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
+	type returnItem struct {
+		InventoryID int64
+		BurnID      int64
+		SN          string
+	}
+	rows, err := tx.Query(`
+		SELECT id, IFNULL(source_burn_record_id, 0), IFNULL(sn, '')
+		FROM inventory_devices
+		WHERE IFNULL(is_deleted, 0) = 0
+		  AND TRIM(IFNULL(product_model, '')) = ?
+		  AND IFNULL(inventory_status, '') IN ('在库', '返厂', '更换')
+		ORDER BY id
+		FOR UPDATE
+	`, req.ProductModel)
+	if err != nil {
+		http.Error(w, "查询待退回库存失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	items := make([]returnItem, 0)
+	for rows.Next() {
+		var item returnItem
+		if err := rows.Scan(&item.InventoryID, &item.BurnID, &item.SN); err != nil {
+			rows.Close()
+			http.Error(w, "读取待退回库存失败: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		http.Error(w, "读取待退回库存失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	rows.Close()
+	if len(items) == 0 {
+		http.Error(w, "该产品型号没有可退回的在库设备", http.StatusNotFound)
+		return
+	}
+
+	restoredBoardQuantity := 0
+	processedBurnIDs := make(map[int64]bool)
+	restoredInventoryIDs := make(map[int64]bool)
+	for _, item := range items {
+		if item.BurnID == 0 {
+			http.Error(w, "库存设备 "+item.SN+" 缺少来源烧录记录，不能直接退回", http.StatusBadRequest)
+			return
+		}
+		if processedBurnIDs[item.BurnID] {
+			continue
+		}
+
+		var shippingCount int
+		if err := tx.QueryRow(`
+			SELECT COUNT(*)
+			FROM shipping_batch_devices
+			WHERE inventory_device_id = ?
+		`, item.InventoryID).Scan(&shippingCount); err != nil {
+			http.Error(w, "检查发货占用失败: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if shippingCount > 0 {
+			http.Error(w, "库存设备 "+item.SN+" 已绑定发货批次，请先处理发货批次", http.StatusBadRequest)
+			return
+		}
+
+		deductionRows, err := tx.Query(`
+			SELECT inventory_device_id, IFNULL(quantity, 0)
+			FROM board_composition_deductions
+			WHERE burn_record_id = ?
+		`, item.BurnID)
+		if err != nil {
+			http.Error(w, "查询板卡扣减关系失败: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		deductionQuantity := 0
+		for deductionRows.Next() {
+			var boardInventoryID int64
+			var quantity int
+			if err := deductionRows.Scan(&boardInventoryID, &quantity); err != nil {
+				deductionRows.Close()
+				http.Error(w, "读取板卡扣减关系失败: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+			deductionQuantity += quantity
+			restoredInventoryIDs[boardInventoryID] = true
+		}
+		if err := deductionRows.Err(); err != nil {
+			deductionRows.Close()
+			http.Error(w, "读取板卡扣减关系失败: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		deductionRows.Close()
+		if deductionQuantity <= 0 {
+			http.Error(w, "库存设备 "+item.SN+" 没有可恢复的板卡扣减记录，已取消退回", http.StatusBadRequest)
+			return
+		}
+
+		if err := restoreBoardCompositionDeductions(tx, "br.id = ?", item.BurnID); err != nil {
+			http.Error(w, "恢复板卡入库数量失败: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		restoredBoardQuantity += deductionQuantity
+		processedBurnIDs[item.BurnID] = true
+	}
+
+	for _, item := range items {
+		if _, err := tx.Exec(`DELETE FROM factory_tests WHERE burn_record_id = ?`, item.BurnID); err != nil {
+			http.Error(w, "删除关联出厂测试失败: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if _, err := tx.Exec(`DELETE FROM inventory_devices WHERE id = ?`, item.InventoryID); err != nil {
+			http.Error(w, "移除成品库存失败: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if _, err := tx.Exec(`DELETE FROM burn_records WHERE id = ?`, item.BurnID); err != nil {
+			http.Error(w, "删除关联烧录记录失败: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	_, adminName := currentRequestUser(r)
+	remark := "管理员" + adminName + "退回成品型号" + req.ProductModel + "，原因：" + req.Reason
+	for boardInventoryID := range restoredInventoryIDs {
+		_, _ = tx.Exec(`
+			UPDATE inventory_devices
+			SET remark = CASE
+					WHEN IFNULL(remark, '') = '' THEN ?
+					ELSE CONCAT(remark, '；', ?)
+				END,
+				update_time = NOW()
+			WHERE id = ?
+		`, remark, remark, boardInventoryID)
+	}
+
+	if err := tx.Commit(); err != nil {
+		http.Error(w, "提交退回事务失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"code": 200,
+		"msg":  "库存已退回板卡入库",
+		"data": map[string]interface{}{
+			"productModel":          req.ProductModel,
+			"inventoryCount":        len(items),
+			"restoredBoardQuantity": restoredBoardQuantity,
+		},
 	})
 }
 

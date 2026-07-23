@@ -30,3 +30,11 @@ export function auditInventoryScrap(id, data) {
     data
   })
 }
+
+export function returnInventoryTypeToBoardInbound(data) {
+  return request({
+    url: '/inventory/return-to-board-inbound',
+    method: 'post',
+    data
+  })
+}

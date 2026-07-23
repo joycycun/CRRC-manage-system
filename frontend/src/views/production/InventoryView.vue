@@ -5,6 +5,10 @@
       <div>
         <h1>库存情况管理</h1>
       </div>
+
+      <button v-if="canReturnToBoardInbound" class="return-btn" type="button" @click="openReturnDialog">
+        退回板卡入库
+      </button>
     </div>
 
     <!-- 统计卡片 -->
@@ -379,13 +383,66 @@
         </div>
       </div>
     </div>
+
+    <div v-if="showReturnDialog" class="dialog-mask" @click.self="closeReturnDialog">
+      <div class="dialog return-dialog">
+        <div class="dialog-header">
+          <h3>按产品型号退回板卡入库</h3>
+          <button @click="closeReturnDialog">×</button>
+        </div>
+
+        <div class="return-form">
+          <label>
+            <span>产品型号</span>
+            <select v-model="returnForm.productModel">
+              <option value="">请选择需要退回的产品型号</option>
+              <option v-for="item in returnTypeOptions" :key="item.productModel" :value="item.productModel">
+                {{ item.productName }} / {{ item.productModel }}（{{ item.count }} 件）
+              </option>
+            </select>
+          </label>
+
+          <div v-if="selectedReturnType" class="return-summary">
+            <div>
+              <span>产品名称</span>
+              <strong>{{ selectedReturnType.productName }}</strong>
+            </div>
+            <div>
+              <span>退回成品数量</span>
+              <strong>{{ selectedReturnType.count }}</strong>
+            </div>
+          </div>
+
+          <label>
+            <span>退回原因</span>
+            <textarea v-model.trim="returnForm.reason" rows="3" placeholder="请填写本次退回原因"></textarea>
+          </label>
+
+          <p class="return-warning">
+            该型号当前可退回的库存将全部移除，并恢复其烧录时扣减的板卡入库数量。已绑定发货批次的数据不会执行退回。
+          </p>
+        </div>
+
+        <div class="dialog-footer">
+          <button class="reset-btn" type="button" @click="closeReturnDialog">取消</button>
+          <button class="return-btn" type="button" :disabled="returningInventory" @click="submitReturnToBoardInbound">
+            {{ returningInventory ? '退回中...' : '确认退回' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { auditInventoryScrap, getInventory, submitInventoryScrap } from '@/api/inventory'
+import {
+  auditInventoryScrap,
+  getInventory,
+  returnInventoryTypeToBoardInbound,
+  submitInventoryScrap
+} from '@/api/inventory'
 import { canUseAction, hasLeaderRole, hasRole } from '@/utils/permission'
 
 const route = useRoute()
@@ -397,6 +454,12 @@ const filters = reactive({
 
 const selectedInventory = ref(null)
 const scrapChecked = ref(false)
+const showReturnDialog = ref(false)
+const returningInventory = ref(false)
+const returnForm = reactive({
+  productModel: '',
+  reason: ''
+})
 
 const currentPage = ref(1)
 const pageSize = ref(10)
@@ -642,6 +705,32 @@ const canAuditScrapRequest = computed(() => {
   return hasLeaderRole() || hasRole('system_admin') || canUseAction('production:audit')
 })
 
+const canReturnToBoardInbound = computed(() => hasRole('system_admin'))
+
+const returnTypeOptions = computed(() => {
+  const grouped = new Map()
+  inventoryList.value
+    .filter(item => item.sourceBurnRecordId > 0)
+    .filter(item => ['在库', '返厂', '更换'].includes(item.inventoryStatus))
+    .forEach(item => {
+      if (!item.productModel || item.productModel === '-') return
+      if (!grouped.has(item.productModel)) {
+        grouped.set(item.productModel, {
+          productModel: item.productModel,
+          productName: item.productName,
+          count: 0
+        })
+      }
+      grouped.get(item.productModel).count += 1
+    })
+
+  return Array.from(grouped.values()).sort((a, b) => a.productModel.localeCompare(b.productModel))
+})
+
+const selectedReturnType = computed(() => {
+  return returnTypeOptions.value.find(item => item.productModel === returnForm.productModel) || null
+})
+
 const totalPage = computed(() => {
   return Math.max(1, Math.ceil(filteredInventoryList.value.length / pageSize.value))
 })
@@ -692,6 +781,55 @@ function resetFilters() {
 function viewInventory(item) {
   selectedInventory.value = item
   scrapChecked.value = false
+}
+
+function openReturnDialog() {
+  returnForm.productModel = ''
+  returnForm.reason = ''
+  showReturnDialog.value = true
+}
+
+function closeReturnDialog() {
+  if (returningInventory.value) return
+  showReturnDialog.value = false
+}
+
+async function submitReturnToBoardInbound() {
+  if (!returnForm.productModel) {
+    alert('请选择需要退回的产品型号')
+    return
+  }
+  if (!returnForm.reason) {
+    alert('请填写退回原因')
+    return
+  }
+
+  const selected = selectedReturnType.value
+  const count = selected?.count || 0
+  if (!confirm(`确认将【${returnForm.productModel}】的 ${count} 件库存全部退回板卡入库吗？`)) {
+    return
+  }
+
+  returningInventory.value = true
+  try {
+    const res = await returnInventoryTypeToBoardInbound({
+      productModel: returnForm.productModel,
+      reason: returnForm.reason
+    })
+    const result = getResponseData(res)
+    if (result.code !== 200) {
+      alert(result.msg || '退回板卡入库失败')
+      return
+    }
+    alert(`退回成功：移除 ${result.data?.inventoryCount || count} 件成品库存，恢复 ${result.data?.restoredBoardQuantity || 0} 件板卡库存`)
+    showReturnDialog.value = false
+    await loadInventory()
+  } catch (err) {
+    console.error('退回板卡入库失败：', err)
+    alert(err.response?.data || '退回板卡入库失败')
+  } finally {
+    returningInventory.value = false
+  }
 }
 
 async function submitScrapRequest() {
@@ -883,6 +1021,7 @@ function goLastPage() {
 .reset-btn,
 .green-btn,
 .red-btn,
+.return-btn,
 .page-btn {
   height: 36px;
   padding: 0 16px;
@@ -890,6 +1029,21 @@ function goLastPage() {
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
+}
+
+.return-btn {
+  border: 1px solid #f59e0b;
+  background: #b45309;
+  color: #fff;
+}
+
+.return-btn:hover:not(:disabled) {
+  background: #92400e;
+}
+
+.return-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .primary-btn,
@@ -971,6 +1125,76 @@ function goLastPage() {
 
 .filter-card input::placeholder {
   color: #64748b;
+}
+
+.return-dialog {
+  width: min(620px, calc(100vw - 32px));
+}
+
+.return-form {
+  display: grid;
+  gap: 18px;
+  padding: 20px;
+}
+
+.return-form label {
+  display: grid;
+  gap: 8px;
+}
+
+.return-form label > span,
+.return-summary span {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.return-form select,
+.return-form textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  background: #020617;
+  color: #e2e8f0;
+  padding: 10px 12px;
+  outline: none;
+}
+
+.return-form textarea {
+  resize: vertical;
+  min-height: 84px;
+  line-height: 1.55;
+}
+
+.return-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.return-summary > div {
+  min-width: 0;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+  background: #020617;
+  padding: 12px;
+}
+
+.return-summary strong {
+  display: block;
+  margin-top: 7px;
+  color: #f8fafc;
+  overflow-wrap: anywhere;
+}
+
+.return-warning {
+  margin: 0;
+  border-left: 3px solid #f59e0b;
+  background: #78350f33;
+  color: #fcd34d;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .table-card {
