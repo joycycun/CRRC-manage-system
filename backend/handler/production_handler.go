@@ -2358,9 +2358,10 @@ func ReturnInventoryTypeToBoardInboundHandler(w http.ResponseWriter, r *http.Req
 		InventoryID int64
 		BurnID      int64
 		SN          string
+		ProductName string
 	}
 	rows, err := tx.Query(`
-		SELECT id, IFNULL(source_burn_record_id, 0), IFNULL(sn, '')
+		SELECT id, IFNULL(source_burn_record_id, 0), IFNULL(sn, ''), IFNULL(product_name, '')
 		FROM inventory_devices
 		WHERE IFNULL(is_deleted, 0) = 0
 		  AND TRIM(IFNULL(product_model, '')) = ?
@@ -2375,7 +2376,7 @@ func ReturnInventoryTypeToBoardInboundHandler(w http.ResponseWriter, r *http.Req
 	items := make([]returnItem, 0)
 	for rows.Next() {
 		var item returnItem
-		if err := rows.Scan(&item.InventoryID, &item.BurnID, &item.SN); err != nil {
+		if err := rows.Scan(&item.InventoryID, &item.BurnID, &item.SN, &item.ProductName); err != nil {
 			rows.Close()
 			http.Error(w, "读取待退回库存失败: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -2396,15 +2397,8 @@ func ReturnInventoryTypeToBoardInboundHandler(w http.ResponseWriter, r *http.Req
 	restoredBoardQuantity := 0
 	processedBurnIDs := make(map[int64]bool)
 	restoredInventoryIDs := make(map[int64]bool)
+	convertedInventoryIDs := make(map[int64]bool)
 	for _, item := range items {
-		if item.BurnID == 0 {
-			http.Error(w, "库存设备 "+item.SN+" 缺少来源烧录记录，不能直接退回", http.StatusBadRequest)
-			return
-		}
-		if processedBurnIDs[item.BurnID] {
-			continue
-		}
-
 		var shippingCount int
 		if err := tx.QueryRow(`
 			SELECT COUNT(*)
@@ -2417,6 +2411,18 @@ func ReturnInventoryTypeToBoardInboundHandler(w http.ResponseWriter, r *http.Req
 		if shippingCount > 0 {
 			http.Error(w, "库存设备 "+item.SN+" 已绑定发货批次，请先处理发货批次", http.StatusBadRequest)
 			return
+		}
+		if item.BurnID == 0 {
+			if !isHandsetProduct(item.ProductName, req.ProductModel) {
+				http.Error(w, "库存设备 "+item.SN+" 缺少来源烧录记录，无法恢复对应板卡", http.StatusBadRequest)
+				return
+			}
+			convertedInventoryIDs[item.InventoryID] = true
+			restoredBoardQuantity++
+			continue
+		}
+		if processedBurnIDs[item.BurnID] {
+			continue
 		}
 
 		deductionRows, err := tx.Query(`
@@ -2447,8 +2453,14 @@ func ReturnInventoryTypeToBoardInboundHandler(w http.ResponseWriter, r *http.Req
 		}
 		deductionRows.Close()
 		if deductionQuantity <= 0 {
-			http.Error(w, "库存设备 "+item.SN+" 没有可恢复的板卡扣减记录，已取消退回", http.StatusBadRequest)
-			return
+			if !isHandsetProduct(item.ProductName, req.ProductModel) {
+				http.Error(w, "库存设备 "+item.SN+" 没有可恢复的板卡扣减记录，已取消退回", http.StatusBadRequest)
+				return
+			}
+			convertedInventoryIDs[item.InventoryID] = true
+			restoredBoardQuantity++
+			processedBurnIDs[item.BurnID] = true
+			continue
 		}
 
 		if err := restoreBoardCompositionDeductions(tx, "br.id = ?", item.BurnID); err != nil {
@@ -2463,6 +2475,32 @@ func ReturnInventoryTypeToBoardInboundHandler(w http.ResponseWriter, r *http.Req
 		if _, err := tx.Exec(`DELETE FROM factory_tests WHERE burn_record_id = ?`, item.BurnID); err != nil {
 			http.Error(w, "删除关联出厂测试失败: "+err.Error(), http.StatusInternalServerError)
 			return
+		}
+		if convertedInventoryIDs[item.InventoryID] {
+			if _, err := tx.Exec(`
+				UPDATE inventory_devices
+				SET inventory_status = '板卡入库',
+					inbound_type = 'board',
+					quantity = 1,
+					source_burn_record_id = 0,
+					factory_test_id = 0,
+					hardware_id = 0,
+					hardware_version = '',
+					software_id = 0,
+					software_version = '',
+					update_time = NOW()
+				WHERE id = ?
+			`, item.InventoryID); err != nil {
+				http.Error(w, "将旧手持话柄转回板卡入库失败: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if item.BurnID > 0 {
+				if _, err := tx.Exec(`DELETE FROM burn_records WHERE id = ?`, item.BurnID); err != nil {
+					http.Error(w, "删除关联烧录记录失败: "+err.Error(), http.StatusInternalServerError)
+					return
+				}
+			}
+			continue
 		}
 		if _, err := tx.Exec(`DELETE FROM inventory_devices WHERE id = ?`, item.InventoryID); err != nil {
 			http.Error(w, "移除成品库存失败: "+err.Error(), http.StatusInternalServerError)
@@ -2486,6 +2524,17 @@ func ReturnInventoryTypeToBoardInboundHandler(w http.ResponseWriter, r *http.Req
 				update_time = NOW()
 			WHERE id = ?
 		`, remark, remark, boardInventoryID)
+	}
+	for inventoryID := range convertedInventoryIDs {
+		_, _ = tx.Exec(`
+			UPDATE inventory_devices
+			SET remark = CASE
+					WHEN IFNULL(remark, '') = '' THEN ?
+					ELSE CONCAT(remark, '；', ?)
+				END,
+				update_time = NOW()
+			WHERE id = ?
+		`, remark, remark, inventoryID)
 	}
 
 	if err := tx.Commit(); err != nil {

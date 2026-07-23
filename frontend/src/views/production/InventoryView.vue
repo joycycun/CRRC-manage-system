@@ -710,7 +710,7 @@ const canReturnToBoardInbound = computed(() => hasRole('system_admin'))
 const returnTypeOptions = computed(() => {
   const grouped = new Map()
   inventoryList.value
-    .filter(item => item.sourceBurnRecordId > 0)
+    .filter(item => item.sourceBurnRecordId > 0 || isHandsetItem(item))
     .filter(item => ['在库', '返厂', '更换'].includes(item.inventoryStatus))
     .forEach(item => {
       if (!item.productModel || item.productModel === '-') return
