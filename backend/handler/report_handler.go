@@ -410,16 +410,40 @@ func queryAuditTodos() ([]model.DashboardTodoItem, error) {
 			UNION ALL
 
 			SELECT
-				CONCAT('factory-test-audit-', ft.id),
-				CONCAT('审核出厂测试：', IFNULL(NULLIF(ft.product_model, ''), IFNULL(NULLIF(ft.sn, ''), '未命名出厂测试'))),
-				IFNULL(DATE_FORMAT(ft.upload_time, '%m-%d'), DATE_FORMAT(ft.updated_at, '%m-%d')),
+				CONCAT('factory-test-audit-batch-', MD5(factory_pending.batch_key)),
+				CONCAT('审核出厂测试：', factory_pending.batch_key, '（', factory_pending.device_count, ' 台）'),
+				DATE_FORMAT(factory_pending.sort_time, '%m-%d'),
 				'高',
 				'factoryTestAudit',
 				'/production/factory-test',
-				COALESCE(ft.upload_time, ft.updated_at)
-			FROM factory_tests ft
-			WHERE IFNULL(ft.is_deleted, 0) = 0
-			  AND ft.audit_status IN ('待审核', 'submitted', '已提交')
+				factory_pending.sort_time
+			FROM (
+				SELECT
+					COALESCE(
+						NULLIF(br.batch_no, ''),
+						CONCAT(
+							'未分批-',
+							IFNULL(NULLIF(ft.product_model, ''), '未命名型号'),
+							'-',
+							DATE_FORMAT(COALESCE(ft.upload_time, ft.created_at), '%Y%m%d%H%i%s')
+						)
+					) AS batch_key,
+					COUNT(*) AS device_count,
+					MAX(COALESCE(ft.upload_time, ft.updated_at)) AS sort_time
+				FROM factory_tests ft
+				LEFT JOIN burn_records br ON br.id = ft.burn_record_id
+				WHERE IFNULL(ft.is_deleted, 0) = 0
+				  AND ft.audit_status IN ('待审核', 'submitted', '已提交')
+				GROUP BY COALESCE(
+					NULLIF(br.batch_no, ''),
+					CONCAT(
+						'未分批-',
+						IFNULL(NULLIF(ft.product_model, ''), '未命名型号'),
+						'-',
+						DATE_FORMAT(COALESCE(ft.upload_time, ft.created_at), '%Y%m%d%H%i%s')
+					)
+				)
+			) factory_pending
 
 			UNION ALL
 

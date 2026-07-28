@@ -1984,6 +1984,7 @@ func deductOneBoardComponent(tx *sql.Tx, burnRecordID int64, composition boardCo
 		  AND product_model = ?
 		  AND IFNULL(quantity, 0) > 0
 		ORDER BY in_time ASC, id ASC
+		FOR UPDATE
 	`, composition.InboundModel)
 	if err != nil {
 		return err
@@ -2023,8 +2024,8 @@ func deductOneBoardComponent(tx *sql.Tx, burnRecordID int64, composition boardCo
 
 		_, err = tx.Exec(`
 			UPDATE inventory_devices
-			SET quantity = quantity - ?,
-				inventory_status = CASE WHEN quantity - ? <= 0 THEN '已烧录' ELSE inventory_status END,
+			SET inventory_status = CASE WHEN quantity - ? <= 0 THEN '已烧录' ELSE inventory_status END,
+				quantity = quantity - ?,
 				update_time = NOW(),
 				remark = CASE
 					WHEN IFNULL(remark, '') = '' THEN ?
@@ -2749,12 +2750,13 @@ func ImportBurnRecordsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		burnRecordID, err := result.LastInsertId()
+		if err != nil {
+			http.Error(w, "读取烧录记录ID失败: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
 		if handset {
-			burnRecordID, err := result.LastInsertId()
-			if err != nil {
-				http.Error(w, "读取手持话柄烧录记录ID失败: "+err.Error(), http.StatusInternalServerError)
-				return
-			}
 			if err := deductHandsetBoardInbound(tx, burnRecordID, productName, productModel); err != nil {
 				if err == sql.ErrNoRows {
 					http.Error(w, "手持话柄板卡入库数量不足，无法完成烧录入库", http.StatusBadRequest)
@@ -2765,6 +2767,20 @@ func ImportBurnRecordsHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			if err := createHandsetInventory(tx, burnRecordID, item.ProjectID, productName, productModel, productCode, sn, sourceFileID, req.FileName); err != nil {
 				http.Error(w, "手持话柄烧录后入库失败: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+		} else {
+			componentCount, err := deductBoardInboundByComposition(tx, burnRecordID, item.ProjectID, productModel)
+			if err != nil {
+				if err == sql.ErrNoRows {
+					http.Error(w, "产品型号 "+productModel+" 的组成板卡库存不足，整批烧录已取消", http.StatusBadRequest)
+					return
+				}
+				http.Error(w, "按板卡组成扣减库存失败: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if componentCount == 0 {
+				http.Error(w, "产品型号 "+productModel+" 尚未配置板卡组成，整批烧录已取消", http.StatusBadRequest)
 				return
 			}
 		}
@@ -2815,8 +2831,8 @@ func deductHandsetBoardInbound(tx *sql.Tx, burnRecordID int64, productName strin
 	}
 	_, err = tx.Exec(`
 		UPDATE inventory_devices
-		SET quantity = quantity - 1,
-			inventory_status = CASE WHEN quantity - 1 <= 0 THEN '已烧录' ELSE '板卡入库' END,
+		SET inventory_status = CASE WHEN quantity - 1 <= 0 THEN '已烧录' ELSE '板卡入库' END,
+			quantity = quantity - 1,
 			update_time = NOW(),
 			remark = CASE
 				WHEN IFNULL(remark, '') = '' THEN '手持话柄烧录扣减'
