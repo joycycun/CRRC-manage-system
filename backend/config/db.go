@@ -20,7 +20,7 @@ func InitDB() {
 	port := getEnvInt("DB_PORT", 3306)
 	dbname := getEnv("DB_NAME", "crrc_pm")
 
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local",
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local&timeout=5s&readTimeout=30s&writeTimeout=30s",
 		user, password, host, port, dbname)
 
 	var err error
@@ -32,6 +32,8 @@ func InitDB() {
 	// 设置连接池
 	DB.SetMaxOpenConns(50) // 最大打开连接数
 	DB.SetMaxIdleConns(10) // 最大空闲连接数
+	DB.SetConnMaxIdleTime(2 * time.Minute)
+	DB.SetConnMaxLifetime(30 * time.Minute)
 
 	for i := 1; i <= 30; i++ {
 		if err = DB.Ping(); err == nil {

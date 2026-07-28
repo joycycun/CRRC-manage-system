@@ -16,6 +16,14 @@ export function createProductionTestOutline(data) {
   })
 }
 
+export function updateProductionTestOutline(id, data) {
+  return request({
+    url: `/production-test-outlines/${id}`,
+    method: 'put',
+    data
+  })
+}
+
 export function deleteProductionTestOutline(id) {
   return request({
     url: `/production-test-outlines/${id}`,

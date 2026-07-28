@@ -181,6 +181,8 @@ const ACTION_ACCESS = {
     'board-composition:*',
     'production:outline:view',
     'production:outline:upload',
+    'production:outline:update',
+    'production:outline:delete',
     'testcase:view',
     'testcase:download',
     'issue:view',
@@ -394,6 +396,10 @@ export function canUseAction(action) {
 
   if (action === 'production:outline:upload') {
     return hasRole('hardware_owner') || hasRole('system_admin')
+  }
+
+  if (action === 'production:outline:update' || action === 'production:outline:delete') {
+    return hasRole('hardware_owner') || hasRole('system_admin') || getStoredPermissions().includes(action)
   }
 
   if (action === 'hardware-dev-doc:upload' || action === 'hardware-dev-doc:delete') {

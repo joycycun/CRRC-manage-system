@@ -521,6 +521,7 @@ const permissionGroups = [
       { code: 'burn:deleteBatch', name: '生产烧录删除批次' },
       { code: 'production:outline:view', name: '测试大纲查看' },
       { code: 'production:outline:upload', name: '测试大纲上传' },
+      { code: 'production:outline:update', name: '测试大纲修改' },
       { code: 'production:outline:delete', name: '测试大纲删除' },
       { code: 'board-inbound:view', name: '板卡入库查看' },
       { code: 'board-inbound:import', name: '板卡入库上传' },

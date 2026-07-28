@@ -590,10 +590,10 @@ func queryAuditResultNotifications(userID int64, username string, realName strin
 			  AND ft.audit_status IN ('已通过', '审核通过', 'approved', '已驳回', '审核驳回', 'rejected')
 			  AND (? = 0 OR ft.uploader_id = ? OR ft.uploader_name IN (?, ?))
 			GROUP BY
-				IFNULL(ft.uploader_id, 0),
-				IFNULL(ft.uploader_name, ''),
-				IFNULL(ft.product_model, ''),
-				IF(ft.audit_status IN ('已通过', '审核通过', 'approved'), 'approved', 'rejected')
+				ft.uploader_id,
+				ft.uploader_name,
+				ft.product_model,
+				ft.audit_status
 
 			UNION ALL
 
@@ -895,7 +895,7 @@ func queryRequirementChangeConfirmedNotifications(userID int64, username string,
 func queryBurnTestTodos() ([]model.DashboardTodoItem, error) {
 	rows, err := config.DB.Query(`
 		SELECT
-			IFNULL(NULLIF(br.batch_no, ''), CONCAT('未分批-', DATE_FORMAT(MIN(br.created_at), '%Y%m%d'))) AS batch_no,
+			IFNULL(NULLIF(br.batch_no, ''), CONCAT('未分批-', DATE_FORMAT(br.created_at, '%Y%m%d'))) AS batch_no,
 			COUNT(DISTINCT br.id) AS burn_count,
 			COUNT(DISTINCT ft.burn_record_id) AS tested_count,
 			IFNULL(DATE_FORMAT(MAX(br.upload_time), '%m-%d'), DATE_FORMAT(MAX(br.created_at), '%m-%d')) AS deadline

@@ -65,6 +65,11 @@ func ProductionTestOutlineActionHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if r.Method == http.MethodPut {
+		UpdateProductionTestOutlineHandler(w, r, id)
+		return
+	}
+
 	if r.Method == http.MethodDelete {
 		DeleteProductionTestOutlineHandler(w, r, id)
 		return
@@ -360,9 +365,121 @@ func CreateProductionTestOutlineHandler(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+func UpdateProductionTestOutlineHandler(w http.ResponseWriter, r *http.Request, id int64) {
+	if !requireHardwareOwnerPermission(w, r) {
+		return
+	}
+
+	ensureProductionTestOutlinesTable()
+
+	var req struct {
+		ProjectID       int64  `json:"projectId"`
+		BoardModels     string `json:"boardModels"`
+		FileID          int64  `json:"fileId"`
+		FileName        string `json:"fileName"`
+		FileContentType string `json:"fileContentType"`
+		FileData        string `json:"fileData"`
+		UploaderID      int64  `json:"uploaderId"`
+		UploaderName    string `json:"uploaderName"`
+		Remark          string `json:"remark"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "参数解析失败: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	req.BoardModels = strings.Join(splitBoardModels(req.BoardModels), ", ")
+	if req.ProjectID == 0 {
+		http.Error(w, "请选择绑定项目", http.StatusBadRequest)
+		return
+	}
+	if req.BoardModels == "" {
+		http.Error(w, "请填写板卡型号", http.StatusBadRequest)
+		return
+	}
+
+	var projectExists int
+	if err := config.DB.QueryRow(`
+		SELECT 1
+		FROM projects
+		WHERE id = ?
+		  AND IFNULL(is_deleted, 0) = 0
+		  AND IFNULL(audit_status, '') IN ('approved', '已通过', '通过')
+		LIMIT 1
+	`, req.ProjectID).Scan(&projectExists); err != nil {
+		http.Error(w, "绑定项目不存在或未审核通过", http.StatusBadRequest)
+		return
+	}
+
+	var oldFileID int64
+	var oldFileName string
+	if err := config.DB.QueryRow(`
+		SELECT file_id, file_name
+		FROM production_test_outlines
+		WHERE id = ? AND is_deleted = 0
+	`, id).Scan(&oldFileID, &oldFileName); err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "生产测试大纲不存在或已删除", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "查询生产测试大纲失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if req.FileID == 0 {
+		req.FileID = oldFileID
+	}
+	if strings.TrimSpace(req.FileName) == "" {
+		req.FileName = oldFileName
+	}
+	if req.FileID == 0 || strings.TrimSpace(req.FileName) == "" {
+		http.Error(w, "请上传测试大纲文件", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.FileData) != "" {
+		if err := saveUploadedFile(UploadedFilePayload{
+			FileID:          req.FileID,
+			FileName:        req.FileName,
+			FileContentType: req.FileContentType,
+			FileData:        req.FileData,
+		}); err != nil {
+			http.Error(w, "保存测试大纲文件失败: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+
+	result, err := config.DB.Exec(`
+		UPDATE production_test_outlines
+		SET project_id = ?,
+			board_models = ?,
+			file_id = ?,
+			file_name = ?,
+			uploader_id = ?,
+			uploader_name = ?,
+			upload_time = NOW(),
+			remark = ?,
+			updated_at = NOW()
+		WHERE id = ? AND is_deleted = 0
+	`, req.ProjectID, req.BoardModels, req.FileID, req.FileName, req.UploaderID, req.UploaderName, req.Remark, id)
+	if err != nil {
+		http.Error(w, "修改生产测试大纲失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	affected, _ := result.RowsAffected()
+	if affected == 0 {
+		http.Error(w, "生产测试大纲不存在或内容未变化", http.StatusNotFound)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"code": 200,
+		"msg":  "修改成功",
+	})
+}
+
 func DeleteProductionTestOutlineHandler(w http.ResponseWriter, r *http.Request, id int64) {
-	if !hasRequestRole(r, "system_admin") && !hasRequestPermission(r, "production:outline:delete") {
-		http.Error(w, "无删除生产测试大纲权限：只有管理员可以删除", http.StatusForbidden)
+	if !hasRequestRole(r, "hardware_owner") && !hasRequestRole(r, "system_admin") && !hasRequestPermission(r, "production:outline:delete") {
+		http.Error(w, "无删除生产测试大纲权限", http.StatusForbidden)
 		return
 	}
 

@@ -76,6 +76,13 @@
                       <div class="action-group">
                         <button class="text-btn" @click="downloadFile(item)">下载</button>
                         <button
+                          v-if="canUseAction('production:outline:update')"
+                          class="text-btn"
+                          @click="openEditDialog(item)"
+                        >
+                          修改
+                        </button>
+                        <button
                           v-if="canUseAction('production:outline:delete')"
                           class="text-btn red"
                           @click="deleteOutline(item)"
@@ -121,7 +128,7 @@
     <div v-if="showUploadDialog" class="dialog-mask">
       <div class="dialog">
         <div class="dialog-header">
-          <h3>上传生产测试大纲</h3>
+          <h3>{{ editingId ? '修改生产测试大纲' : '上传生产测试大纲' }}</h3>
           <button @click="closeUploadDialog">×</button>
         </div>
 
@@ -183,7 +190,7 @@
         <div class="dialog-footer">
           <button class="reset-btn" @click="closeUploadDialog">取消</button>
           <button class="primary-btn" :disabled="submitting" @click="submitUpload">
-            {{ submitting ? '保存中...' : '保存' }}
+            {{ submitting ? '保存中...' : (editingId ? '保存修改' : '保存') }}
           </button>
         </div>
       </div>
@@ -193,7 +200,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { createProductionTestOutline, deleteProductionTestOutline, getProductionTestOutlines } from '@/api/productionTestOutline'
+import { createProductionTestOutline, deleteProductionTestOutline, getProductionTestOutlines, updateProductionTestOutline } from '@/api/productionTestOutline'
 import { buildUploadFilePayload, downloadLocalFile } from '@/utils/filePreview'
 import { canUseAction } from '@/utils/permission'
 import { getProjects } from '@/api/project'
@@ -204,6 +211,7 @@ const showUploadDialog = ref(false)
 const submitting = ref(false)
 const fileInputRef = ref(null)
 const expandedBoardRowId = ref(null)
+const editingId = ref(0)
 const collapsedProjects = reactive({})
 
 const filters = reactive({
@@ -295,6 +303,19 @@ function openUploadDialog() {
   showUploadDialog.value = true
 }
 
+function openEditDialog(item) {
+  resetUploadForm()
+  editingId.value = Number(item.id) || 0
+  Object.assign(uploadForm, {
+    projectId: Number(item.projectId) || 0,
+    boardModels: item.boardModels || '',
+    fileId: Number(item.fileId) || 0,
+    fileName: item.fileName || '',
+    remark: item.remark || ''
+  })
+  showUploadDialog.value = true
+}
+
 function closeUploadDialog() {
   showUploadDialog.value = false
 }
@@ -346,7 +367,7 @@ async function submitUpload() {
   submitting.value = true
   try {
     const user = getCurrentUser()
-    await createProductionTestOutline({
+    const payload = {
       projectId: uploadForm.projectId,
       hardwareId: 0,
       boardModels,
@@ -357,8 +378,13 @@ async function submitUpload() {
       uploaderId: user.id || 0,
       uploaderName: user.realName || user.username || '',
       remark: uploadForm.remark
-    })
-    alert('保存成功')
+    }
+    if (editingId.value) {
+      await updateProductionTestOutline(editingId.value, payload)
+    } else {
+      await createProductionTestOutline(payload)
+    }
+    alert(editingId.value ? '修改成功' : '保存成功')
     closeUploadDialog()
     await loadOutlines()
   } catch (err) {
@@ -370,6 +396,7 @@ async function submitUpload() {
 }
 
 function resetUploadForm() {
+  editingId.value = 0
   Object.assign(uploadForm, {
     projectId: 0,
     boardModels: '',
