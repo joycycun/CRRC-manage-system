@@ -5,6 +5,7 @@ import (
 	"crrc_pm_backend/model"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strconv"
@@ -1129,7 +1130,7 @@ func AuditFactoryTestHandler(w http.ResponseWriter, r *http.Request, id int64) {
 		}
 
 		if err = ensureBoardCompositionDeductedForFactoryTest(tx, id); err != nil {
-			if err == sql.ErrNoRows {
+			if errors.Is(err, sql.ErrNoRows) {
 				http.Error(w, "自动入库失败：板卡组成对应的板卡入库库存不足", http.StatusBadRequest)
 				return
 			}
@@ -1694,6 +1695,23 @@ type boardCompositionForDeduct struct {
 	OutboundModel string
 }
 
+type boardComponentStockError struct {
+	InboundModel string
+	Available    int
+}
+
+func (err *boardComponentStockError) Error() string {
+	return "组成板卡 " + err.InboundModel + " 库存不足"
+}
+
+func (err *boardComponentStockError) Unwrap() error {
+	return sql.ErrNoRows
+}
+
+func normalizeBoardModel(value string) string {
+	return strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(value)), ""))
+}
+
 func getBoardCompositionsForBurn(tx *sql.Tx, projectID int64, outboundModel string) ([]boardCompositionForDeduct, error) {
 	ensureBoardCompositionTables()
 	outboundModel = strings.TrimSpace(outboundModel)
@@ -1854,7 +1872,7 @@ func BackfillBoardCompositionDeductionsForFactoryInventory() {
 		err = ensureBoardCompositionDeductedForFactoryTest(tx, factoryTestID)
 		if err != nil {
 			tx.Rollback()
-			if err == sql.ErrNoRows {
+			if errors.Is(err, sql.ErrNoRows) {
 				log.Printf("板卡组成历史补扣跳过，板卡入库库存不足，出厂测试ID=%d", factoryTestID)
 			} else {
 				log.Printf("板卡组成历史补扣失败，出厂测试ID=%d: %v", factoryTestID, err)
@@ -1955,7 +1973,7 @@ func backfillBoardCompositionDeductionsByInventoryModels() {
 		_, err = deductBoardInboundByComposition(tx, item.LedgerBurnID, item.ProjectID, item.OutboundModel)
 		if err != nil {
 			tx.Rollback()
-			if err == sql.ErrNoRows {
+			if errors.Is(err, sql.ErrNoRows) {
 				log.Printf("库存型号历史补扣跳过，板卡入库库存不足，出库型号=%s", item.OutboundModel)
 			} else {
 				log.Printf("库存型号历史补扣失败，出库型号=%s: %v", item.OutboundModel, err)
@@ -1975,17 +1993,29 @@ func backfillBoardCompositionDeductionsByInventoryModels() {
 }
 
 func deductOneBoardComponent(tx *sql.Tx, burnRecordID int64, composition boardCompositionForDeduct) error {
+	normalizedInboundModel := normalizeBoardModel(composition.InboundModel)
 	rows, err := tx.Query(`
 		SELECT id, IFNULL(quantity, 1)
 		FROM inventory_devices
 		WHERE IFNULL(is_deleted, 0) = 0
-		  AND IFNULL(inbound_type, '') = 'board'
-		  AND IFNULL(inventory_status, '') = '板卡入库'
-		  AND product_model = ?
+		  AND LOWER(TRIM(IFNULL(inbound_type, ''))) = 'board'
+		  AND TRIM(IFNULL(inventory_status, '')) = '板卡入库'
+		  AND LOWER(
+			REPLACE(
+			  REPLACE(
+			    REPLACE(
+			      REPLACE(TRIM(IFNULL(product_model, '')), ' ', ''),
+			      CHAR(9), ''
+			    ),
+			    CHAR(10), ''
+			  ),
+			  CHAR(13), ''
+			)
+		  ) = ?
 		  AND IFNULL(quantity, 0) > 0
 		ORDER BY in_time ASC, id ASC
 		FOR UPDATE
-	`, composition.InboundModel)
+	`, normalizedInboundModel)
 	if err != nil {
 		return err
 	}
@@ -2051,7 +2081,10 @@ func deductOneBoardComponent(tx *sql.Tx, burnRecordID int64, composition boardCo
 		remaining -= deductQty
 	}
 	if remaining > 0 {
-		return sql.ErrNoRows
+		return &boardComponentStockError{
+			InboundModel: strings.TrimSpace(composition.InboundModel),
+			Available:    1 - remaining,
+		}
 	}
 	return nil
 }
@@ -2758,7 +2791,7 @@ func ImportBurnRecordsHandler(w http.ResponseWriter, r *http.Request) {
 
 		if handset {
 			if err := deductHandsetBoardInbound(tx, burnRecordID, productName, productModel); err != nil {
-				if err == sql.ErrNoRows {
+				if errors.Is(err, sql.ErrNoRows) {
 					http.Error(w, "手持话柄板卡入库数量不足，无法完成烧录入库", http.StatusBadRequest)
 					return
 				}
@@ -2772,7 +2805,12 @@ func ImportBurnRecordsHandler(w http.ResponseWriter, r *http.Request) {
 		} else {
 			componentCount, err := deductBoardInboundByComposition(tx, burnRecordID, item.ProjectID, productModel)
 			if err != nil {
-				if err == sql.ErrNoRows {
+				var stockErr *boardComponentStockError
+				if errors.As(err, &stockErr) {
+					http.Error(w, "产品型号 "+productModel+" 缺少组成板卡 "+stockErr.InboundModel+"，板卡入库当前可用数量为 "+strconv.Itoa(stockErr.Available)+"，整批烧录已取消", http.StatusBadRequest)
+					return
+				}
+				if errors.Is(err, sql.ErrNoRows) {
 					http.Error(w, "产品型号 "+productModel+" 的组成板卡库存不足，整批烧录已取消", http.StatusBadRequest)
 					return
 				}
@@ -3180,7 +3218,7 @@ func ImportFactoryTestsHandler(w http.ResponseWriter, r *http.Request) {
 			sn, sn,
 		).Scan(&burnRecordID, &projectID, &deviceType)
 
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			tx.Rollback()
 			http.Error(w, "找不到对应的烧录记录，MAC: "+macAddress+"，SN: "+sn, http.StatusBadRequest)
 			return
@@ -3216,7 +3254,7 @@ func ImportFactoryTestsHandler(w http.ResponseWriter, r *http.Request) {
 			ORDER BY id DESC
 			LIMIT 1
 		`, burnRecordID, macAddress, macAddress, sn, sn).Scan(&existingID, &existingStatus)
-		if err != nil && err != sql.ErrNoRows {
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			tx.Rollback()
 			http.Error(w, "检查重复出厂测试失败: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -3503,7 +3541,7 @@ func AuditFactoryTestsHandler(w http.ResponseWriter, r *http.Request) {
 			err = SyncFactoryTestToInventoryTx(tx, id)
 			if err != nil {
 				tx.Rollback()
-				if err == sql.ErrNoRows {
+				if errors.Is(err, sql.ErrNoRows) {
 					http.Error(w, "审核通过，但板卡组成对应的板卡入库库存不足", http.StatusBadRequest)
 					return
 				}
