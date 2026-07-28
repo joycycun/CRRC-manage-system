@@ -904,6 +904,10 @@ func queryBurnTestTodos() ([]model.DashboardTodoItem, error) {
 		  ON ft.burn_record_id = br.id
 		 AND IFNULL(ft.is_deleted, 0) = 0
 		WHERE IFNULL(br.is_deleted, 0) = 0
+		  AND NOT (
+			REPLACE(IFNULL(br.product_name, ''), ' ', '') LIKE '%手持话柄%'
+			OR LOWER(TRIM(IFNULL(br.product_model, ''))) = 'handheld mic-zycoo'
+		  )
 		GROUP BY IFNULL(NULLIF(br.batch_no, ''), CONCAT('未分批-', DATE_FORMAT(br.created_at, '%Y%m%d')))
 		HAVING burn_count > tested_count
 		ORDER BY MAX(br.created_at) DESC
