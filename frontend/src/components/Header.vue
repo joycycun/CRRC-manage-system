@@ -525,6 +525,7 @@ const permissionGroups = [
       { code: 'production:outline:delete', name: '测试大纲删除' },
       { code: 'board-inbound:view', name: '板卡入库查看' },
       { code: 'board-inbound:import', name: '板卡入库上传' },
+      { code: 'board-inbound:update', name: '板卡入库修改' },
       { code: 'board-inbound:delete', name: '板卡入库删除' },
       { code: 'inventory:view', name: '库存情况查看' }
     ]

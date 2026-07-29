@@ -16,6 +16,14 @@ export function importBoardInboundRecords(data) {
   })
 }
 
+export function updateBoardInboundRecord(data) {
+  return request({
+    url: '/board-inbound',
+    method: 'put',
+    data
+  })
+}
+
 export function deleteBoardInboundRecord(id) {
   return request({
     url: '/board-inbound',

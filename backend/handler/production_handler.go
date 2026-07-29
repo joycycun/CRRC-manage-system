@@ -1197,6 +1197,8 @@ func BoardInboundHandler(w http.ResponseWriter, r *http.Request) {
 		GetBoardInboundHandler(w, r)
 	case http.MethodPost:
 		ImportBoardInboundHandler(w, r)
+	case http.MethodPut:
+		UpdateBoardInboundHandler(w, r)
 	case http.MethodDelete:
 		DeleteBoardInboundHandler(w, r)
 	default:
@@ -1537,6 +1539,7 @@ func ImportBoardInboundHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ensureInventoryBoardColumns()
+	ensureBoardCompositionTables()
 
 	tx, err := config.DB.Begin()
 	if err != nil {
@@ -1545,7 +1548,43 @@ func ImportBoardInboundHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
+	compositionRows, err := tx.Query(`
+		SELECT TRIM(IFNULL(inbound_model, ''))
+		FROM board_compositions
+		WHERE IFNULL(is_deleted, 0) = 0
+		  AND TRIM(IFNULL(inbound_model, '')) <> ''
+		ORDER BY updated_at DESC, id DESC
+	`)
+	if err != nil {
+		http.Error(w, "读取板卡组成入库型号失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	canonicalModels := make(map[string]string)
+	for compositionRows.Next() {
+		var model string
+		if err := compositionRows.Scan(&model); err != nil {
+			compositionRows.Close()
+			http.Error(w, "解析板卡组成入库型号失败: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		key := strings.ToLower(strings.TrimSpace(model))
+		if key != "" {
+			if _, exists := canonicalModels[key]; !exists {
+				canonicalModels[key] = strings.TrimSpace(model)
+			}
+		}
+	}
+	if err := compositionRows.Err(); err != nil {
+		compositionRows.Close()
+		http.Error(w, "读取板卡组成入库型号失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	compositionRows.Close()
+
 	insertCount := 0
+	normalizedCount := 0
+	newModelSet := make(map[string]struct{})
+	newModels := make([]string, 0)
 	for index, item := range req.Records {
 		productName := strings.TrimSpace(item.ProductName)
 		productModel := strings.TrimSpace(item.ProductModel)
@@ -1562,6 +1601,17 @@ func ImportBoardInboundHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			http.Error(w, "导入失败：第 "+rowLabel+" 行产品名称、产品型号、生产编码、数量不能为空", http.StatusBadRequest)
 			return
+		}
+
+		modelKey := strings.ToLower(productModel)
+		if canonicalModel, exists := canonicalModels[modelKey]; exists {
+			if productModel != canonicalModel {
+				productModel = canonicalModel
+				normalizedCount++
+			}
+		} else if _, exists := newModelSet[modelKey]; !exists {
+			newModelSet[modelKey] = struct{}{}
+			newModels = append(newModels, productModel)
 		}
 
 		rowNumber := item.RowNumber
@@ -1640,7 +1690,9 @@ func ImportBoardInboundHandler(w http.ResponseWriter, r *http.Request) {
 		"code": 200,
 		"msg":  "导入成功",
 		"data": map[string]interface{}{
-			"count": insertCount,
+			"count":           insertCount,
+			"normalizedCount": normalizedCount,
+			"newModels":       newModels,
 		},
 	})
 }
@@ -1684,6 +1736,110 @@ func DeleteBoardInboundHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"code": 200,
 		"msg":  "删除成功",
+	})
+}
+
+func UpdateBoardInboundHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if !hasRequestRole(r, "production_staff") && !hasRequestRole(r, "system_admin") && !hasRequestPermission(r, "board-inbound:update") {
+		http.Error(w, "无板卡入库修改权限", http.StatusForbidden)
+		return
+	}
+
+	var req struct {
+		ID           int64  `json:"id"`
+		ProductName  string `json:"productName"`
+		ProductModel string `json:"productModel"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "参数解析失败: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	req.ProductName = strings.TrimSpace(req.ProductName)
+	req.ProductModel = strings.TrimSpace(req.ProductModel)
+	if req.ID <= 0 {
+		http.Error(w, "板卡入库ID错误", http.StatusBadRequest)
+		return
+	}
+	if req.ProductName == "" || req.ProductModel == "" {
+		http.Error(w, "产品名称和产品型号不能为空", http.StatusBadRequest)
+		return
+	}
+
+	ensureInventoryBoardColumns()
+	ensureBoardCompositionTables()
+	tx, err := config.DB.Begin()
+	if err != nil {
+		http.Error(w, "开启事务失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
+	var oldProductName, oldProductModel string
+	if err := tx.QueryRow(`
+		SELECT IFNULL(product_name, ''), IFNULL(product_model, '')
+		FROM inventory_devices
+		WHERE id = ?
+		  AND IFNULL(is_deleted, 0) = 0
+		  AND IFNULL(inbound_type, '') = 'board'
+		  AND IFNULL(inventory_status, '') IN ('板卡入库', '已烧录')
+		FOR UPDATE
+	`, req.ID).Scan(&oldProductName, &oldProductModel); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "板卡入库记录不存在", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "读取板卡入库记录失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	result, err := tx.Exec(`
+		UPDATE inventory_devices
+		SET product_name = ?,
+			product_model = ?,
+			device_type = ?,
+			update_time = NOW()
+		WHERE id = ?
+	`, req.ProductName, req.ProductModel, req.ProductName, req.ID)
+	if err != nil {
+		http.Error(w, "修改板卡入库失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	affected, _ := result.RowsAffected()
+	if affected == 0 {
+		http.Error(w, "板卡入库记录不存在或内容未变化", http.StatusBadRequest)
+		return
+	}
+
+	compositionResult, err := tx.Exec(`
+		UPDATE board_compositions
+		SET inbound_model = ?,
+			product_name = CASE
+				WHEN TRIM(IFNULL(product_name, '')) = TRIM(?) THEN ?
+				ELSE product_name
+			END,
+			updated_at = NOW()
+		WHERE IFNULL(is_deleted, 0) = 0
+		  AND TRIM(IFNULL(inbound_model, '')) = TRIM(?)
+	`, req.ProductModel, oldProductName, req.ProductName, oldProductModel)
+	if err != nil {
+		http.Error(w, "同步板卡组成失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	compositionUpdates, _ := compositionResult.RowsAffected()
+
+	if err := tx.Commit(); err != nil {
+		http.Error(w, "提交事务失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"code": 200,
+		"msg":  "修改成功",
+		"data": map[string]interface{}{
+			"compositionUpdates": compositionUpdates,
+		},
 	})
 }
 

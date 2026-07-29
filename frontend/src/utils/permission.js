@@ -429,6 +429,10 @@ export function canUseAction(action) {
     return hasRole('production_staff') || hasRole('system_admin') || getStoredPermissions().includes(action)
   }
 
+  if (action === 'board-inbound:update') {
+    return hasRole('production_staff') || hasRole('system_admin') || getStoredPermissions().includes(action)
+  }
+
   if (action === 'production:outline:view') {
     return hasRole('hardware_owner') || hasRole('production_staff') || hasRole('quality_staff') || hasRole('system_admin') || hasRole('leader')
   }

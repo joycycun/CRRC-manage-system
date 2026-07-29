@@ -97,7 +97,7 @@
               <th>状态</th>
               <th>入库时间</th>
               <th>来源文件</th>
-              <th v-if="canDelete" class="operation-col">操作</th>
+              <th v-if="showOperation" class="operation-col">操作</th>
             </tr>
           </thead>
 
@@ -123,20 +123,22 @@
                 </button>
                 <span v-else>-</span>
               </td>
-              <td v-if="canDelete" class="operation-col">
-                <button
-                  v-if="!item.isDeducted"
-                  class="text-btn red"
-                  @click="deleteRecord(item)"
-                >
-                  删除
-                </button>
-                <span v-else class="muted">-</span>
+              <td v-if="showOperation" class="operation-col">
+                <div class="action-group">
+                  <button v-if="canEdit" class="text-btn blue" @click="openEditDialog(item)">修改</button>
+                  <button
+                    v-if="canDelete && !item.isDeducted"
+                    class="text-btn red"
+                    @click="deleteRecord(item)"
+                  >
+                    删除
+                  </button>
+                </div>
               </td>
             </tr>
 
             <tr v-if="paginatedList.length === 0">
-              <td :colspan="canDelete ? 8 : 7" class="empty-table">暂无板卡入库记录</td>
+              <td :colspan="showOperation ? 8 : 7" class="empty-table">暂无板卡入库记录</td>
             </tr>
           </tbody>
         </table>
@@ -152,6 +154,37 @@
           <span class="page-number">{{ currentPage }} / {{ totalPage }}</span>
           <button class="page-btn" :disabled="currentPage === totalPage" @click="currentPage += 1">下一页</button>
           <button class="page-btn" :disabled="currentPage === totalPage" @click="currentPage = totalPage">末页</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showEditDialog" class="dialog-mask">
+      <div class="dialog edit-dialog">
+        <div class="dialog-header">
+          <h3>修改板卡入库信息</h3>
+          <button @click="closeEditDialog">×</button>
+        </div>
+
+        <div class="form-grid edit-form-grid">
+          <label>
+            产品名称
+            <input v-model="editForm.productName" maxlength="128" placeholder="请输入产品名称" />
+          </label>
+          <label>
+            产品型号
+            <input v-model="editForm.productModel" maxlength="128" placeholder="请输入产品型号" />
+          </label>
+        </div>
+
+        <div class="edit-tip">
+          修改产品型号后，引用旧入库型号的板卡组成会同步更新。
+        </div>
+
+        <div class="dialog-footer">
+          <button class="reset-btn" @click="closeEditDialog">取消</button>
+          <button class="primary-btn" :disabled="editSubmitting" @click="saveEdit">
+            {{ editSubmitting ? '保存中...' : '保存修改' }}
+          </button>
         </div>
       </div>
     </div>
@@ -269,7 +302,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import * as XLSX from 'xlsx'
 import { buildUploadFilePayload, downloadLocalFile, getFileDownloadUrl } from '@/utils/filePreview'
-import { deleteBoardInboundRecord, getBoardInboundRecords, importBoardInboundRecords } from '@/api/boardInbound'
+import { deleteBoardInboundRecord, getBoardInboundRecords, importBoardInboundRecords, updateBoardInboundRecord } from '@/api/boardInbound'
 import { canUseAction } from '@/utils/permission'
 
 const filters = reactive({
@@ -279,12 +312,16 @@ const filters = reactive({
 const boardInboundList = ref([])
 const excelPreviewList = ref([])
 const showUploadDialog = ref(false)
+const showEditDialog = ref(false)
+const editSubmitting = ref(false)
 const excelFileInput = ref(null)
 const currentPage = ref(1)
 const pageSize = ref(10)
 const pageSizeOptions = [10, 20, 50, 100]
 const canImport = computed(() => canUseAction('board-inbound:import'))
 const canDelete = computed(() => canUseAction('board-inbound:delete'))
+const canEdit = computed(() => canUseAction('board-inbound:update'))
+const showOperation = computed(() => canEdit.value || canDelete.value)
 
 const uploadForm = reactive({
   file: null,
@@ -299,6 +336,12 @@ const manualForm = reactive({
   productModel: '',
   productCode: '',
   quantity: 1
+})
+
+const editForm = reactive({
+  id: 0,
+  productName: '',
+  productModel: ''
 })
 
 onMounted(async () => {
@@ -530,7 +573,16 @@ async function saveBoardInboundRecords() {
     })
     const result = getResponseData(res)
     if (result.code === 200) {
-      alert(`导入成功，共导入 ${result.data?.count || excelPreviewList.value.length} 条记录`)
+      const normalizedCount = Number(result.data?.normalizedCount || 0)
+      const newModels = Array.isArray(result.data?.newModels) ? result.data.newModels : []
+      let message = `导入成功，共导入 ${result.data?.count || excelPreviewList.value.length} 条记录`
+      if (normalizedCount > 0) {
+        message += `\n已按板卡组成中的标准写法修正 ${normalizedCount} 条型号。`
+      }
+      if (newModels.length > 0) {
+        message += `\n\n提醒：以下入库型号未在板卡组成中找到，请确认是否需要新增板卡组成：\n${newModels.join('、')}`
+      }
+      alert(message)
       showUploadDialog.value = false
       await loadBoardInboundRecords()
     } else {
@@ -555,6 +607,51 @@ async function deleteRecord(item) {
   } catch (err) {
     console.error('删除板卡入库记录失败：', err)
     alert(err.response?.data || '删除板卡入库记录失败')
+  }
+}
+
+function openEditDialog(item) {
+  Object.assign(editForm, {
+    id: Number(item.id) || 0,
+    productName: item.productName === '-' ? '' : item.productName,
+    productModel: item.productModel === '-' ? '' : item.productModel
+  })
+  showEditDialog.value = true
+}
+
+function closeEditDialog() {
+  showEditDialog.value = false
+}
+
+async function saveEdit() {
+  const productName = editForm.productName.trim()
+  const productModel = editForm.productModel.trim()
+  if (!editForm.id || !productName || !productModel) {
+    alert('产品名称和产品型号不能为空')
+    return
+  }
+
+  editSubmitting.value = true
+  try {
+    const res = await updateBoardInboundRecord({
+      id: editForm.id,
+      productName,
+      productModel
+    })
+    const result = getResponseData(res)
+    if (result.code !== 200) {
+      alert(result.msg || '修改板卡入库失败')
+      return
+    }
+    const synced = Number(result.data?.compositionUpdates || 0)
+    alert(synced > 0 ? `修改成功，已同步更新 ${synced} 条板卡组成` : '修改成功')
+    closeEditDialog()
+    await loadBoardInboundRecords()
+  } catch (err) {
+    console.error('修改板卡入库失败：', err)
+    alert(err.response?.data || '修改板卡入库失败')
+  } finally {
+    editSubmitting.value = false
   }
 }
 
@@ -842,7 +939,13 @@ td {
 }
 
 .operation-col {
-  width: 96px;
+  width: 132px;
+}
+
+.action-group {
+  display: flex;
+  align-items: center;
+  gap: 14px;
 }
 
 .text-btn {
@@ -855,6 +958,10 @@ td {
 
 .text-btn.red {
   color: #f87171;
+}
+
+.text-btn.blue {
+  color: #60a5fa;
 }
 
 .text-btn.red:hover {
@@ -885,6 +992,20 @@ td {
   border-radius: 8px;
   background: #0f172a;
   box-shadow: 0 24px 60px rgba(2, 6, 23, 0.42);
+}
+
+.edit-dialog {
+  width: min(620px, calc(100vw - 32px));
+}
+
+.edit-form-grid {
+  margin-top: 20px;
+}
+
+.edit-tip {
+  margin: 0 16px 18px;
+  color: #94a3b8;
+  font-size: 12px;
 }
 
 .dialog-header,
