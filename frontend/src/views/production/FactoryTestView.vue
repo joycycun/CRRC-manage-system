@@ -48,8 +48,9 @@
           <thead>
             <tr>
               <th>产品型号</th>
-              <th>MAC数量</th>
+              <th>记录数量</th>
               <th>测试文档</th>
+              <th>测试报告</th>
               <th>上传人</th>
               <th>上传时间</th>
               <th>审核状态</th>
@@ -75,13 +76,19 @@
 
               <td>
                 <span class="count-tag">
-                  {{ group.records.length }} 个 MAC
+                  {{ group.records.length }} 条
                 </span>
               </td>
 
               <td>
                 <span class="file-text" :title="group.fileName">
                   {{ group.fileName }}
+                </span>
+              </td>
+
+              <td>
+                <span class="file-text" :title="group.reportFileName">
+                  {{ group.reportFileName || '未上传' }}
                 </span>
               </td>
 
@@ -111,7 +118,7 @@
                     class="text-btn blue"
                     @click="openModelMacDialog(group)"
                   >
-                    查看MAC
+                    查看记录
                   </button>
 
                   <button
@@ -119,6 +126,22 @@
                     @click="downloadModelGroup(group)"
                   >
                     下载
+                  </button>
+
+                  <button
+                    v-if="canUploadFactoryReport"
+                    class="text-btn blue"
+                    @click="openReportDialog(group)"
+                  >
+                    {{ group.reportFileId ? '替换报告' : '上传报告' }}
+                  </button>
+
+                  <button
+                    v-if="group.reportFileId"
+                    class="text-btn blue"
+                    @click="downloadFactoryReport(group)"
+                  >
+                    下载报告
                   </button>
 
                   <button
@@ -155,6 +178,34 @@
       </div>
     </div>
 
+    <div v-if="showReportDialog" class="dialog-mask">
+      <div class="dialog report-dialog">
+        <div class="dialog-header">
+          <h3>上传出厂测试报告</h3>
+          <button @click="closeReportDialog">×</button>
+        </div>
+
+        <div class="form-grid report-form-grid">
+          <label>
+            产品型号
+            <input :value="reportForm.productModel" disabled />
+          </label>
+          <label class="full-row">
+            测试报告文件
+            <input type="file" @change="handleReportFileChange" />
+            <span class="selected-report-name">{{ reportForm.fileName || '请选择测试报告文件' }}</span>
+          </label>
+        </div>
+
+        <div class="dialog-footer">
+          <button class="reset-btn" @click="closeReportDialog">取消</button>
+          <button class="primary-btn" :disabled="reportSubmitting" @click="saveFactoryReport">
+            {{ reportSubmitting ? '上传中...' : '保存报告' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- 上传出厂测试记录弹窗 -->
     <div v-if="showUploadDialog" class="dialog-mask">
       <div class="dialog">
@@ -169,7 +220,7 @@
             出厂测试文档直接选择生产测试大纲里的文件。同一组板卡型号下的 MAC 使用同一份测试大纲文件。
           </p>
           <p>
-            选择测试大纲后，系统会自动带出对应板卡型号，并只展示这些板卡型号下生产烧录完毕的 MAC 地址。
+            选择测试大纲后，系统会自动带出对应板卡型号，并只展示这些板卡型号下已完成的烧录记录。
           </p>
           <p>
             MAC 和 SN 序列号均来自生产烧录记录页面解析出的生产数据。
@@ -229,7 +280,7 @@
           </label>
 
           <label class="full-row">
-            关联 MAC 地址
+            关联烧录记录
             <div class="mac-select-panel">
               <div v-if="!uploadForm.productModel" class="empty-mac">
                 请先选择生产测试大纲文件
@@ -243,36 +294,36 @@
                 />
 
                 <div class="mac-panel-header">
-                  <span>显示烧录成功MAC，勾选表示不上传</span>
+                  <span>显示烧录成功记录，勾选表示不上传</span>
                   <strong>
-                    需上传 {{ finalUploadMacList.length }} 个 / 已排除 {{ uploadForm.excludedMacs.length }} 个
+                    需上传 {{ finalUploadMacList.length }} 条 / 已排除 {{ uploadForm.excludedMacs.length }} 条
                   </strong>
                 </div>
 
                 <div v-if="unpassedMacList.length === 0" class="empty-mac">
-                  当前板卡型号暂无烧录完毕的MAC。
+                  当前板卡型号暂无可测试的烧录记录。
                 </div>
 
                 <div v-else-if="availableMacList.length === 0" class="empty-mac">
-                  没有匹配到 MAC，请换一个关键词。
+                  没有匹配到记录，请换一个关键词。
                 </div>
 
                 <label
                   v-for="mac in availableMacList"
                   v-else
-                  :key="mac.macAddress"
+                  :key="getBurnRecordKey(mac)"
                   class="mac-check-item"
                 >
                   <input
                     v-model="uploadForm.excludedMacs"
                     type="checkbox"
-                    :value="mac.macAddress"
+                    :value="getBurnRecordKey(mac)"
                   />
-                  <span>{{ mac.macAddress }}</span>
+                  <span>{{ mac.macAddress || '无 MAC（AMP 型号）' }}</span>
                   <em>{{ mac.serialNumber || '-' }}</em>
                   <em>{{ mac.productName || '-' }}</em>
                     <b
-                      v-if="uploadForm.excludedMacs.includes(mac.macAddress)"
+                      v-if="uploadForm.excludedMacs.includes(getBurnRecordKey(mac))"
                       class="exclude-tag"
                     >
                       不上传
@@ -303,11 +354,11 @@
       </div>
     </div>
 
-    <!-- 产品型号 MAC 查看弹窗 -->
+    <!-- 产品型号测试记录查看弹窗 -->
     <div v-if="selectedModelGroup" class="dialog-mask">
       <div class="dialog large-dialog">
         <div class="dialog-header">
-          <h3>MAC 地址明细</h3>
+          <h3>测试记录明细</h3>
           <button @click="selectedModelGroup = null">×</button>
         </div>
 
@@ -323,8 +374,8 @@
           </div>
 
           <div>
-            <span>MAC 数量</span>
-            <strong>{{ selectedModelMacList.length }} 个</strong>
+            <span>记录数量</span>
+            <strong>{{ selectedModelMacList.length }} 条</strong>
           </div>
 
           <div>
@@ -348,7 +399,7 @@
             <tbody>
               <tr
                 v-for="(item, index) in selectedModelMacList"
-                :key="item.macAddress"
+                :key="item.recordKey"
               >
                 <td>{{ index + 1 }}</td>
 
@@ -356,7 +407,7 @@
 
                 <td>
                   <span class="mac-tag" :title="item.macAddress">
-                    {{ item.macAddress }}
+                    {{ item.macAddress || '无 MAC（AMP 型号）' }}
                   </span>
                 </td>
 
@@ -377,7 +428,7 @@
         </div>
 
         <div v-if="selectedModelMacList.length === 0" class="empty-dialog-data">
-          当前型号下暂无 MAC 明细。
+          当前型号下暂无测试记录。
         </div>
       </div>
     </div>
@@ -398,12 +449,12 @@
 
           <div>
             <span>{{ auditModelGroupRef ? '待审核数量' : 'MAC地址' }}</span>
-            <strong>{{ auditModelGroupRef ? `${auditModelGroupRef.records.length} 条` : selectedFactoryTest.macAddress }}</strong>
+            <strong>{{ auditModelGroupRef ? `${auditModelGroupRef.records.length} 条` : (selectedFactoryTest.macAddress || '无 MAC（AMP 型号）') }}</strong>
           </div>
 
           <div>
             <span>{{ auditModelGroupRef ? '审核方式' : 'SN序列号' }}</span>
-            <strong>{{ auditModelGroupRef ? '按产品型号统一审核' : (getBurnInfoByMac(selectedFactoryTest.macAddress).serialNumber || '-') }}</strong>
+            <strong>{{ auditModelGroupRef ? '按产品型号统一审核' : (getBurnInfo(selectedFactoryTest).serialNumber || '-') }}</strong>
           </div>
 
           <div>
@@ -482,7 +533,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { canUseAction } from '@/utils/permission'
-import { downloadLocalFile, openLocalFilePreview } from '@/utils/filePreview'
+import { buildUploadFilePayload, downloadLocalFile, openLocalFilePreview } from '@/utils/filePreview'
 import { getProductionTestOutlines } from '@/api/productionTestOutline'
 
 import {
@@ -494,7 +545,8 @@ import {
   importFactoryTests,
   deleteFactoryTests,
   submitFactoryTests,
-  auditFactoryTests
+  auditFactoryTests,
+  uploadFactoryTestReport
 } from '@/api/factoryTest'
 
 const currentUserName = ref(
@@ -512,6 +564,7 @@ try {
 }
 
 const canAuditFactoryTest = computed(() => canUseAction('production:audit'))
+const canUploadFactoryReport = computed(() => canUseAction('production:update'))
 
 function getCurrentUserId() {
   try {
@@ -532,6 +585,16 @@ const showUploadDialog = ref(false)
 const selectedFactoryTest = ref(null)
 const selectedModelGroup = ref(null)
 const auditModelGroupRef = ref(null)
+const showReportDialog = ref(false)
+const reportSubmitting = ref(false)
+
+const reportForm = reactive({
+  productModel: '',
+  fileId: 0,
+  fileName: '',
+  fileContentType: '',
+  fileData: ''
+})
 
 const uploadForm = reactive({
   outlineId: 0,
@@ -701,6 +764,10 @@ function splitBoardModels(value) {
     .filter(Boolean)
 }
 
+function normalizeModelKey(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ').toUpperCase()
+}
+
 const productModelOptions = computed(() => {
   const models = factoryTestList.value
     .map(item => item.productModel)
@@ -717,17 +784,39 @@ const testedMacSet = computed(() => {
   )
 })
 
+const testedBurnRecordSet = computed(() => {
+  return new Set(
+    factoryTestList.value
+      .map(item => Number(item.burnRecordId || item.burn_record_id || 0))
+      .filter(Boolean)
+  )
+})
+
+function isAmpModel(productModel) {
+  return String(productModel || '')
+    .toUpperCase()
+    .split(/[-_ /\\]+/)
+    .includes('AMP')
+}
+
+function getBurnRecordKey(item) {
+  return item.macAddress || `burn-${Number(item.id || item.burnRecordId || 0)}`
+}
+
 const unpassedMacList = computed(() => {
-  const boardModelSet = new Set(splitBoardModels(uploadForm.boardModels))
+  const boardModelSet = new Set(
+    splitBoardModels(uploadForm.boardModels).map(normalizeModelKey)
+  )
   if (boardModelSet.size === 0) {
     return []
   }
 
   return productionBurnRecordList.value.filter(item => {
+    const isAmp = isAmpModel(item.productModel)
     return (
-      boardModelSet.has(item.productModel) &&
-      item.macAddress &&
-      !testedMacSet.value.has(item.macAddress)
+      boardModelSet.has(normalizeModelKey(item.productModel)) &&
+      ((isAmp && !testedBurnRecordSet.value.has(Number(item.id))) ||
+        (!isAmp && item.macAddress && !testedMacSet.value.has(item.macAddress)))
     )
   })
 })
@@ -751,14 +840,14 @@ const availableMacList = computed(() => {
 
 const finalUploadMacList = computed(() => {
   return unpassedMacList.value.filter(item => {
-    return !uploadForm.excludedMacs.includes(item.macAddress)
+    return !uploadForm.excludedMacs.includes(getBurnRecordKey(item))
   })
 })
 
 const filteredFactoryTestList = computed(() => {
   return factoryTestList.value.filter(item => {
     const keyword = filters.keyword.trim()
-    const burnInfo = getBurnInfoByMac(item.macAddress)
+    const burnInfo = getBurnInfo(item)
 
     const keywordMatch =
       !keyword ||
@@ -821,10 +910,74 @@ const filteredModelGroupList = computed(() => {
       uploadTime: first.uploadTime || '-',
       auditStatus: first.auditStatus || 'draft',
       auditor: first.auditor || '',
-      auditTime: first.auditTime || ''
+      auditTime: first.auditTime || '',
+      reportFileId: Number(first.reportFileId || first.report_file_id || 0),
+      reportFileName: first.reportFileName || first.report_file_name || '',
+      reportFileUrl: first.reportFileUrl || first.report_file_url || '',
+      reportUploaderName: first.reportUploaderName || first.report_uploader_name || '',
+      reportUploadTime: first.reportUploadTime || first.report_upload_time || ''
     }
   })
 })
+
+function openReportDialog(group) {
+  Object.assign(reportForm, {
+    productModel: group.productModel,
+    fileId: 0,
+    fileName: '',
+    fileContentType: '',
+    fileData: ''
+  })
+  showReportDialog.value = true
+}
+
+function closeReportDialog() {
+  showReportDialog.value = false
+}
+
+async function handleReportFileChange(event) {
+  const file = event.target.files?.[0]
+  if (!file) return
+  try {
+    const payload = await buildUploadFilePayload(file)
+    Object.assign(reportForm, payload)
+  } catch (err) {
+    console.error('读取测试报告失败：', err)
+    alert('读取测试报告失败，请重新选择')
+  }
+}
+
+async function saveFactoryReport() {
+  if (!reportForm.productModel || !reportForm.fileId || !reportForm.fileName) {
+    alert('请选择测试报告文件')
+    return
+  }
+  reportSubmitting.value = true
+  try {
+    const res = await uploadFactoryTestReport({ ...reportForm })
+    const result = res?.data || res
+    if (result.code !== 200) {
+      alert(result.msg || '测试报告上传失败')
+      return
+    }
+    alert(`产品型号【${reportForm.productModel}】测试报告上传成功`)
+    closeReportDialog()
+    await loadFactoryTests()
+  } catch (err) {
+    console.error('上传测试报告失败：', err)
+    alert(err.response?.data || '上传测试报告失败')
+  } finally {
+    reportSubmitting.value = false
+  }
+}
+
+function downloadFactoryReport(group) {
+  downloadLocalFile({
+    fileId: group.reportFileId,
+    fileName: group.reportFileName,
+    fileUrl: group.reportFileUrl
+  }, `${group.productModel}_出厂测试报告`)
+}
 
 const selectedModelMacList = computed(() => {
   if (!selectedModelGroup.value) {
@@ -832,9 +985,10 @@ const selectedModelMacList = computed(() => {
   }
 
   return selectedModelGroup.value.records.map(record => {
-    const burnInfo = getBurnInfoByMac(record.macAddress)
+    const burnInfo = getBurnInfo(record)
 
     return {
+      recordKey: record.macAddress || `factory-${record.id}`,
       macAddress: record.macAddress,
       serialNumber: burnInfo.serialNumber,
       productName: burnInfo.productName,
@@ -867,6 +1021,15 @@ function getBurnInfoByMac(macAddress) {
       softwareVersion: ''
     }
   )
+}
+
+function getBurnInfo(record) {
+  const burnRecordId = Number(record?.burnRecordId || record?.burn_record_id || 0)
+  if (burnRecordId) {
+    const matched = productionBurnRecordList.value.find(item => Number(item.id) === burnRecordId)
+    if (matched) return matched
+  }
+  return getBurnInfoByMac(record?.macAddress || '')
 }
 
 function resetFilters() {
@@ -942,7 +1105,7 @@ async function uploadFactoryTest() {
   }
 
   if (finalUploadMacList.value.length === 0) {
-    alert('当前没有需要上传的 MAC，请至少保留一个未排除的 MAC')
+    alert('当前没有需要上传的记录，请至少保留一条未排除记录')
     return
   }
 
@@ -952,6 +1115,7 @@ async function uploadFactoryTest() {
 
   const records = finalUploadMacList.value.map(macItem => {
     return {
+      burnRecordId: Number(macItem.id || 0),
       productModel: macItem.productModel,
       macAddress: macItem.macAddress,
       sn: macItem.serialNumber || '',
@@ -1421,7 +1585,7 @@ async function rejectFactoryTest(item) {
 
 .model-table {
   width: 100%;
-  min-width: 1500px;
+  min-width: 1780px;
   border-collapse: collapse;
   table-layout: fixed;
 }
@@ -1466,12 +1630,12 @@ async function rejectFactoryTest(item) {
 
 .model-table th:nth-child(3),
 .model-table td:nth-child(3) {
-  width: 280px;
+  width: 240px;
 }
 
 .model-table th:nth-child(4),
 .model-table td:nth-child(4) {
-  width: 120px;
+  width: 220px;
 }
 
 .model-table th:nth-child(5),
@@ -1491,7 +1655,12 @@ async function rejectFactoryTest(item) {
 
 .model-table th:nth-child(8),
 .model-table td:nth-child(8) {
-  width: 340px;
+  width: 120px;
+}
+
+.model-table th:nth-child(9),
+.model-table td:nth-child(9) {
+  width: 480px;
 }
 
 .model-row {
@@ -1611,7 +1780,7 @@ async function rejectFactoryTest(item) {
   gap: 10px;
   flex-wrap: nowrap;
   white-space: nowrap;
-  min-width: 300px;
+  min-width: 440px;
 }
 
 .text-btn {
@@ -1938,6 +2107,19 @@ async function rejectFactoryTest(item) {
 
 .large-dialog {
   width: 900px;
+}
+
+.report-dialog {
+  width: 620px;
+}
+
+.report-form-grid {
+  grid-template-columns: 1fr;
+}
+
+.selected-report-name {
+  color: #94a3b8;
+  font-size: 12px;
 }
 
 .dialog-header {

@@ -643,6 +643,7 @@ func AuditShippingBatchHandler(w http.ResponseWriter, r *http.Request, id int64)
 		return
 	}
 	req.AuditorID, req.AuditorName = normalizeAuditUser(r, req.AuditorID, req.AuditorName)
+	outboundAt := time.Now().In(time.FixedZone("Asia/Shanghai", 8*60*60))
 
 	tx, err := config.DB.Begin()
 	if err != nil {
@@ -657,15 +658,17 @@ func AuditShippingBatchHandler(w http.ResponseWriter, r *http.Request, id int64)
 			audit_status = ?,
 			auditor_id = ?,
 			auditor_name = ?,
-			audit_time = NOW(),
+			audit_time = ?,
 			reject_reason = ?,
-			updated_at = NOW()
+			updated_at = ?
 		WHERE id = ? AND is_deleted = 0
 	`,
 		req.AuditStatus,
 		req.AuditorID,
 		req.AuditorName,
+		outboundAt,
 		req.RejectReason,
+		outboundAt,
 		id,
 	)
 
@@ -753,14 +756,16 @@ func AuditShippingBatchHandler(w http.ResponseWriter, r *http.Request, id int64)
 						remark,
 						is_deleted,
 						created_at
-					) VALUES (?, ?, ?, ?, NOW(), ?, ?, '已出库', '', 0, NOW())
+					) VALUES (?, ?, ?, ?, ?, ?, ?, '已出库', '', 0, ?)
 				`,
 					id,
 					device.inventoryDeviceID,
 					device.sn,
 					device.mac,
+					outboundAt,
 					req.AuditorID,
 					req.AuditorName,
+					outboundAt,
 				)
 
 				if err != nil {
@@ -771,9 +776,9 @@ func AuditShippingBatchHandler(w http.ResponseWriter, r *http.Request, id int64)
 
 			_, err = tx.Exec(`
 				UPDATE inventory_devices
-				SET inventory_status = '已出库', update_time = NOW()
+				SET inventory_status = '已出库', update_time = ?
 				WHERE id = ? AND is_deleted = 0
-			`, device.inventoryDeviceID)
+			`, outboundAt, device.inventoryDeviceID)
 
 			if err != nil {
 				http.Error(w, "更新库存出库状态失败: "+err.Error(), http.StatusInternalServerError)

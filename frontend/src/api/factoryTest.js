@@ -39,3 +39,12 @@ export function auditFactoryTests(data) {
     data
   })
 }
+
+export function uploadFactoryTestReport(data) {
+  return request({
+    url: '/factory-tests/report',
+    method: 'post',
+    data,
+    timeout: 120000
+  })
+}

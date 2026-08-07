@@ -697,6 +697,11 @@ func FactoryTestActionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(parts) == 1 && parts[0] == "report" && r.Method == http.MethodPost {
+		UploadFactoryTestReportHandler(w, r)
+		return
+	}
+
 	// 下面才允许把路径当 ID
 	if len(parts) == 1 && r.Method == http.MethodDelete {
 		id, err := strconv.ParseInt(parts[0], 10, 64)
@@ -714,6 +719,7 @@ func FactoryTestActionHandler(w http.ResponseWriter, r *http.Request) {
 func GetFactoryTestsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	ensureUploadedFilesTable()
+	ensureFactoryTestReportColumns()
 
 	visibilitySQL := reviewVisibilitySQL(r, "ft.audit_status", "ft.uploader_id", "ft.uploader_name", "production_staff")
 	rows, err := config.DB.Query(`
@@ -727,6 +733,11 @@ func GetFactoryTestsHandler(w http.ResponseWriter, r *http.Request) {
 			IFNULL(ft.sn, ''),
 			IFNULL(ft.file_id, 0),
 			IFNULL(uf.file_name, ''),
+			IFNULL(ft.report_file_id, 0),
+			IFNULL(rf.file_name, ''),
+			IFNULL(ft.report_uploader_id, 0),
+			IFNULL(ft.report_uploader_name, ''),
+			IFNULL(DATE_FORMAT(ft.report_upload_time, '%Y-%m-%d %H:%i:%s'), ''),
 			IFNULL(ft.uploader_id, 0),
 			IFNULL(ft.uploader_name, ''),
 			IFNULL(DATE_FORMAT(ft.upload_time, '%Y-%m-%d'), ''),
@@ -744,6 +755,7 @@ func GetFactoryTestsHandler(w http.ResponseWriter, r *http.Request) {
 			IFNULL(ft.remark, '')
 		FROM factory_tests ft
 		LEFT JOIN uploaded_files uf ON uf.id = ft.file_id
+		LEFT JOIN uploaded_files rf ON rf.id = ft.report_file_id
 		WHERE IFNULL(ft.is_deleted, 0) = 0 ` + visibilitySQL + `
 		ORDER BY ft.id DESC
 	`)
@@ -768,9 +780,15 @@ func GetFactoryTestsHandler(w http.ResponseWriter, r *http.Request) {
 
 		// 前端页面需要这些字段，但数据库没有 file_name/file_url/record_name，
 		// 所以这里给占位，避免前端报 undefined。
-		RecordName string `json:"recordName"`
-		FileName   string `json:"fileName"`
-		FileURL    string `json:"fileUrl"`
+		RecordName         string `json:"recordName"`
+		FileName           string `json:"fileName"`
+		FileURL            string `json:"fileUrl"`
+		ReportFileID       int64  `json:"reportFileId"`
+		ReportFileName     string `json:"reportFileName"`
+		ReportFileURL      string `json:"reportFileUrl"`
+		ReportUploaderID   int64  `json:"reportUploaderId"`
+		ReportUploaderName string `json:"reportUploaderName"`
+		ReportUploadTime   string `json:"reportUploadTime"`
 
 		UploaderID   int64  `json:"uploaderId"`
 		Uploader     string `json:"uploader"`
@@ -803,6 +821,11 @@ func GetFactoryTestsHandler(w http.ResponseWriter, r *http.Request) {
 			&item.SN,
 			&item.FileID,
 			&item.FileName,
+			&item.ReportFileID,
+			&item.ReportFileName,
+			&item.ReportUploaderID,
+			&item.ReportUploaderName,
+			&item.ReportUploadTime,
 			&item.UploaderID,
 			&item.UploaderName,
 			&item.UploadTime,
@@ -827,6 +850,7 @@ func GetFactoryTestsHandler(w http.ResponseWriter, r *http.Request) {
 			item.FileName = "出厂测试文档"
 		}
 		item.FileURL = filePreviewURL(item.FileID)
+		item.ReportFileURL = filePreviewURL(item.ReportFileID)
 
 		list = append(list, item)
 	}
@@ -835,6 +859,75 @@ func GetFactoryTestsHandler(w http.ResponseWriter, r *http.Request) {
 		"code": 200,
 		"msg":  "查询成功",
 		"data": list,
+	})
+}
+
+func ensureFactoryTestReportColumns() {
+	_, _ = config.DB.Exec(`ALTER TABLE factory_tests ADD COLUMN report_file_id BIGINT NOT NULL DEFAULT 0 AFTER file_id`)
+	_, _ = config.DB.Exec(`ALTER TABLE factory_tests ADD COLUMN report_uploader_id BIGINT NOT NULL DEFAULT 0 AFTER report_file_id`)
+	_, _ = config.DB.Exec(`ALTER TABLE factory_tests ADD COLUMN report_uploader_name VARCHAR(64) NOT NULL DEFAULT '' AFTER report_uploader_id`)
+	_, _ = config.DB.Exec(`ALTER TABLE factory_tests ADD COLUMN report_upload_time DATETIME NULL AFTER report_uploader_name`)
+}
+
+func UploadFactoryTestReportHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if !hasRequestRole(r, "production_staff") && !hasRequestRole(r, "system_admin") && !hasRequestPermission(r, "production:update") {
+		http.Error(w, "无出厂测试报告上传权限", http.StatusForbidden)
+		return
+	}
+
+	var req struct {
+		ProductModel    string `json:"productModel"`
+		FileID          int64  `json:"fileId"`
+		FileName        string `json:"fileName"`
+		FileContentType string `json:"fileContentType"`
+		FileData        string `json:"fileData"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "参数解析失败: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	req.ProductModel = strings.TrimSpace(req.ProductModel)
+	if req.ProductModel == "" || req.FileID <= 0 || strings.TrimSpace(req.FileName) == "" {
+		http.Error(w, "产品型号和测试报告文件不能为空", http.StatusBadRequest)
+		return
+	}
+	if err := saveUploadedFile(UploadedFilePayload{
+		FileID:          req.FileID,
+		FileName:        req.FileName,
+		FileContentType: req.FileContentType,
+		FileData:        req.FileData,
+	}); err != nil {
+		http.Error(w, "保存出厂测试报告失败: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	ensureFactoryTestReportColumns()
+	userID, userName := currentRequestUser(r)
+	result, err := config.DB.Exec(`
+		UPDATE factory_tests
+		SET report_file_id = ?,
+			report_uploader_id = ?,
+			report_uploader_name = ?,
+			report_upload_time = NOW(),
+			updated_at = NOW()
+		WHERE TRIM(IFNULL(product_model, '')) = ?
+		  AND IFNULL(is_deleted, 0) = 0
+	`, req.FileID, userID, userName, req.ProductModel)
+	if err != nil {
+		http.Error(w, "绑定出厂测试报告失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	affected, _ := result.RowsAffected()
+	if affected == 0 {
+		http.Error(w, "该产品型号暂无出厂测试记录", http.StatusNotFound)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"code": 200,
+		"msg":  "测试报告上传成功",
+		"data": map[string]interface{}{"count": affected},
 	})
 }
 
@@ -898,8 +991,8 @@ func CreateFactoryTestHandler(w http.ResponseWriter, r *http.Request) {
 				IFNULL(project_id, 0),
 				IFNULL(product_model, ''),
 				IFNULL(device_type, ''),
-				sn,
-				mac_address
+				IFNULL(sn, ''),
+				IFNULL(mac_address, '')
 			FROM burn_records
 			WHERE id = ? AND is_deleted = 0
 		`, item.BurnRecordID).Scan(
@@ -2752,7 +2845,8 @@ func ImportBurnRecordsHandler(w http.ResponseWriter, r *http.Request) {
 		FileContentType string `json:"fileContentType"`
 		FileData        string `json:"fileData"`
 		Records         []struct {
-			BatchNo string `json:"batchNo"`
+			BatchNo     string `json:"batchNo"`
+			SourceRowNo int    `json:"sourceRowNo"`
 
 			ProjectID         int64 `json:"projectId"`
 			ProductionOrderID int64 `json:"productionOrderId"`
@@ -2810,6 +2904,10 @@ func ImportBurnRecordsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	ensureInventoryBoardColumns()
 	ensureBoardCompositionTables()
+	if err := ensureBurnImportColumns(); err != nil {
+		http.Error(w, "初始化烧录导入字段失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	tx, err := config.DB.Begin()
 	if err != nil {
@@ -2819,8 +2917,14 @@ func ImportBurnRecordsHandler(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback()
 
 	insertCount := 0
+	skipCount := 0
 
-	for _, item := range req.Records {
+	for index, item := range req.Records {
+		productName := strings.TrimSpace(item.ProductName)
+		productModel := strings.TrimSpace(item.ProductModel)
+		productCode := strings.TrimSpace(item.ProductCode)
+		ampProduct := isAmpProduct(productModel)
+
 		sn := strings.TrimSpace(item.SerialNumber)
 		if sn == "" {
 			sn = strings.TrimSpace(item.SN)
@@ -2853,14 +2957,20 @@ func ImportBurnRecordsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if sn == "" || sn == "-" {
+		if !ampProduct && (sn == "" || sn == "-") {
 			tx.Rollback()
 			http.Error(w, "导入失败：序列号不能为空，且不能为 -", http.StatusBadRequest)
 			return
 		}
+		if ampProduct {
+			sn = ""
+		}
 
 		macAddress := strings.TrimSpace(item.MacAddress)
 		if macAddress == "-" {
+			macAddress = ""
+		}
+		if ampProduct {
 			macAddress = ""
 		}
 
@@ -2869,9 +2979,6 @@ func ImportBurnRecordsHandler(w http.ResponseWriter, r *http.Request) {
 			sourceFileID = req.SourceFileID
 		}
 
-		productName := strings.TrimSpace(item.ProductName)
-		productModel := strings.TrimSpace(item.ProductModel)
-		productCode := strings.TrimSpace(item.ProductCode)
 		handset := isHandsetProduct(productName, productModel)
 		if handset {
 			if productName == "" || productModel == "" || productCode == "" {
@@ -2884,6 +2991,32 @@ func ImportBurnRecordsHandler(w http.ResponseWriter, r *http.Request) {
 			item.SoftwareID = 0
 			item.SoftwareVersion = ""
 			pcbQrCode = ""
+		}
+
+		sourceRowNo := item.SourceRowNo
+		if sourceRowNo <= 0 {
+			sourceRowNo = index + 1
+		}
+		var existingID int64
+		err = tx.QueryRow(`
+			SELECT id
+			FROM burn_records
+			WHERE IFNULL(is_deleted, 0) = 0
+			  AND (
+				(IFNULL(source_file_id, 0) = ? AND IFNULL(source_row_no, 0) = ?)
+				OR (? <> '' AND sn = ?)
+				OR (? <> '' AND mac_address = ?)
+			  )
+			ORDER BY id DESC
+			LIMIT 1
+		`, sourceFileID, sourceRowNo, sn, sn, macAddress, macAddress).Scan(&existingID)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "检查烧录重复记录失败: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if existingID > 0 {
+			skipCount++
+			continue
 		}
 
 		result, err := tx.Exec(`
@@ -2904,6 +3037,7 @@ func ImportBurnRecordsHandler(w http.ResponseWriter, r *http.Request) {
 				pcb_qr_code,
 				note,
 				source_file_id,
+				source_row_no,
 				uploader_id,
 				uploader_name,
 				upload_time,
@@ -2911,7 +3045,7 @@ func ImportBurnRecordsHandler(w http.ResponseWriter, r *http.Request) {
 				is_deleted,
 				created_at,
 				updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULLIF(?, ''), ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, 0, NOW(), NOW())
+			) VALUES (?, ?, ?, ?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, 0, NOW(), NOW())
 		`,
 			batchNo,
 			item.ProjectID,
@@ -2929,13 +3063,14 @@ func ImportBurnRecordsHandler(w http.ResponseWriter, r *http.Request) {
 			pcbQrCode,
 			item.Note,
 			sourceFileID,
+			sourceRowNo,
 			item.UploaderID,
 			uploaderName,
 			burnDesc,
 		)
 
 		if err != nil {
-			http.Error(w, "导入失败，SN或MAC可能重复: "+err.Error(), http.StatusInternalServerError)
+			http.Error(w, "导入烧录记录失败: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -2991,15 +3126,64 @@ func ImportBurnRecordsHandler(w http.ResponseWriter, r *http.Request) {
 		"code": 200,
 		"msg":  "导入成功",
 		"data": map[string]interface{}{
-			"count": insertCount,
+			"count":     insertCount,
+			"skipCount": skipCount,
 		},
 	})
+}
+
+func ensureBurnImportColumns() error {
+	_, _ = config.DB.Exec(`ALTER TABLE burn_records ADD COLUMN source_row_no INT NOT NULL DEFAULT 0 AFTER source_file_id`)
+
+	var nullable string
+	err := config.DB.QueryRow(`
+		SELECT IS_NULLABLE
+		FROM information_schema.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE()
+		  AND TABLE_NAME = 'burn_records'
+		  AND COLUMN_NAME = 'sn'
+	`).Scan(&nullable)
+	if err != nil {
+		return err
+	}
+	if !strings.EqualFold(nullable, "YES") {
+		if _, err = config.DB.Exec(`ALTER TABLE burn_records MODIFY COLUMN sn VARCHAR(128) NULL COMMENT 'SN序列号'`); err != nil {
+			return err
+		}
+	}
+
+	err = config.DB.QueryRow(`
+		SELECT IS_NULLABLE
+		FROM information_schema.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE()
+		  AND TABLE_NAME = 'inventory_devices'
+		  AND COLUMN_NAME = 'sn'
+	`).Scan(&nullable)
+	if err != nil {
+		return err
+	}
+	if !strings.EqualFold(nullable, "YES") {
+		_, err = config.DB.Exec(`ALTER TABLE inventory_devices MODIFY COLUMN sn VARCHAR(128) NULL COMMENT 'SN'`)
+	}
+	return err
 }
 
 func isHandsetProduct(productName string, productModel string) bool {
 	name := strings.ReplaceAll(strings.TrimSpace(productName), " ", "")
 	model := strings.ToLower(strings.TrimSpace(productModel))
 	return strings.Contains(name, "手持话柄") || model == "handheld mic-zycoo"
+}
+
+func isAmpProduct(productModel string) bool {
+	model := strings.ToUpper(strings.TrimSpace(productModel))
+	for _, part := range strings.FieldsFunc(model, func(r rune) bool {
+		return r == '-' || r == '_' || r == ' ' || r == '/' || r == '\\'
+	}) {
+		if part == "AMP" {
+			return true
+		}
+	}
+	return false
 }
 
 func deductHandsetBoardInbound(tx *sql.Tx, burnRecordID int64, productName string, productModel string) error {
@@ -3292,6 +3476,7 @@ func ImportFactoryTestsHandler(w http.ResponseWriter, r *http.Request) {
 		FileContentType string `json:"fileContentType"`
 		FileData        string `json:"fileData"`
 		Records         []struct {
+			BurnRecordID int64  `json:"burnRecordId"`
 			ProductModel string `json:"productModel"`
 			MacAddress   string `json:"macAddress"`
 			SN           string `json:"sn"`
@@ -3346,7 +3531,7 @@ func ImportFactoryTestsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if macAddress == "" && sn == "" {
+		if item.BurnRecordID <= 0 && macAddress == "" && sn == "" {
 			tx.Rollback()
 			http.Error(w, "MAC地址和SN不能同时为空", http.StatusBadRequest)
 			return
@@ -3356,27 +3541,27 @@ func ImportFactoryTestsHandler(w http.ResponseWriter, r *http.Request) {
 		var projectID int64
 		var deviceType string
 
-		err := tx.QueryRow(`
-			SELECT
-				id,
-				IFNULL(project_id, 0),
-				IFNULL(device_type, '')
-			FROM burn_records
-			WHERE IFNULL(is_deleted, 0) = 0
-			  AND (
-					(? <> '' AND mac_address = ?)
-					OR
-					(? <> '' AND sn = ?)
-			  )
-			LIMIT 1
-		`,
-			macAddress, macAddress,
-			sn, sn,
-		).Scan(&burnRecordID, &projectID, &deviceType)
+		var err error
+		if item.BurnRecordID > 0 {
+			err = tx.QueryRow(`
+				SELECT id, IFNULL(project_id, 0), IFNULL(device_type, '')
+				FROM burn_records
+				WHERE id = ? AND IFNULL(is_deleted, 0) = 0
+				LIMIT 1
+			`, item.BurnRecordID).Scan(&burnRecordID, &projectID, &deviceType)
+		} else {
+			err = tx.QueryRow(`
+				SELECT id, IFNULL(project_id, 0), IFNULL(device_type, '')
+				FROM burn_records
+				WHERE IFNULL(is_deleted, 0) = 0
+				  AND ((? <> '' AND mac_address = ?) OR (? <> '' AND sn = ?))
+				LIMIT 1
+			`, macAddress, macAddress, sn, sn).Scan(&burnRecordID, &projectID, &deviceType)
+		}
 
 		if errors.Is(err, sql.ErrNoRows) {
 			tx.Rollback()
-			http.Error(w, "找不到对应的烧录记录，MAC: "+macAddress+"，SN: "+sn, http.StatusBadRequest)
+			http.Error(w, "找不到对应的烧录记录，ID: "+strconv.FormatInt(item.BurnRecordID, 10)+"，MAC: "+macAddress+"，SN: "+sn, http.StatusBadRequest)
 			return
 		}
 
@@ -3846,8 +4031,8 @@ func SyncFactoryTestToInventoryTx(tx *sql.Tx, factoryTestID int64) error {
 			IFNULL(br.product_name, ''),
 			IFNULL(br.product_model, ''),
 			IFNULL(br.product_code, ''),
-			IFNULL(br.sn, ''),
-			IFNULL(br.mac_address, ''),
+			NULLIF(IFNULL(br.sn, ''), ''),
+			NULLIF(IFNULL(br.mac_address, ''), ''),
 			IFNULL(br.pcb_qr_code, ''),
 			IFNULL(br.hardware_id, 0),
 			IFNULL(br.hardware_version, ''),

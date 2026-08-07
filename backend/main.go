@@ -6,6 +6,7 @@ import (
 	"crrc_pm_backend/router"
 	"log"
 	"net/http"
+	"os"
 )
 
 func main() {
@@ -14,9 +15,13 @@ func main() {
 
 	r := router.InitRouter()
 
-	log.Println("后端启动成功：http://localhost:8080")
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+	log.Printf("后端启动成功：http://localhost:%s", port)
 
-	err := http.ListenAndServe(":8080", r)
+	err := http.ListenAndServe(":"+port, r)
 	if err != nil {
 		log.Fatalf("后端启动失败: %v", err)
 	}

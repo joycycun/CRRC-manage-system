@@ -14,7 +14,8 @@ export function importBurnRecords(data) {
   return request({
     url: '/burn-records/import',
     method: 'post',
-    data
+    data,
+    timeout: 120000
   })
 }
 

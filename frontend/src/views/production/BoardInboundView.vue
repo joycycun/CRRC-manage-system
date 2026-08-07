@@ -41,6 +41,12 @@
         </option>
       </select>
 
+      <select v-model="filters.inventoryStatus">
+        <option value="">全部状态</option>
+        <option value="板卡入库">可用</option>
+        <option value="已烧录">已扣除</option>
+      </select>
+
       <button class="query-btn" @click="loadBoardInboundRecords">查询</button>
       <button class="reset-btn" @click="resetFilters">重置</button>
     </div>
@@ -307,7 +313,8 @@ import { canUseAction } from '@/utils/permission'
 
 const filters = reactive({
   keyword: '',
-  productModel: ''
+  productModel: '',
+  inventoryStatus: ''
 })
 const boardInboundList = ref([])
 const excelPreviewList = ref([])
@@ -669,7 +676,10 @@ const filteredList = computed(() => {
     const productModelMatch =
       !filters.productModel || item.productModel === filters.productModel
 
-    return keywordMatch && productModelMatch
+    const statusMatch =
+      !filters.inventoryStatus || item.inventoryStatus === filters.inventoryStatus
+
+    return keywordMatch && productModelMatch && statusMatch
   })
 })
 
@@ -707,7 +717,7 @@ const paginatedList = computed(() => {
 const pageStartIndex = computed(() => (filteredList.value.length === 0 ? 0 : (currentPage.value - 1) * pageSize.value + 1))
 const pageEndIndex = computed(() => Math.min(currentPage.value * pageSize.value, filteredList.value.length))
 
-watch(() => [filters.keyword, filters.productModel], () => {
+watch(() => [filters.keyword, filters.productModel, filters.inventoryStatus], () => {
   currentPage.value = 1
 })
 watch(pageSize, () => {
@@ -720,6 +730,7 @@ watch(totalPage, value => {
 function resetFilters() {
   filters.keyword = ''
   filters.productModel = ''
+  filters.inventoryStatus = ''
   currentPage.value = 1
 }
 
@@ -1284,7 +1295,7 @@ td {
   box-shadow: none;
   padding: 16px;
   display: grid;
-  grid-template-columns: 1.4fr 220px 90px 90px;
+  grid-template-columns: 1.4fr 200px 150px 90px 90px;
   gap: 12px;
   margin-bottom: 20px;
 }

@@ -270,6 +270,9 @@
             型号为 handheld mic-zycoo 时，烧录后直接入库，无需 MAC、硬件版本、软件版本及出厂测试审核。
           </p>
           <p>
+            产品型号中包含独立 AMP 标识（例如 PA-AMP-Metro-PCBA）时，不读取 SN 和 MAC 地址。
+          </p>
+          <p>
             如果 Excel 没有“生产批次号”这一列，系统会使用下面填写的生产批次号；
             如果这里也不填写，则从文件名中自动提取 8 位数字，例如 20260402。
           </p>
@@ -867,6 +870,14 @@ function isHandsetItem(item) {
   return productName.includes('手持话柄') || productModel === 'handheld mic-zycoo'
 }
 
+function isAmpItem(item) {
+  return String(item?.productModel || '')
+    .trim()
+    .toUpperCase()
+    .split(/[-_ /\\]+/)
+    .includes('AMP')
+}
+
 function extractBatchNoFromFileName(fileName) {
   const match = String(fileName || '').match(/\d{8}/)
   return match ? match[0] : ''
@@ -906,14 +917,15 @@ function resetManualForm() {
 
 function addManualBurnRecord() {
   const serialNumber = manualForm.serialNumber.trim()
-  if (!serialNumber) {
+  const ampProduct = isAmpItem(manualForm)
+  if (!ampProduct && !serialNumber) {
     alert('请填写序列号')
     return
   }
 
   const normalizedSN = serialNumber.toUpperCase()
   const normalizedMac = manualForm.macAddress.trim().toUpperCase()
-  const duplicate = excelPreviewList.value.some(item => {
+  const duplicate = !ampProduct && excelPreviewList.value.some(item => {
     const hasSN = item.serialNumbers.some(sn => String(sn || '').trim().toUpperCase() === normalizedSN)
     const hasMac = normalizedMac && String(item.macAddress || '').trim().toUpperCase() === normalizedMac
     return hasSN || hasMac
@@ -929,9 +941,9 @@ function addManualBurnRecord() {
     productName: manualForm.productName.trim(),
     productModel: manualForm.productModel.trim(),
     productCode: manualForm.productCode.trim(),
-    serialNumberText: serialNumber,
-    serialNumbers: [serialNumber],
-    macAddress: manualForm.macAddress.trim(),
+    serialNumberText: ampProduct ? '' : serialNumber,
+    serialNumbers: ampProduct ? [] : [serialNumber],
+    macAddress: ampProduct ? '' : manualForm.macAddress.trim(),
     hardwareVersion: manualForm.hardwareVersion.trim(),
     softwareVersion: manualForm.softwareVersion.trim(),
     pcbQrCode: manualForm.pcbQrCode.trim(),
@@ -1085,6 +1097,15 @@ async function handleExcelFileChange(event) {
           )
         })
         .map(row => {
+          if (isAmpItem(row)) {
+            return {
+              ...row,
+              serialNumberText: '',
+              serialNumbers: [],
+              macAddress: ''
+            }
+          }
+
           const uniqueSerialNumbers = []
           row.serialNumbers.forEach(serialNumber => {
             const normalizedSN = String(serialNumber || '').trim().toUpperCase()
@@ -1136,7 +1157,7 @@ async function handleExcelFileChange(event) {
             serialNumbers: uniqueSerialNumbers
           }
         })
-        .filter(row => row.serialNumbers.length > 0)
+        .filter(row => row.serialNumbers.length > 0 || isAmpItem(row))
 
       if (parsedRows.length === 0) {
         alert('Excel 中未识别到有效数据。手持话柄请确认第 3 行包含：产品名称、产品型号、产品编码、序列号')
@@ -1180,11 +1201,12 @@ async function saveExcelBurnRecords() {
 
   const records = []
 
-  excelPreviewList.value.forEach(item => {
+  excelPreviewList.value.forEach((item, itemIndex) => {
+    const ampProduct = isAmpItem(item)
     const serialNumbers =
       item.serialNumbers.length > 0
         ? item.serialNumbers
-        : []
+        : (ampProduct ? [''] : [])
 
     serialNumbers.forEach(serialNumber => {
       const handset = isHandsetItem(item)
@@ -1196,7 +1218,7 @@ async function saveExcelBurnRecords() {
         deviceType: item.productName || '-',
         serialNumber,
         sn: serialNumber,
-        macAddress: handset ? '' : (item.macAddress || ''),
+        macAddress: handset || ampProduct ? '' : (item.macAddress || ''),
         hardwareVersion: handset ? '' : (item.hardwareVersion || '-'),
         softwareVersion: handset ? '' : (item.softwareVersion || '-'),
         pcbQrCode: handset ? '' : (item.pcbQrCode || '-'),
@@ -1213,7 +1235,8 @@ async function saveExcelBurnRecords() {
         uploader,
 
         burnDesc: uploadForm.remark || '',
-        importRemark: uploadForm.remark || ''
+        importRemark: uploadForm.remark || '',
+        sourceRowNo: Number(item.rowNumber) || itemIndex + 1
       })
     })
   })
@@ -1237,7 +1260,10 @@ async function saveExcelBurnRecords() {
     console.log('导入烧录记录返回：', result)
 
     if (result.code === 200) {
-      alert(`导入成功，共导入 ${result.data?.count || records.length} 条记录`)
+      const importedCount = Number(result.data?.count || 0)
+      const skippedCount = Number(result.data?.skipCount || 0)
+      const skippedText = skippedCount > 0 ? `，已跳过 ${skippedCount} 条重复记录` : ''
+      alert(`导入完成，共新增 ${importedCount} 条记录${skippedText}`)
 
       const firstBatchNo = records[0]?.batchNo
       if (firstBatchNo) {
