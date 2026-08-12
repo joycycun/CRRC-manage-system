@@ -103,6 +103,14 @@
                   <button
                     v-if="canUseAction('shipping:manage') && (item.auditStatus === 'draft' || item.auditStatus === 'rejected')"
                     class="text-btn blue"
+                    @click="openEditDialog(item)"
+                  >
+                    编辑
+                  </button>
+
+                  <button
+                    v-if="canUseAction('shipping:manage') && (item.auditStatus === 'draft' || item.auditStatus === 'rejected')"
+                    class="text-btn blue"
                     @click="submitBatch(item)"
                   >
                     提交
@@ -142,10 +150,10 @@
     </div>
 
     <div v-if="showCreateDialog" class="dialog-mask">
-      <div class="dialog large-dialog">
+      <div class="dialog large-dialog resizable-dialog">
         <div class="dialog-header">
-          <h3>新增发货批次</h3>
-          <button @click="showCreateDialog = false">×</button>
+          <h3>{{ editingBatchId ? '编辑发货批次' : '新增发货批次' }}</h3>
+          <button @click="closeBatchDialog">×</button>
         </div>
 
         <div class="form-grid">
@@ -310,12 +318,12 @@
         </div>
 
         <div class="dialog-footer">
-          <button class="reset-btn" @click="showCreateDialog = false">
+          <button class="reset-btn" @click="closeBatchDialog">
             取消
           </button>
 
-          <button class="primary-btn" @click="createBatch">
-            保存批次
+          <button class="primary-btn" @click="saveBatch">
+            {{ editingBatchId ? '保存修改' : '保存批次' }}
           </button>
 
           <button class="query-btn" @click="openProductionRequestDialog">
@@ -533,6 +541,7 @@ import { getInventory } from '@/api/inventory'
 import {
   getShippingBatches,
   createShippingBatch,
+  updateShippingBatch,
   submitShippingBatch,
   auditShippingBatch,
   deleteShippingBatch,
@@ -548,6 +557,7 @@ const macSelectForm = reactive({ macText: '', startMac: '', endMac: '' })
 const showCreateDialog = ref(false)
 const showProductionRequestDialog = ref(false)
 const selectedBatch = ref(null)
+const editingBatchId = ref(0)
 const selectedInventoryIds = ref([])
 const hardwareVersionDrafts = reactive({})
 const inventoryList = ref([])
@@ -744,8 +754,16 @@ async function loadShippingBatches() {
   }
 }
 
+const currentEditingInventoryIds = computed(() => {
+  if (!editingBatchId.value) return []
+  const batch = batchList.value.find(item => Number(item.id) === Number(editingBatchId.value))
+  if (!batch) return []
+  return batch.deviceList.map(device => Number(device.inventoryDeviceId || device.id || 0)).filter(Boolean)
+})
+
 const availableInventoryList = computed(() => {
-  return inventoryList.value.filter(item => item.inventoryStatus === '在库')
+  const editingIds = currentEditingInventoryIds.value
+  return inventoryList.value.filter(item => item.inventoryStatus === '在库' || editingIds.includes(Number(item.id)))
 })
 
 const deviceTypeOptions = computed(() => {
@@ -855,6 +873,7 @@ function resetFilters() {
 }
 
 async function openCreateDialog() {
+  editingBatchId.value = 0
   batchForm.batchNo = ''
   batchForm.uploader = getCurrentUserName()
   batchForm.expressNo = ''
@@ -876,6 +895,44 @@ async function openCreateDialog() {
 
   await loadInventory()
   showCreateDialog.value = true
+}
+
+async function openEditDialog(item) {
+  editingBatchId.value = item.id
+  batchForm.batchNo = item.batchNo || ''
+  batchForm.uploader = item.uploader || item.uploaderName || getCurrentUserName()
+  batchForm.expressNo = item.expressNo || ''
+  batchForm.fileId = item.fileId || 0
+  batchForm.fileName = item.fileName || ''
+  batchForm.fileContentType = ''
+  batchForm.fileData = ''
+  batchForm.fileUrl = item.fileUrl || ''
+  batchForm.remark = item.remark || item.shippingDesc || ''
+
+  inventoryFilters.keyword = ''
+  inventoryFilters.deviceType = ''
+  inventoryCurrentPage.value = 1
+  macSelectForm.macText = ''
+  macSelectForm.startMac = ''
+  macSelectForm.endMac = ''
+  selectedInventoryIds.value = item.deviceList
+    .map(device => Number(device.inventoryDeviceId || device.id || 0))
+    .filter(Boolean)
+  Object.keys(hardwareVersionDrafts).forEach(key => delete hardwareVersionDrafts[key])
+  item.deviceList.forEach(device => {
+    const id = Number(device.inventoryDeviceId || device.id || 0)
+    if (id && device.hardwareVersion) {
+      hardwareVersionDrafts[String(id)] = device.hardwareVersion
+    }
+  })
+
+  await loadInventory()
+  showCreateDialog.value = true
+}
+
+function closeBatchDialog() {
+  showCreateDialog.value = false
+  editingBatchId.value = 0
 }
 
 async function handleFileChange(event) {
@@ -1002,7 +1059,7 @@ function goNextInventoryPage() {
   if (inventoryCurrentPage.value < inventoryTotalPage.value) inventoryCurrentPage.value += 1
 }
 
-async function createBatch() {
+async function saveBatch() {
   if (!batchForm.batchNo) {
     alert('请输入发货批次号')
     return
@@ -1015,14 +1072,15 @@ async function createBatch() {
     alert('上传人读取失败')
     return
   }
-  if (!batchForm.fileId || !batchForm.fileName || !batchForm.fileData) {
+  if (!batchForm.fileId || !batchForm.fileName || (!editingBatchId.value && !batchForm.fileData)) {
     alert('请上传发货单文件')
     return
   }
 
   try {
+    const isEditing = Boolean(editingBatchId.value)
     const user = getCurrentUser()
-    const res = await createShippingBatch({
+    const payload = {
       batchNo: batchForm.batchNo,
       expressNo: batchForm.expressNo,
       fileId: batchForm.fileId,
@@ -1041,22 +1099,25 @@ async function createBatch() {
           hardwareVersion: isHandsetItem(device) ? '' : getInventoryHardwareVersion(device)
         }
       })
-    })
+    }
+    const res = isEditing
+      ? await updateShippingBatch(editingBatchId.value, payload)
+      : await createShippingBatch(payload)
     const result = getResponseData(res)
     if (result.code !== 200) {
-      alert(result.msg || '新增发货批次失败')
+      alert(result.msg || (isEditing ? '保存发货批次失败' : '新增发货批次失败'))
       return
     }
 
     selectedInventoryIds.value = []
     Object.keys(hardwareVersionDrafts).forEach(key => delete hardwareVersionDrafts[key])
-    showCreateDialog.value = false
+    closeBatchDialog()
     await loadInventory()
     await loadShippingBatches()
-    alert('发货批次已生成，审核通过后进入出库管理')
+    alert(isEditing ? '发货批次已保存' : '发货批次已生成，审核通过后进入出库管理')
   } catch (err) {
-    console.error('新增发货批次失败：', err)
-    alert(err.response?.data || '新增发货批次失败，请检查后端接口')
+    console.error('保存发货批次失败：', err)
+    alert(err.response?.data || '保存发货批次失败，请检查后端接口')
   }
 }
 
@@ -1660,7 +1721,7 @@ async function deleteBatch(item) {
 
 .mac-select-panel {
   min-height: 120px;
-  max-height: 260px;
+  max-height: min(420px, 45vh);
   overflow-y: auto;
   border: 1px solid #334155;
   border-radius: 10px;
@@ -1898,7 +1959,7 @@ async function deleteBatch(item) {
 }
 
 .dialog {
-  width: 760px;
+  width: min(760px, 92vw);
   max-width: 100%;
   max-height: 92vh;
   overflow-y: auto;
@@ -1910,7 +1971,16 @@ async function deleteBatch(item) {
 }
 
 .large-dialog {
-  width: 900px;
+  width: min(1180px, 94vw);
+}
+
+.resizable-dialog {
+  resize: both;
+  overflow: auto;
+  min-width: min(760px, 94vw);
+  min-height: 620px;
+  max-width: 96vw;
+  max-height: 92vh;
 }
 
 .dialog-header {
@@ -2041,6 +2111,14 @@ async function deleteBatch(item) {
 
   .mac-dialog-table {
     min-width: 1080px;
+  }
+
+  .resizable-dialog {
+    resize: none;
+    min-width: 0;
+    min-height: 0;
+    width: 94vw;
+    max-height: 90vh;
   }
 }
 </style>

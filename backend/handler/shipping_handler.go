@@ -244,9 +244,15 @@ func ShippingBatchActionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(parts) == 1 && r.Method == http.MethodDelete {
-		DeleteShippingBatchHandler(w, r, id)
-		return
+	if len(parts) == 1 {
+		switch r.Method {
+		case http.MethodPut:
+			UpdateShippingBatchHandler(w, r, id)
+			return
+		case http.MethodDelete:
+			DeleteShippingBatchHandler(w, r, id)
+			return
+		}
 	}
 
 	if len(parts) == 2 && r.Method == http.MethodPost {
@@ -574,6 +580,260 @@ func CreateShippingBatchHandler(w http.ResponseWriter, r *http.Request) {
 		"data": map[string]interface{}{
 			"id": batchID,
 		},
+	})
+}
+
+// ============================================================
+// PUT /api/shipping-batches/{id}
+// 编辑草稿/驳回批次，并重新锁定库存设备
+// ============================================================
+
+func UpdateShippingBatchHandler(w http.ResponseWriter, r *http.Request, id int64) {
+	if !requireShippingManagePermission(w, r) {
+		return
+	}
+
+	var req CreateShippingBatchRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "参数解析失败: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if len(req.InventoryDeviceIDs) == 0 && len(req.DeviceIDs) > 0 {
+		req.InventoryDeviceIDs = req.DeviceIDs
+	}
+	req.BatchNo = strings.TrimSpace(req.BatchNo)
+	req.ExpressNo = strings.TrimSpace(req.ExpressNo)
+	req.FileName = strings.TrimSpace(req.FileName)
+	req.Remark = strings.TrimSpace(req.Remark)
+	req.ShippingDesc = strings.TrimSpace(req.ShippingDesc)
+	if req.ShippingDesc == "" {
+		req.ShippingDesc = req.Remark
+	}
+
+	if req.BatchNo == "" {
+		http.Error(w, "发货批次号不能为空", http.StatusBadRequest)
+		return
+	}
+	if req.FileID == 0 || req.FileName == "" {
+		http.Error(w, "请上传发货单文件", http.StatusBadRequest)
+		return
+	}
+	if len(req.InventoryDeviceIDs) == 0 {
+		http.Error(w, "必须选择至少一台库存设备", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.FileData) != "" {
+		if err := saveUploadedFile(UploadedFilePayload{
+			FileID:          req.FileID,
+			FileName:        req.FileName,
+			FileContentType: req.FileContentType,
+			FileData:        req.FileData,
+		}); err != nil {
+			http.Error(w, "保存发货单文件失败: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+
+	uniqueInventoryIDs := make([]int64, 0, len(req.InventoryDeviceIDs))
+	seenInventoryIDs := map[int64]bool{}
+	for _, inventoryID := range req.InventoryDeviceIDs {
+		if inventoryID <= 0 || seenInventoryIDs[inventoryID] {
+			continue
+		}
+		seenInventoryIDs[inventoryID] = true
+		uniqueInventoryIDs = append(uniqueInventoryIDs, inventoryID)
+	}
+	if len(uniqueInventoryIDs) == 0 {
+		http.Error(w, "必须选择至少一台库存设备", http.StatusBadRequest)
+		return
+	}
+	req.InventoryDeviceIDs = uniqueInventoryIDs
+
+	tx, err := config.DB.Begin()
+	if err != nil {
+		http.Error(w, "开启事务失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
+	var currentStatus string
+	err = tx.QueryRow(`
+		SELECT IFNULL(audit_status, '草稿')
+		FROM shipping_batches
+		WHERE id = ? AND is_deleted = 0
+	`, id).Scan(&currentStatus)
+	if err != nil {
+		http.Error(w, "发货批次不存在或已删除", http.StatusNotFound)
+		return
+	}
+	if currentStatus != "草稿" && currentStatus != "draft" && currentStatus != "已驳回" && currentStatus != "审核驳回" && currentStatus != "rejected" {
+		http.Error(w, "只有草稿或驳回的发货批次允许编辑", http.StatusBadRequest)
+		return
+	}
+
+	now := time.Now()
+
+	_, err = tx.Exec(`
+		UPDATE inventory_devices inv
+		JOIN shipping_batch_devices sbd ON inv.id = sbd.inventory_device_id
+		SET inv.inventory_status = '在库', inv.update_time = NOW()
+		WHERE sbd.batch_id = ?
+		  AND sbd.is_deleted = 0
+		  AND inv.inventory_status = '已锁定'
+	`, id)
+	if err != nil {
+		http.Error(w, "释放原库存失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	_, err = tx.Exec(`
+		UPDATE shipping_batch_devices
+		SET is_deleted = 1
+		WHERE batch_id = ?
+	`, id)
+	if err != nil {
+		http.Error(w, "清理原发货设备失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	result, err := tx.Exec(`
+		UPDATE shipping_batches
+		SET
+			batch_no = ?,
+			project_id = ?,
+			express_no = ?,
+			device_count = ?,
+			file_id = ?,
+			uploader_id = ?,
+			uploader_name = ?,
+			upload_time = ?,
+			audit_status = '草稿',
+			auditor_id = NULL,
+			auditor_name = NULL,
+			audit_time = NULL,
+			reject_reason = '',
+			remark = ?,
+			shipping_desc = ?,
+			updated_at = ?
+		WHERE id = ? AND is_deleted = 0
+	`,
+		req.BatchNo,
+		req.ProjectID,
+		req.ExpressNo,
+		len(req.InventoryDeviceIDs),
+		req.FileID,
+		req.UploaderID,
+		req.UploaderName,
+		now,
+		req.Remark,
+		req.ShippingDesc,
+		now,
+		id,
+	)
+	if err != nil {
+		http.Error(w, "保存发货批次失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	affected, _ := result.RowsAffected()
+	if affected == 0 {
+		http.Error(w, "发货批次不存在或已删除", http.StatusNotFound)
+		return
+	}
+
+	hardwareVersionOverrides := map[int64]string{}
+	for _, item := range req.InventoryVersions {
+		if item.InventoryDeviceID <= 0 {
+			continue
+		}
+		hardwareVersionOverrides[item.InventoryDeviceID] = strings.TrimSpace(item.HardwareVersion)
+	}
+
+	for _, inventoryID := range req.InventoryDeviceIDs {
+		var sn string
+		var mac string
+		var deviceType string
+		var hardwareVersion string
+		var softwareVersion string
+		var inventoryStatus string
+
+		err = tx.QueryRow(`
+			SELECT
+				IFNULL(sn, ''),
+				IFNULL(mac_address, ''),
+				IFNULL(device_type, ''),
+				IFNULL(hardware_version, ''),
+				IFNULL(software_version, ''),
+				IFNULL(inventory_status, '')
+			FROM inventory_devices
+			WHERE id = ? AND is_deleted = 0
+		`, inventoryID).Scan(
+			&sn,
+			&mac,
+			&deviceType,
+			&hardwareVersion,
+			&softwareVersion,
+			&inventoryStatus,
+		)
+		if err != nil {
+			http.Error(w, "读取库存设备失败: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if inventoryStatus != "在库" {
+			http.Error(w, "库存设备不是在库状态，不能加入发货批次", http.StatusBadRequest)
+			return
+		}
+		if override, ok := hardwareVersionOverrides[inventoryID]; ok {
+			hardwareVersion = override
+		}
+
+		_, err = tx.Exec(`
+			INSERT INTO shipping_batch_devices (
+				batch_id,
+				inventory_device_id,
+				sn,
+				mac_address,
+				device_type,
+				hardware_version,
+				software_version,
+				is_deleted,
+				created_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)
+		`,
+			id,
+			inventoryID,
+			sn,
+			mac,
+			deviceType,
+			hardwareVersion,
+			softwareVersion,
+			now,
+		)
+		if err != nil {
+			http.Error(w, "保存发货设备明细失败: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		_, err = tx.Exec(`
+			UPDATE inventory_devices
+			SET hardware_version = ?, inventory_status = '已锁定', update_time = NOW()
+			WHERE id = ? AND is_deleted = 0
+		`, hardwareVersion, inventoryID)
+		if err != nil {
+			http.Error(w, "锁定库存设备失败: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	if err = tx.Commit(); err != nil {
+		http.Error(w, "提交事务失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"code": 200,
+		"msg":  "保存成功",
+		"data": map[string]interface{}{"id": id},
 	})
 }
 

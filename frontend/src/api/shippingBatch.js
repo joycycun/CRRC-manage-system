@@ -16,6 +16,14 @@ export function createShippingBatch(data) {
   })
 }
 
+export function updateShippingBatch(id, data) {
+  return request({
+    url: `/shipping-batches/${id}`,
+    method: 'put',
+    data
+  })
+}
+
 export function submitShippingBatch(id) {
   return request({
     url: `/shipping-batches/${id}/submit`,
