@@ -47,13 +47,13 @@
       <button class="reset-btn" @click="resetFilters">重置</button>
     </div>
 
-    <!-- 数据表格 -->
+    <!-- 按项目展示 -->
     <div class="table-card">
       <table>
         <thead>
           <tr>
             <th>需求变更名称</th>
-            <th>对应项目</th>
+            <th>项目</th>
             <th>上传人</th>
             <th>上传时间</th>
             <th>审核状态</th>
@@ -64,83 +64,107 @@
         </thead>
 
         <tbody>
-          <tr v-for="item in filteredChangeList" :key="item.id">
-            <td>
-              <div class="change-name">{{ item.changeName }}</div>
-              <div class="file-name">{{ item.fileName }}</div>
-            </td>
+          <template v-for="group in groupedChangeList" :key="group.projectName">
+            <tr class="project-group-row" @click="toggleProjectGroup(group.projectName)">
+              <td colspan="8">
+                <div class="project-group-summary">
+                  <div>
+                    <span class="expand-mark">{{ isProjectGroupExpanded(group.projectName) ? '▾' : '▸' }}</span>
+                    <strong>{{ group.projectName }}</strong>
+                    <span class="count-tag">{{ group.records.length }} 条需求变更</span>
+                  </div>
+                  <span class="muted">最近上传：{{ group.latestUploadTime || '-' }}</span>
+                </div>
+              </td>
+            </tr>
 
-            <td>
-              <span class="project-tag">{{ item.projectName }}</span>
-            </td>
+            <tr
+              v-for="item in group.records"
+              v-show="isProjectGroupExpanded(group.projectName)"
+              :key="item.id"
+              class="change-row"
+            >
+              <td>
+                <div class="change-name">{{ item.changeName }}</div>
+                <div class="file-name">{{ item.fileName }}</div>
+              </td>
 
-            <td>{{ item.uploader }}</td>
+              <td>
+                <span class="project-tag">{{ item.projectName }}</span>
+              </td>
 
-            <td class="muted">{{ item.uploadTime }}</td>
+              <td>{{ item.uploader }}</td>
 
-            <td>
-              <span class="status-tag" :class="item.auditStatus">
-                {{ getAuditStatusText(item.auditStatus) }}
-              </span>
-            </td>
+              <td class="muted">{{ item.uploadTime }}</td>
 
-            <td>
-              <span class="close-tag" :class="item.closeStatus">
-                {{ getCloseStatusText(item.closeStatus) }}
-              </span>
-            </td>
+              <td>
+                <span class="status-tag" :class="item.auditStatus">
+                  {{ getAuditStatusText(item.auditStatus) }}
+                </span>
+              </td>
 
-            <td>{{ item.auditor || '-' }}</td>
+              <td>
+                <span class="close-tag" :class="item.closeStatus">
+                  {{ getCloseStatusText(item.closeStatus) }}
+                </span>
+              </td>
 
-            <td class="operation-col">
-              <div class="action-group">
-                <button class="text-btn" @click="viewChange(item)">
-                  查看
-                </button>
+              <td>{{ item.auditor || '-' }}</td>
 
-                <button class="text-btn blue" @click="downloadChange(item)">
-                  下载
-                </button>
+              <td class="operation-col">
+                <div class="action-group">
+                  <button class="text-btn" @click="viewChange(item)">
+                    查看
+                  </button>
 
-                <button
-                  v-if="canSubmitChange(item)"
-                  class="text-btn blue"
-                  @click="submitChange(item)"
-                >
-                  提交
-                </button>
+                  <button class="text-btn blue" @click="downloadChange(item)">
+                    下载
+                  </button>
 
-                <button
-                  v-if="canUseAction('requirement:audit') && item.auditStatus === 'submitted'"
-                  class="text-btn green"
-                  @click="auditChange(item)"
-                >
-                  审核
-                </button>
+                  <button
+                    v-if="canSubmitChange(item)"
+                    class="text-btn blue"
+                    @click="submitChange(item)"
+                  >
+                    提交
+                  </button>
 
-                <button
-                  v-if="canUseAction('requirement:close') && item.auditStatus === 'approved' && item.closeStatus === 'open'"
-                  class="text-btn purple"
-                  @click="closeChange(item)"
-                >
-                  关闭
-                </button>
+                  <button
+                    v-if="canUseAction('requirement:audit') && item.auditStatus === 'submitted'"
+                    class="text-btn green"
+                    @click="auditChange(item)"
+                  >
+                    审核
+                  </button>
 
-                <button
-                  v-if="canDeleteChange(item)"
-                  class="text-btn red"
-                  @click="deleteChange(item)"
-                >
-                  删除
-                </button>
-              </div>
-            </td>
+                  <button
+                    v-if="canUseAction('requirement:close') && item.auditStatus === 'approved' && item.closeStatus === 'open'"
+                    class="text-btn purple"
+                    @click="closeChange(item)"
+                  >
+                    关闭
+                  </button>
+
+                  <button
+                    v-if="canDeleteChange(item)"
+                    class="text-btn red"
+                    @click="deleteChange(item)"
+                  >
+                    删除
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </template>
+
+          <tr v-if="groupedChangeList.length === 0">
+            <td colspan="8" class="empty-table">暂无需求变更记录</td>
           </tr>
         </tbody>
       </table>
 
       <div class="table-footer">
-        共 {{ filteredChangeList.length }} 条需求变更记录
+        共 {{ filteredChangeList.length }} 条需求变更记录，按 {{ groupedChangeList.length }} 个项目展示
       </div>
     </div>
 
@@ -341,6 +365,7 @@ const filters = reactive({
 
 const showUploadDialog = ref(false)
 const selectedChange = ref(null)
+const expandedProjectGroups = ref({})
 
 const projectOptions = ref([])
 const projectMap = ref({})
@@ -547,6 +572,43 @@ const filteredChangeList = computed(() => {
     return keywordMatch && projectMatch && auditStatusMatch && closeStatusMatch
   })
 })
+
+const groupedChangeList = computed(() => {
+  const map = new Map()
+  filteredChangeList.value.forEach(item => {
+    const projectName = item.projectName || '未绑定项目'
+    if (!map.has(projectName)) {
+      map.set(projectName, {
+        projectName,
+        latestUploadTime: '',
+        records: []
+      })
+    }
+    map.get(projectName).records.push(item)
+  })
+
+  return Array.from(map.values()).map(group => {
+    const records = [...group.records].sort((a, b) => {
+      return String(b.uploadTime || '').localeCompare(String(a.uploadTime || '')) || Number(b.id || 0) - Number(a.id || 0)
+    })
+    return {
+      ...group,
+      records,
+      latestUploadTime: records[0]?.uploadTime || ''
+    }
+  })
+})
+
+function isProjectGroupExpanded(projectName) {
+  return expandedProjectGroups.value[projectName] !== false
+}
+
+function toggleProjectGroup(projectName) {
+  expandedProjectGroups.value = {
+    ...expandedProjectGroups.value,
+    [projectName]: !isProjectGroupExpanded(projectName)
+  }
+}
 
 function getAuditStatusText(status) {
   const map = {
@@ -1015,6 +1077,59 @@ async function deleteChange(item) {
   vertical-align: middle;
 }
 
+.project-group-row {
+  background: #020617;
+  cursor: pointer;
+}
+
+.project-group-row:hover {
+  background: #111827;
+}
+
+.project-group-row td {
+  padding: 14px 16px;
+}
+
+.project-group-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.project-group-summary div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.project-group-summary strong {
+  color: #f8fafc;
+  font-size: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.expand-mark {
+  color: #60a5fa;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.change-row {
+  background: #0f172a;
+}
+
+.change-row:hover {
+  background: #1e293b80;
+}
+
+.change-row td:first-child {
+  padding-left: 38px;
+}
+
 .change-name {
   color: #f8fafc;
   font-weight: 700;
@@ -1035,6 +1150,19 @@ async function deleteChange(item) {
   color: #60a5fa;
   font-size: 12px;
   font-weight: 700;
+}
+
+.count-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: #33415566;
+  color: #cbd5e1;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .status-tag,
@@ -1126,6 +1254,12 @@ async function deleteChange(item) {
   padding: 12px 16px;
   color: #64748b;
   font-size: 12px;
+}
+
+.empty-table {
+  padding: 28px 16px !important;
+  text-align: center;
+  color: #64748b !important;
 }
 
 /* 弹窗 */

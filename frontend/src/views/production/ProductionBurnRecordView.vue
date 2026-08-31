@@ -901,6 +901,21 @@ function formatDuplicateMessages(duplicates) {
   return lines.join('\n') + more
 }
 
+function formatSkippedBurnRows(skippedRecords) {
+  if (!Array.isArray(skippedRecords) || skippedRecords.length === 0) return ''
+  const lines = skippedRecords
+    .slice(0, 20)
+    .map(item => {
+      const rowNumber = item.rowNumber || item.sourceRowNo || '-'
+      const type = item.type || '重复记录'
+      const value = item.value ? `【${item.value}】` : ''
+      const reason = item.reason || '数据库中已存在，已跳过'
+      return `第 ${rowNumber} 行：${type}${value}，${reason}`
+    })
+  const more = skippedRecords.length > 20 ? `\n还有 ${skippedRecords.length - 20} 条重复未显示` : ''
+  return lines.join('\n') + more
+}
+
 function resetManualForm() {
   Object.assign(manualForm, {
     productName: '',
@@ -1262,7 +1277,10 @@ async function saveExcelBurnRecords() {
     if (result.code === 200) {
       const importedCount = Number(result.data?.count || 0)
       const skippedCount = Number(result.data?.skipCount || 0)
-      const skippedText = skippedCount > 0 ? `，已跳过 ${skippedCount} 条重复记录` : ''
+      const skippedRowsText = formatSkippedBurnRows(result.data?.skippedRecords)
+      const skippedText = skippedCount > 0
+        ? `，已跳过 ${skippedCount} 条重复记录${skippedRowsText ? `\n${skippedRowsText}` : ''}`
+        : ''
       alert(`导入完成，共新增 ${importedCount} 条记录${skippedText}`)
 
       const firstBatchNo = records[0]?.batchNo

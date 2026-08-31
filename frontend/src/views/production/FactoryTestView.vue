@@ -590,6 +590,7 @@ const reportSubmitting = ref(false)
 
 const reportForm = reactive({
   productModel: '',
+  factoryTestIds: [],
   fileId: 0,
   fileName: '',
   fileContentType: '',
@@ -923,6 +924,7 @@ const filteredModelGroupList = computed(() => {
 function openReportDialog(group) {
   Object.assign(reportForm, {
     productModel: group.productModel,
+    factoryTestIds: group.records.map(item => Number(item.id)).filter(Boolean),
     fileId: 0,
     fileName: '',
     fileContentType: '',

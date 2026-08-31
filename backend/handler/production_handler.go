@@ -877,11 +877,12 @@ func UploadFactoryTestReportHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		ProductModel    string `json:"productModel"`
-		FileID          int64  `json:"fileId"`
-		FileName        string `json:"fileName"`
-		FileContentType string `json:"fileContentType"`
-		FileData        string `json:"fileData"`
+		ProductModel    string  `json:"productModel"`
+		FactoryTestIDs  []int64 `json:"factoryTestIds"`
+		FileID          int64   `json:"fileId"`
+		FileName        string  `json:"fileName"`
+		FileContentType string  `json:"fileContentType"`
+		FileData        string  `json:"fileData"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "参数解析失败: "+err.Error(), http.StatusBadRequest)
@@ -904,6 +905,29 @@ func UploadFactoryTestReportHandler(w http.ResponseWriter, r *http.Request) {
 
 	ensureFactoryTestReportColumns()
 	userID, userName := currentRequestUser(r)
+	uniqueIDs := make([]int64, 0, len(req.FactoryTestIDs))
+	seenIDs := map[int64]bool{}
+	for _, id := range req.FactoryTestIDs {
+		if id <= 0 || seenIDs[id] {
+			continue
+		}
+		seenIDs[id] = true
+		uniqueIDs = append(uniqueIDs, id)
+	}
+
+	args := []interface{}{req.FileID, userID, userName}
+	whereSQL := "TRIM(IFNULL(product_model, '')) = ?"
+	args = append(args, req.ProductModel)
+	if len(uniqueIDs) > 0 {
+		placeholders := make([]string, 0, len(uniqueIDs))
+		args = []interface{}{req.FileID, userID, userName}
+		for _, id := range uniqueIDs {
+			placeholders = append(placeholders, "?")
+			args = append(args, id)
+		}
+		whereSQL = "id IN (" + strings.Join(placeholders, ",") + ")"
+	}
+
 	result, err := config.DB.Exec(`
 		UPDATE factory_tests
 		SET report_file_id = ?,
@@ -911,9 +935,9 @@ func UploadFactoryTestReportHandler(w http.ResponseWriter, r *http.Request) {
 			report_uploader_name = ?,
 			report_upload_time = NOW(),
 			updated_at = NOW()
-		WHERE TRIM(IFNULL(product_model, '')) = ?
+		WHERE `+whereSQL+`
 		  AND IFNULL(is_deleted, 0) = 0
-	`, req.FileID, userID, userName, req.ProductModel)
+	`, args...)
 	if err != nil {
 		http.Error(w, "绑定出厂测试报告失败: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -2918,6 +2942,13 @@ func ImportBurnRecordsHandler(w http.ResponseWriter, r *http.Request) {
 
 	insertCount := 0
 	skipCount := 0
+	type skippedBurnRecord struct {
+		RowNumber int    `json:"rowNumber"`
+		Type      string `json:"type"`
+		Value     string `json:"value"`
+		Reason    string `json:"reason"`
+	}
+	skippedRecords := make([]skippedBurnRecord, 0)
 
 	for index, item := range req.Records {
 		productName := strings.TrimSpace(item.ProductName)
@@ -2998,24 +3029,53 @@ func ImportBurnRecordsHandler(w http.ResponseWriter, r *http.Request) {
 			sourceRowNo = index + 1
 		}
 		var existingID int64
+		var duplicateType string
+		var duplicateValue string
 		err = tx.QueryRow(`
-			SELECT id
+			SELECT
+				id,
+				CASE
+					WHEN IFNULL(source_file_id, 0) = ? AND IFNULL(source_row_no, 0) = ? THEN 'Excel行'
+					WHEN ? <> '' AND sn = ? THEN '序列号'
+					WHEN ? <> '' AND mac_address = ? THEN 'MAC地址'
+					ELSE '重复记录'
+				END,
+				CASE
+					WHEN IFNULL(source_file_id, 0) = ? AND IFNULL(source_row_no, 0) = ? THEN ?
+					WHEN ? <> '' AND sn = ? THEN ?
+					WHEN ? <> '' AND mac_address = ? THEN ?
+					ELSE ''
+				END
 			FROM burn_records
 			WHERE IFNULL(is_deleted, 0) = 0
 			  AND (
 				(IFNULL(source_file_id, 0) = ? AND IFNULL(source_row_no, 0) = ?)
 				OR (? <> '' AND sn = ?)
 				OR (? <> '' AND mac_address = ?)
-			  )
+			)
 			ORDER BY id DESC
 			LIMIT 1
-		`, sourceFileID, sourceRowNo, sn, sn, macAddress, macAddress).Scan(&existingID)
+		`,
+			sourceFileID, sourceRowNo,
+			sn, sn,
+			macAddress, macAddress,
+			sourceFileID, sourceRowNo, strconv.Itoa(sourceRowNo),
+			sn, sn, sn,
+			macAddress, macAddress, macAddress,
+			sourceFileID, sourceRowNo, sn, sn, macAddress, macAddress,
+		).Scan(&existingID, &duplicateType, &duplicateValue)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			http.Error(w, "检查烧录重复记录失败: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 		if existingID > 0 {
 			skipCount++
+			skippedRecords = append(skippedRecords, skippedBurnRecord{
+				RowNumber: sourceRowNo,
+				Type:      duplicateType,
+				Value:     duplicateValue,
+				Reason:    "数据库中已存在，已跳过",
+			})
 			continue
 		}
 
@@ -3126,8 +3186,9 @@ func ImportBurnRecordsHandler(w http.ResponseWriter, r *http.Request) {
 		"code": 200,
 		"msg":  "导入成功",
 		"data": map[string]interface{}{
-			"count":     insertCount,
-			"skipCount": skipCount,
+			"count":          insertCount,
+			"skipCount":      skipCount,
+			"skippedRecords": skippedRecords,
 		},
 	})
 }
